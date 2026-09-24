@@ -245,32 +245,48 @@ function should_count_view(string $ip, int $id): bool
     return $counted;
 }
 
-/** 评论输出映射（一级评论，含其下回复列表） */
+/** 评论输出映射（递归树形：任意层级回复均可带自己的 replies） */
 function comment_out(array $c): array
 {
     return [
-        'id'        => (string)$c['id'],
-        'nickname'  => (string)$c['nickname'],
-        'content'   => (string)$c['content'],
-        'createdAt' => (int)$c['createdAt'],
-        'replies'   => array_values(array_map(static fn(array $r): array => [
-            'id'              => (string)$r['id'],
-            'nickname'        => (string)$r['nickname'],
-            'content'         => (string)$r['content'],
-            'createdAt'       => (int)$r['createdAt'],
-            'replyToNickname' => (string)($r['replyToNickname'] ?? ''),
-        ], array_values($c['replies'] ?? []))),
+        'id'              => (string)$c['id'],
+        'nickname'        => (string)$c['nickname'],
+        'content'         => (string)$c['content'],
+        'createdAt'       => (int)$c['createdAt'],
+        'replyToNickname' => (string)($c['replyToNickname'] ?? ''),
+        'replies'         => array_values(array_map('comment_out', array_values($c['replies'] ?? []))),
     ];
 }
 
-/** 评论数 = 种子基数 + 真实评论数（一级评论与其下回复均计入） */
+/** 在评论树中递归查找目标节点并挂载新回复（不限层级），成功返回 true */
+function comment_tree_reply(array &$nodes, string $replyTo, array $entry): bool
+{
+    foreach ($nodes as $i => $n) {
+        if ((string)$n['id'] === $replyTo) {
+            $entry['replyToNickname'] = (string)$n['nickname'];
+            $nodes[$i]['replies'] = array_values($n['replies'] ?? []);
+            $nodes[$i]['replies'][] = $entry;
+            return true;
+        }
+        if (!empty($n['replies']) && comment_tree_reply($nodes[$i]['replies'], $replyTo, $entry)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** 评论数 = 种子基数 + 树中全部评论/回复节点数（不限层级） */
 function comments_count(array $story): int
 {
-    $real = 0;
-    foreach (($story['comments'] ?? []) as $c) {
-        $real += 1 + count($c['replies'] ?? []);
-    }
-    return (int)($story['commentsBase'] ?? 0) + $real;
+    $count = 0;
+    $walk = static function (array $nodes) use (&$walk, &$count): void {
+        foreach ($nodes as $c) {
+            $count++;
+            if (!empty($c['replies'])) { $walk($c['replies']); }
+        }
+    };
+    $walk($story['comments'] ?? []);
+    return (int)($story['commentsBase'] ?? 0) + $count;
 }
 
 /** 热度分（热门排序用） */
@@ -479,31 +495,11 @@ switch ($route) {
             ];
             if ($replyTo !== '') {
                 /* 楼中楼回复：replyTo 为目标评论或回复的 id，
-                   回复统一挂在其所属一级评论的 replies 下，并记录被回复人昵称 */
+                   回复挂到目标节点的 replies 下（递归查找，层级不限），并记录被回复人昵称 */
                 $comments = array_values($db['stories'][$idx]['comments'] ?? []);
-                $found = false;
-                foreach ($comments as $ci => $c) {
-                    if ((string)$c['id'] === $replyTo) {
-                        $entry['replyToNickname'] = (string)$c['nickname'];
-                        $comments[$ci]['replies'] = array_values($c['replies'] ?? []);
-                        $comments[$ci]['replies'][] = $entry;
-                        $found = true;
-                        break;
-                    }
-                    $hit = false;
-                    foreach (($c['replies'] ?? []) as $r) {
-                        if ((string)$r['id'] === $replyTo) {
-                            $entry['replyToNickname'] = (string)$r['nickname'];
-                            $comments[$ci]['replies'] = array_values($c['replies'] ?? []);
-                            $comments[$ci]['replies'][] = $entry;
-                            $found = true;
-                            $hit = true;
-                            break;
-                        }
-                    }
-                    if ($hit) { break; }
+                if (!comment_tree_reply($comments, $replyTo, $entry)) {
+                    fail('要回复的评论不存在或已被删除', 404);
                 }
-                if (!$found) { fail('要回复的评论不存在或已被删除', 404); }
                 $db['stories'][$idx]['comments'] = $comments;
             } else {
                 $db['stories'][$idx]['comments'][] = $entry;
