@@ -285,14 +285,14 @@ function comment_reply_attach(array &$comments, string $replyTo, array $entry): 
     return false;
 }
 
-/** 评论数 = 种子基数 + 一级评论数 + 各自回复数（两级） */
+/** 评论数 = 一级评论数 + 各自回复数（不再计入种子模拟基数，显示真实互动量） */
 function comments_count(array $story): int
 {
     $real = 0;
     foreach (($story['comments'] ?? []) as $c) {
         $real += 1 + count($c['replies'] ?? []);
     }
-    return (int)($story['commentsBase'] ?? 0) + $real;
+    return $real;
 }
 
 /** 热度分（热门排序用） */
@@ -369,7 +369,6 @@ switch ($route) {
                 'author'       => ['nickname' => $nickname, 'info' => '缘分旅人 · 匿名分享'],
                 'likes'        => 0,
                 'views'        => 0,
-                'commentsBase' => 0,
                 'comments'     => [],
                 'createdAt'    => time(),
             ];

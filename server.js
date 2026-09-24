@@ -207,9 +207,8 @@ const commentReplyAttach = (comments, replyTo, entry) => {
   return false;
 };
 
-/** 评论数 = 种子基数 + 一级评论数 + 各自回复数（两级） */
-const commentsCount = s => (s.commentsBase || 0) +
-  (s.comments || []).reduce((n, c) => n + 1 + (c.replies || []).length, 0);
+/** 评论数 = 一级评论数 + 各自回复数（不再计入种子模拟基数，显示真实互动量） */
+const commentsCount = s => (s.comments || []).reduce((n, c) => n + 1 + (c.replies || []).length, 0);
 const hotScore = s => s.likes * 3 + commentsCount(s) * 5 + s.views * 0.5;
 
 /* ==================== 浏览量防刷（IP + 时间窗口去重） ==================== */
@@ -309,7 +308,7 @@ function handleApi(req, res, url, body) {
           content: mode === 'html' ? sanitizeHtml(content) : content,
           mode, tags,
           author: { nickname, info: '缘分旅人 · 匿名分享' },
-          likes: 0, views: 0, commentsBase: 0, comments: [],
+          likes: 0, views: 0, comments: [],
           createdAt: Math.floor(Date.now() / 1000),
         };
         // 生成发布者删除凭证（仅本次响应返回，存储在发布者浏览器里）
