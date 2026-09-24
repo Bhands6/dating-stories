@@ -245,10 +245,32 @@ function should_count_view(string $ip, int $id): bool
     return $counted;
 }
 
-/** 评论数 = 种子基数 + 真实评论数 */
+/** 评论输出映射（一级评论，含其下回复列表） */
+function comment_out(array $c): array
+{
+    return [
+        'id'        => (string)$c['id'],
+        'nickname'  => (string)$c['nickname'],
+        'content'   => (string)$c['content'],
+        'createdAt' => (int)$c['createdAt'],
+        'replies'   => array_values(array_map(static fn(array $r): array => [
+            'id'              => (string)$r['id'],
+            'nickname'        => (string)$r['nickname'],
+            'content'         => (string)$r['content'],
+            'createdAt'       => (int)$r['createdAt'],
+            'replyToNickname' => (string)($r['replyToNickname'] ?? ''),
+        ], array_values($c['replies'] ?? []))),
+    ];
+}
+
+/** 评论数 = 种子基数 + 真实评论数（一级评论与其下回复均计入） */
 function comments_count(array $story): int
 {
-    return (int)($story['commentsBase'] ?? 0) + count($story['comments'] ?? []);
+    $real = 0;
+    foreach (($story['comments'] ?? []) as $c) {
+        $real += 1 + count($c['replies'] ?? []);
+    }
+    return (int)($story['commentsBase'] ?? 0) + $real;
 }
 
 /** 热度分（热门排序用） */
@@ -279,12 +301,7 @@ function story_full(array $s): array
 {
     return array_merge(story_card($s), [
         'content'  => (string)$s['content'],
-        'comments' => array_map(static fn(array $c): array => [
-            'id'        => (string)$c['id'],
-            'nickname'  => (string)$c['nickname'],
-            'content'   => (string)$c['content'],
-            'createdAt' => (int)$c['createdAt'],
-        ], array_values($s['comments'] ?? [])),
+        'comments' => array_map('comment_out', array_values($s['comments'] ?? [])),
     ]);
 }
 
@@ -449,27 +466,53 @@ switch ($route) {
             $in = body_json();
             $content = trim((string)($in['content'] ?? ''));
             $nickname = trim((string)($in['nickname'] ?? ''));
+            $replyTo = trim((string)($in['replyTo'] ?? ''));
             if ($content === '') { fail('评论内容不能为空'); }
             if (mb_strlen($content) > 500) { fail('评论最多 500 个字'); }
             if (mb_strlen($nickname) > 20) { fail('昵称最多 20 个字符'); }
             if ($nickname === '') { $nickname = random_nickname(); }
-            $comment = [
-                'id'        => 'c' . time() . mt_rand(100, 999),
+            $entry = [
+                'id'        => 'c' . time() . mt_rand(1000, 9999),
                 'nickname'  => $nickname,
                 'content'   => $content,
                 'createdAt' => time(),
             ];
-            $db['stories'][$idx]['comments'][] = $comment;
+            if ($replyTo !== '') {
+                /* 楼中楼回复：replyTo 为目标评论或回复的 id，
+                   回复统一挂在其所属一级评论的 replies 下，并记录被回复人昵称 */
+                $comments = array_values($db['stories'][$idx]['comments'] ?? []);
+                $found = false;
+                foreach ($comments as $ci => $c) {
+                    if ((string)$c['id'] === $replyTo) {
+                        $entry['replyToNickname'] = (string)$c['nickname'];
+                        $comments[$ci]['replies'] = array_values($c['replies'] ?? []);
+                        $comments[$ci]['replies'][] = $entry;
+                        $found = true;
+                        break;
+                    }
+                    $hit = false;
+                    foreach (($c['replies'] ?? []) as $r) {
+                        if ((string)$r['id'] === $replyTo) {
+                            $entry['replyToNickname'] = (string)$r['nickname'];
+                            $comments[$ci]['replies'] = array_values($c['replies'] ?? []);
+                            $comments[$ci]['replies'][] = $entry;
+                            $found = true;
+                            $hit = true;
+                            break;
+                        }
+                    }
+                    if ($hit) { break; }
+                }
+                if (!$found) { fail('要回复的评论不存在或已被删除', 404); }
+                $db['stories'][$idx]['comments'] = $comments;
+            } else {
+                $db['stories'][$idx]['comments'][] = $entry;
+            }
             db_save($db);
-            respond(['ok' => true, 'commentsCount' => comments_count($db['stories'][$idx]), 'comment' => $comment]);
+            respond(['ok' => true, 'commentsCount' => comments_count($db['stories'][$idx]), 'comment' => $entry]);
         }
 
-        respond(['ok' => true, 'comments' => array_map(static fn(array $c): array => [
-            'id'        => (string)$c['id'],
-            'nickname'  => (string)$c['nickname'],
-            'content'   => (string)$c['content'],
-            'createdAt' => (int)$c['createdAt'],
-        ], array_values($db['stories'][$idx]['comments'] ?? []))]);
+        respond(['ok' => true, 'comments' => array_map('comment_out', array_values($db['stories'][$idx]['comments'] ?? []))]);
     }
 
     /* ---- 标签云计数 ---- */

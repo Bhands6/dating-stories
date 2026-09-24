@@ -170,7 +170,23 @@ function randomNickname() {
   return pick(adjs) + pick(nouns) + pick(emos);
 }
 
-const commentsCount = s => (s.commentsBase || 0) + (s.comments || []).length;
+/** 评论输出映射（一级评论，含其下回复列表） */
+const commentOut = c => ({
+  id: c.id,
+  nickname: c.nickname,
+  content: c.content,
+  createdAt: c.createdAt,
+  replies: (c.replies || []).map(r => ({
+    id: r.id,
+    nickname: r.nickname,
+    content: r.content,
+    createdAt: r.createdAt,
+    replyToNickname: r.replyToNickname || '',
+  })),
+});
+
+const commentsCount = s => (s.commentsBase || 0) +
+  (s.comments || []).reduce((n, c) => n + 1 + (c.replies || []).length, 0);
 const hotScore = s => s.likes * 3 + commentsCount(s) * 5 + s.views * 0.5;
 
 /* ==================== 浏览量防刷（IP + 时间窗口去重） ==================== */
@@ -229,9 +245,7 @@ function storyFull(s) {
   return {
     ...storyCard(s),
     content: s.content,
-    comments: (s.comments || []).map(c => ({
-      id: c.id, nickname: c.nickname, content: c.content, createdAt: c.createdAt,
-    })),
+    comments: (s.comments || []).map(commentOut),
   };
 }
 
@@ -367,24 +381,49 @@ function handleApi(req, res, url, body) {
       if (method === 'POST') {
         const content = String(body.content || '').trim();
         let nickname = String(body.nickname || '').trim();
+        const replyTo = String(body.replyTo || '').trim();
         if (!content) return fail(res, '评论内容不能为空');
         if (Array.from(content).length > 500) return fail(res, '评论最多 500 个字');
         if (Array.from(nickname).length > 20) return fail(res, '昵称最多 20 个字符');
         if (!nickname) nickname = randomNickname();
-        const comment = {
-          id: 'c' + Date.now() + Math.floor(Math.random() * 900 + 100),
+        const entry = {
+          id: 'c' + Date.now() + Math.floor(Math.random() * 9000 + 1000),
           nickname, content,
           createdAt: Math.floor(Date.now() / 1000),
         };
-        s.comments.push(comment);
+        if (replyTo) {
+          /* 楼中楼回复：replyTo 为目标评论或回复的 id，
+             回复统一挂在其所属一级评论的 replies 下，并记录被回复人昵称 */
+          const comments = (s.comments || []).map(c => ({ ...c, replies: c.replies || [] }));
+          let found = false;
+          outer:
+          for (const c of comments) {
+            if (String(c.id) === replyTo) {
+              entry.replyToNickname = c.nickname;
+              c.replies.push(entry);
+              found = true;
+              break;
+            }
+            for (const r of c.replies) {
+              if (String(r.id) === replyTo) {
+                entry.replyToNickname = r.nickname;
+                c.replies.push(entry);
+                found = true;
+                break outer;
+              }
+            }
+          }
+          if (!found) return fail(res, '要回复的评论不存在或已被删除', 404);
+          s.comments = comments;
+        } else {
+          s.comments = s.comments || [];
+          s.comments.push(entry);
+        }
         dbSave(db);
-        return json(res, { ok: true, commentsCount: commentsCount(s), comment });
+        return json(res, { ok: true, commentsCount: commentsCount(s), comment: entry });
       }
 
-      return json(res, {
-        ok: true,
-        comments: s.comments.map(c => ({ id: c.id, nickname: c.nickname, content: c.content, createdAt: c.createdAt })),
-      });
+      return json(res, { ok: true, comments: (s.comments || []).map(commentOut) });
     }
 
     /* ---- 标签云计数 ---- */

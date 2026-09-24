@@ -1668,6 +1668,172 @@
             transform: none;
         }
 
+        /* ===== 评论回复（楼中楼） ===== */
+        .comment-actions {
+            margin-top: 6px;
+        }
+
+        .reply-btn {
+            border: none;
+            background: none;
+            padding: 3px 10px;
+            font-size: 12px;
+            color: #c98f8f;
+            cursor: pointer;
+            border-radius: 10px;
+            font-family: inherit;
+            transition: all 0.2s ease;
+        }
+
+        .reply-btn:hover {
+            color: var(--primary);
+            background: #fdf0f2;
+        }
+
+        .comment-replies {
+            margin-top: 12px;
+            padding-left: 12px;
+            border-left: 2px solid #f7e3e3;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .reply-item {
+            display: flex;
+            gap: 8px;
+        }
+
+        .reply-avatar {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: var(--gradient-soft);
+            border: 1.5px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            flex-shrink: 0;
+        }
+
+        .reply-main {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .reply-head {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 2px;
+        }
+
+        .reply-name {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .reply-to {
+            font-size: 12px;
+            color: var(--primary);
+        }
+
+        .reply-time {
+            font-size: 11px;
+            color: var(--text-lighter);
+        }
+
+        .reply-text {
+            font-size: 13px;
+            color: var(--text-light);
+            line-height: 1.7;
+            word-break: break-word;
+        }
+
+        .inline-reply-form {
+            margin-top: 10px;
+            background: var(--bg);
+            border: 1.5px solid var(--border);
+            border-radius: 10px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            animation: fadeInUp 0.25s ease;
+        }
+
+        .inline-reply-form input,
+        .inline-reply-form textarea {
+            width: 100%;
+            border: 1.5px solid var(--border);
+            border-radius: 8px;
+            padding: 7px 10px;
+            font-size: 13px;
+            font-family: inherit;
+            background: white;
+            transition: border-color 0.3s ease;
+            box-sizing: border-box;
+        }
+
+        .inline-reply-form textarea {
+            min-height: 52px;
+            resize: vertical;
+            line-height: 1.6;
+        }
+
+        .inline-reply-form input:focus,
+        .inline-reply-form textarea:focus {
+            outline: none;
+            border-color: var(--primary-light);
+        }
+
+        .reply-form-actions {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .reply-cancel {
+            border: none;
+            background: none;
+            padding: 6px 12px;
+            font-size: 12px;
+            color: var(--text-lighter);
+            cursor: pointer;
+            border-radius: 14px;
+            font-family: inherit;
+        }
+
+        .reply-cancel:hover {
+            color: var(--text-light);
+        }
+
+        .reply-send {
+            border: none;
+            padding: 7px 18px;
+            background: var(--gradient);
+            color: white;
+            border-radius: 14px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.25s ease;
+        }
+
+        .reply-send:hover {
+            box-shadow: 0 4px 12px rgba(232, 85, 109, 0.35);
+        }
+
+        .reply-send:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
         /* ===== Back to Top ===== */
         .back-top {
             position: fixed;
@@ -2260,7 +2426,24 @@
         const contentHtml = isHtmlMode
             ? '<iframe class="story-iframe" src="' + esc(rawUrl) + '" sandbox="allow-scripts" loading="lazy" title="故事原文"></iframe>'
             : nl2br(esc(s.content));
-        const commentsHtml = (s.comments || []).map(c => `
+        // 楼中楼回复：一级评论带 replies 数组，每条评论/回复均有「回复」入口
+        const replyBtn = (replyTo, parent) =>
+            `<button class="reply-btn" data-reply-to="${esc(replyTo)}"${parent ? ` data-parent="${esc(parent)}"` : ''}>回复</button>`;
+        const commentsHtml = (s.comments || []).map(c => {
+            const repliesHtml = (c.replies || []).map(r => `
+                <div class="reply-item">
+                    <div class="reply-avatar">${esc((r.nickname || '匿').charAt(0))}</div>
+                    <div class="reply-main">
+                        <div class="reply-head">
+                            <span class="reply-name">${esc(r.nickname)}</span>
+                            ${r.replyToNickname ? `<span class="reply-to">回复 @${esc(r.replyToNickname)}</span>` : ''}
+                            <span class="reply-time">${timeAgo(r.createdAt)}</span>
+                        </div>
+                        <div class="reply-text">${nl2br(esc(r.content))}</div>
+                        <div class="comment-actions">${replyBtn(r.id, c.id)}</div>
+                    </div>
+                </div>`).join('');
+            return `
             <div class="comment-item">
                 <div class="comment-avatar">${esc((c.nickname || '匿').charAt(0))}</div>
                 <div class="comment-main">
@@ -2269,8 +2452,11 @@
                         <span class="comment-time">${timeAgo(c.createdAt)}</span>
                     </div>
                     <div class="comment-text">${nl2br(esc(c.content))}</div>
+                    <div class="comment-actions">${replyBtn(c.id, '')}</div>
+                    ${repliesHtml ? `<div class="comment-replies">${repliesHtml}</div>` : ''}
+                    <div class="reply-form-slot"></div>
                 </div>
-            </div>`).join('');
+            </div>`; }).join('');
 
         modalBody.innerHTML = `
             ${tagHtml(s.tags)}
@@ -2327,8 +2513,76 @@
             });
         }
         modalBody.querySelector('#comment-submit').addEventListener('click', () => submitComment(s.id));
+
+        /* 评论区事件委托：回复按钮展开内联表单 / 发送 / 收起 */
+        const commentList = modalBody.querySelector('.comment-list');
+        if (commentList) {
+            commentList.addEventListener('click', e => {
+                const btn = e.target.closest('.reply-btn');
+                if (btn) { toggleReplyForm(commentList, s, btn); return; }
+                const send = e.target.closest('.reply-send');
+                if (send) { submitReply(s, send.closest('.inline-reply-form')); return; }
+                const cancel = e.target.closest('.reply-cancel');
+                if (cancel) {
+                    const f = cancel.closest('.inline-reply-form');
+                    if (f) f.remove();
+                }
+            });
+        }
         // 重新渲染后保持滚动位置在顶部
         modalBody.closest('.modal').scrollTop = 0;
+    }
+
+    /* 展开或切换内联回复表单：表单统一放在所属一级评论下方 */
+    function toggleReplyForm(commentList, s, btn) {
+        const item = btn.closest('.comment-item');
+        if (!item) return;
+        const slot = item.querySelector('.reply-form-slot');
+        if (!slot) return;
+        const parent = btn.dataset.parent || '';
+        const replyTo = btn.dataset.replyTo;
+        // 回复某条回复时，提示语带上被回复人昵称
+        let replyName = '';
+        if (parent) {
+            const replyItem = btn.closest('.reply-item');
+            const nameEl = replyItem && replyItem.querySelector('.reply-name');
+            replyName = nameEl ? nameEl.textContent : '';
+        }
+        const existing = slot.querySelector('.inline-reply-form');
+        if (existing && existing.dataset.replyTo === replyTo) { existing.remove(); return; }
+        if (existing) existing.remove();
+        const form = document.createElement('div');
+        form.className = 'inline-reply-form';
+        form.dataset.replyTo = replyTo;
+        form.innerHTML = `
+            <input type="text" class="reply-nick" placeholder="昵称（选填，不填将随机生成）" maxlength="20">
+            <textarea class="reply-content" rows="2" maxlength="500" placeholder="${replyName ? '回复 @' + esc(replyName) + ' …' : '写下你的鼓励或共鸣…'}"></textarea>
+            <div class="reply-form-actions">
+                <button type="button" class="reply-cancel">收起</button>
+                <button type="button" class="reply-send">发送 💕</button>
+            </div>`;
+        slot.appendChild(form);
+        form.querySelector('.reply-content').focus();
+    }
+
+    async function submitReply(s, form) {
+        if (!form) return;
+        const nickEl = form.querySelector('.reply-nick');
+        const textEl = form.querySelector('.reply-content');
+        const content = textEl.value.trim();
+        if (!content) { toast('先写点内容再发送吧～', 'error'); textEl.focus(); return; }
+        const btn = form.querySelector('.reply-send');
+        btn.disabled = true;
+        btn.textContent = '发送中…';
+        try {
+            await api('comments', { id: s.id }, { nickname: nickEl.value.trim(), content, replyTo: form.dataset.replyTo });
+            toast('💕 回复成功！');
+            await openStory(s.id); // 重新加载详情与评论
+        } catch (e) {
+            toast('回复失败：' + e.message, 'error');
+            btn.disabled = false;
+            btn.textContent = '发送 💕';
+        }
     }
 
     async function submitComment(id) {
