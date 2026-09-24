@@ -55,7 +55,7 @@ docker compose up -d --build
 # http://服务器IP:8010（端口在 docker-compose.yml 中修改）
 ```
 
-> 📋 完整部署步骤、nginx 注意事项、数据备份与迁移，见 **[部署说明.md](部署说明.md)**
+> 📋 完整部署步骤、nginx 注意事项、数据备份与迁移，见 **[部署说明.md](docs/部署说明.md)**
 
 ### ⚠️ 部署前必改：管理密码
 
