@@ -378,13 +378,23 @@ switch ($route) {
         $db = db_load();
         foreach ($db['stories'] as $s) {
             if ((int)$s['id'] === $id) {
-                if (($s['mode'] ?? 'text') !== 'html') {
-                    http_response_code(404);
-                    header('Content-Type: text/plain; charset=utf-8');
-                    echo '404 Not Found';
+                if (($s['mode'] ?? 'text') === 'html') {
+                    serve_raw_story($s);
                     exit;
                 }
-                serve_raw_story($s);
+                // 纯文本故事：简单排版输出
+                $title = preg_replace('/[<>&"]/', '', (string)($s['title'] ?? '故事')) ?: '故事';
+                $text = htmlspecialchars((string)($s['content'] ?? ''), ENT_QUOTES, 'UTF-8');
+                $text = nl2br($text);
+                header('Content-Type: text/html; charset=utf-8');
+                header("Content-Security-Policy: sandbox");
+                header('Cache-Control: no-cache');
+                echo "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"UTF-8\">\n"
+                    . "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
+                    . "<title>" . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . "</title>\n"
+                    . "<style>body{font-family:'Noto Serif SC','STSong',serif;background:#faf6ef;color:#2c2416;line-height:2;max-width:720px;margin:0 auto;padding:48px 24px;font-size:16px;}h1{font-size:1.6rem;margin:0 0 1.5rem;}</style>\n"
+                    . "</head>\n<body>\n<h1>" . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . "</h1>\n" . $text . "\n</body>\n</html>";
+                exit;
             }
         }
         http_response_code(404);

@@ -109,6 +109,36 @@
             background: var(--gradient-soft); color: var(--primary); font-weight: 500;
         }
         .fb-tag.empty { background: #f0f0f4; color: var(--text-lighter); }
+
+        /* ===== 查看弹窗 ===== */
+        #list-wrap .fb-item { cursor: pointer; }
+        #list-wrap .fb-item:hover { border-color: var(--primary-light); }
+        #list-wrap .fb-item .fb-del { cursor: pointer; }
+        .view-overlay {
+            position: fixed; inset: 0; background: rgba(45, 45, 58, 0.6);
+            z-index: 2500; display: none; align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .view-overlay.open { display: flex; }
+        .view-modal {
+            background: white; border-radius: 18px; width: 100%; max-width: 880px;
+            height: 90vh; display: flex; flex-direction: column; overflow: hidden;
+            box-shadow: 0 24px 64px rgba(45, 45, 58, 0.3);
+            animation: viewIn 0.3s cubic-bezier(0.34, 1.4, 0.64, 1);
+        }
+        @keyframes viewIn { from { opacity: 0; transform: translateY(24px) scale(0.98); } to { opacity: 1; transform: none; } }
+        .view-head {
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+            padding: 14px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+        }
+        .view-title { font-size: 15px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .view-close {
+            width: 34px; height: 34px; border: none; border-radius: 50%;
+            background: var(--bg); color: var(--text-light); font-size: 14px;
+            cursor: pointer; transition: all 0.25s ease; flex-shrink: 0;
+        }
+        .view-close:hover { background: var(--primary); color: white; }
+        .view-frame { flex: 1; width: 100%; border: none; background: white; }
         .fb-list { display: flex; flex-direction: column; gap: 14px; }
         .fb-item {
             border: 1.5px solid var(--border); border-radius: 14px; padding: 18px 20px;
@@ -218,6 +248,17 @@
     </div>
 
     <div class="toast-container" id="toast-container"></div>
+
+    <!-- 查看故事弹窗 -->
+    <div class="view-overlay" id="view-overlay">
+        <div class="view-modal">
+            <div class="view-head">
+                <span class="view-title" id="view-title">故事预览</span>
+                <button class="view-close" id="view-close" title="关闭">✕</button>
+            </div>
+            <iframe class="view-frame" id="view-frame" sandbox="allow-scripts" title="故事预览"></iframe>
+        </div>
+    </div>
 
     <!-- Back to Top -->
     <button class="back-top" id="back-top" title="返回顶部" aria-label="返回顶部">↑</button>
@@ -329,6 +370,24 @@
         });
     }
 
+    /* ===== 查看故事弹窗 ===== */
+    function openView(id, title) {
+        $('#view-title').textContent = title || '故事预览';
+        $('#view-frame').src = 'api.php?route=raw&id=' + id + '&t=' + Date.now();
+        $('#view-overlay').classList.add('open');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeView() {
+        $('#view-overlay').classList.remove('open');
+        $('#view-frame').src = 'about:blank';
+        document.body.style.overflow = '';
+    }
+
+    $('#view-close').addEventListener('click', closeView);
+    $('#view-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeView(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeView(); });
+
     function renderStories(items) {
         $('#list-title').innerHTML = '📚 全部故事 <span class="total" id="list-total">· 共 ' + items.length + ' 篇' + (storyTag !== 'all' ? '（' + (TAG_NAMES[storyTag] || storyTag) + '）' : '') + '</span>';
         const list = $('#story-list');
@@ -340,7 +399,7 @@
             const tagBadges = (it.tags || []).map(t => `<span class="fb-tag">${TAG_NAMES[t] || t}</span>`).join('')
                 || '<span class="fb-tag empty">无标签</span>';
             return `
-            <div class="fb-item">
+            <div class="fb-item" data-id="${it.id}" data-title="${it.title.replace(/"/g, '&quot;')}">
                 <div class="fb-head">
                     <div class="fb-ava">${(it.title || '故').charAt(0)}</div>
                     <span class="fb-name">${it.title}</span>
@@ -352,15 +411,23 @@
                 <button class="fb-del" data-id="${it.id}">🗑 删除故事</button>
             </div>`;
         }).join('');
+        // 点击卡片 → 查看故事（删除按钮除外）
+        list.querySelectorAll('.fb-item').forEach(el => {
+            el.addEventListener('click', e => {
+                if (e.target.closest('.fb-del')) return; // 删除按钮不触发查看
+                openView(Number(el.dataset.id), el.dataset.title);
+            });
+        });
         list.querySelectorAll('.fb-del').forEach(btn => {
-            btn.addEventListener('click', async () => {
+            btn.addEventListener('click', async e => {
+                e.stopPropagation();
                 if (!confirm('确定删除这篇故事吗？其评论也会一并删除，且无法恢复。')) return;
                 try {
                     await api({ key: getKey(), op: 'delete', id: Number(btn.dataset.id) }, 'admin_stories');
                     toast('🗑 故事已删除');
                     loadList();
-                } catch (e) {
-                    toast(e.message, 'error');
+                } catch (err) {
+                    toast(err.message, 'error');
                 }
             });
         });

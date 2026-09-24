@@ -312,8 +312,24 @@ function handleApi(req, res, url, body) {
     case 'raw': {
       const db = dbLoad();
       const s = db.stories.find(x => x.id === id);
-      if (!s || s.mode !== 'html') { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('404 Not Found'); return; }
-      serveRawStory(res, s);
+      if (!s) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('404 Not Found'); return; }
+      if (s.mode === 'html') { serveRawStory(res, s); return; }
+      // 纯文本故事：简单排版输出
+      const escText = String(s.content || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>');
+      const escTitle = String(s.title || '故事').replace(/[<>&"]/g, '');
+      const html = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n' +
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
+        '<title>' + escTitle + '</title>\n' +
+        '<style>body{font-family:"Noto Serif SC","STSong",serif;background:#faf6ef;color:#2c2416;line-height:2;max-width:720px;margin:0 auto;padding:48px 24px;font-size:16px;}h1{font-size:1.6rem;margin:0 0 1.5rem;}</style>\n' +
+        '</head>\n<body>\n<h1>' + escTitle + '</h1>\n' + escText + '\n</body>\n</html>';
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Security-Policy': 'sandbox',
+        'Cache-Control': 'no-cache'
+      });
+      res.end(html);
       return;
     }
 
