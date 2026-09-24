@@ -170,36 +170,46 @@ function randomNickname() {
   return pick(adjs) + pick(nouns) + pick(emos);
 }
 
-/** 评论输出映射（递归树形：任意层级回复均可带自己的 replies） */
+/** 评论输出映射（两级楼中楼：一级评论 + 扁平回复列表） */
 const commentOut = c => ({
   id: c.id,
   nickname: c.nickname,
   content: c.content,
   createdAt: c.createdAt,
-  replyToNickname: c.replyToNickname || '',
-  replies: (c.replies || []).map(commentOut),
+  replies: (c.replies || []).map(r => ({
+    id: r.id,
+    nickname: r.nickname,
+    content: r.content,
+    createdAt: r.createdAt,
+    replyToNickname: r.replyToNickname || '',
+  })),
 });
 
-/** 在评论树中递归查找目标节点并挂载新回复（不限层级），成功返回 true */
-const commentTreeReply = (nodes, replyTo, entry) => {
-  for (const n of nodes) {
-    if (String(n.id) === replyTo) {
-      entry.replyToNickname = n.nickname;
-      n.replies = n.replies || [];
-      n.replies.push(entry);
+/** 两级楼中楼：在评论里查找目标（一级或其回复），新回复统一挂到所属一级评论的 replies 末尾 */
+const commentReplyAttach = (comments, replyTo, entry) => {
+  for (let i = 0; i < comments.length; i++) {
+    const c = comments[i];
+    let found = null;
+    if (String(c.id) === replyTo) {
+      found = c;
+    } else {
+      for (const r of (c.replies || [])) {
+        if (String(r.id) === replyTo) { found = r; break; }
+      }
+    }
+    if (found) {
+      entry.replyToNickname = found.nickname;
+      c.replies = c.replies || [];
+      c.replies.push(entry);
       return true;
     }
-    if (n.replies && n.replies.length && commentTreeReply(n.replies, replyTo, entry)) return true;
   }
   return false;
 };
 
-/** 评论数 = 种子基数 + 树中全部评论/回复节点数（不限层级） */
-const commentsCount = s => (s.commentsBase || 0) + (function walk(nodes) {
-  let n = 0;
-  for (const c of nodes) { n += 1; if (c.replies && c.replies.length) n += walk(c.replies); }
-  return n;
-})(s.comments || []);
+/** 评论数 = 种子基数 + 一级评论数 + 各自回复数（两级） */
+const commentsCount = s => (s.commentsBase || 0) +
+  (s.comments || []).reduce((n, c) => n + 1 + (c.replies || []).length, 0);
 const hotScore = s => s.likes * 3 + commentsCount(s) * 5 + s.views * 0.5;
 
 /* ==================== 浏览量防刷（IP + 时间窗口去重） ==================== */
@@ -405,10 +415,10 @@ function handleApi(req, res, url, body) {
           createdAt: Math.floor(Date.now() / 1000),
         };
         if (replyTo) {
-          /* 楼中楼回复：replyTo 为目标评论或回复的 id，
-             回复挂到目标节点的 replies 下（递归查找，层级不限），并记录被回复人昵称 */
+          /* 两级楼中楼：replyTo 为目标评论或回复的 id，
+             回复统一挂在其所属一级评论的 replies 下，并记录被回复人昵称 */
           const comments = (s.comments || []).map(commentOut);
-          if (!commentTreeReply(comments, replyTo, entry)) {
+          if (!commentReplyAttach(comments, replyTo, entry)) {
             return fail(res, '要回复的评论不存在或已被删除', 404);
           }
           s.comments = comments;

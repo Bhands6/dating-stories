@@ -1834,6 +1834,39 @@
             cursor: not-allowed;
         }
 
+        /* 回复区折叠切换按钮 */
+        .replies-toggle {
+            margin-top: 10px;
+            border: none;
+            background: none;
+            padding: 4px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--primary);
+            cursor: pointer;
+            border-radius: 12px;
+            font-family: inherit;
+            transition: all 0.2s ease;
+        }
+
+        .replies-toggle:hover {
+            background: #fdf0f2;
+        }
+
+        /* 发评论/回复后新内容定位高亮（负 margin 抵消 padding，布局不跳动） */
+        @keyframes replyHighlight {
+            0% { background-color: #fdeef0; }
+            100% { background-color: transparent; }
+        }
+
+        .comment-item.flash,
+        .reply-item.flash {
+            margin: -4px;
+            padding: 4px;
+            border-radius: 10px;
+            animation: replyHighlight 1.8s ease;
+        }
+
         /* ===== Back to Top ===== */
         .back-top {
             position: fixed;
@@ -2426,42 +2459,8 @@
         const contentHtml = isHtmlMode
             ? '<iframe class="story-iframe" src="' + esc(rawUrl) + '" sandbox="allow-scripts" loading="lazy" title="故事原文"></iframe>'
             : nl2br(esc(s.content));
-        // 楼中楼回复：递归树形结构，回复挂在被回复节点下，层级不限
-        const replyBtn = (replyTo, nickname, isTop) =>
-            `<button class="reply-btn" data-reply-to="${esc(replyTo)}" data-nick="${esc(nickname)}"${isTop ? ' data-top="1"' : ''}>回复</button>`;
-        function renderReplyNode(r) {
-            const subReplies = (r.replies || []).length
-                ? `<div class="comment-replies">${r.replies.map(renderReplyNode).join('')}</div>` : '';
-            return `
-                <div class="reply-item">
-                    <div class="reply-avatar">${esc((r.nickname || '匿').charAt(0))}</div>
-                    <div class="reply-main">
-                        <div class="reply-head">
-                            <span class="reply-name">${esc(r.nickname)}</span>
-                            ${r.replyToNickname ? `<span class="reply-to">回复 @${esc(r.replyToNickname)}</span>` : ''}
-                            <span class="reply-time">${timeAgo(r.createdAt)}</span>
-                        </div>
-                        <div class="reply-text">${nl2br(esc(r.content))}</div>
-                        <div class="comment-actions">${replyBtn(r.id, r.nickname, false)}</div>
-                        <div class="reply-form-slot"></div>
-                        ${subReplies}
-                    </div>
-                </div>`;
-        }
-        const commentsHtml = (s.comments || []).map(c => `
-            <div class="comment-item">
-                <div class="comment-avatar">${esc((c.nickname || '匿').charAt(0))}</div>
-                <div class="comment-main">
-                    <div class="comment-head">
-                        <span class="comment-name">${esc(c.nickname)}</span>
-                        <span class="comment-time">${timeAgo(c.createdAt)}</span>
-                    </div>
-                    <div class="comment-text">${nl2br(esc(c.content))}</div>
-                    <div class="comment-actions">${replyBtn(c.id, c.nickname, true)}</div>
-                    <div class="reply-form-slot"></div>
-                    ${(c.replies || []).length ? `<div class="comment-replies">${c.replies.map(renderReplyNode).join('')}</div>` : ''}
-                </div>
-            </div>`).join('');
+        // 楼中楼回复：两级结构（一级评论 + 扁平回复列表，支持折叠），渲染函数为模块级
+        currentStory = s;
 
         modalBody.innerHTML = `
             ${tagHtml(s.tags)}
@@ -2485,7 +2484,7 @@
             </div>
             <div class="comments-section">
                 <h3>💬 评论</h3>
-                <div class="comment-list">${commentsHtml || '<div class="loading-tip" style="padding:12px 0;">还没有评论，来说第一句吧～</div>'}</div>
+                <div class="comment-list">${renderCommentListHtml() || '<div class="loading-tip" style="padding:12px 0;">还没有评论，来说第一句吧～</div>'}</div>
                 <div class="comment-form">
                     <input type="text" id="comment-nickname" placeholder="昵称（选填，不填将随机生成）" maxlength="20">
                     <textarea id="comment-content" placeholder="写下你的鼓励或共鸣…" maxlength="500"></textarea>
@@ -2519,44 +2518,151 @@
         }
         modalBody.querySelector('#comment-submit').addEventListener('click', () => submitComment(s.id));
 
-        /* 评论区事件委托：回复按钮展开内联表单 / 发送 / 收起 */
-        const commentList = modalBody.querySelector('.comment-list');
-        if (commentList) {
-            commentList.addEventListener('click', e => {
-                const btn = e.target.closest('.reply-btn');
-                if (btn) { toggleReplyForm(btn); return; }
-                const send = e.target.closest('.reply-send');
-                if (send) { submitReply(s, send.closest('.inline-reply-form')); return; }
-                const cancel = e.target.closest('.reply-cancel');
-                if (cancel) {
-                    const f = cancel.closest('.inline-reply-form');
-                    if (f) f.remove();
-                }
-            });
-        }
-        // 重新渲染后保持滚动位置在顶部
+        /* 评论区事件委托（绑在持久容器上，幂等）：折叠 / 回复 / 发送 / 收起 */
+        bindCommentListEvents();
+        // 首次打开弹窗保持滚动位置在顶部（发评论/回复走局部刷新，不会走到这里）
         modalBody.closest('.modal').scrollTop = 0;
     }
 
-    /* 展开或切换内联回复表单：表单插在被回复节点自身内容下方（跟随层级） */
+    /* ==================== 评论区（两级楼中楼 + 折叠 + 局部刷新） ==================== */
+    let currentStory = null;             // 当前弹窗故事数据（发评论/回复后局部刷新用）
+    const expandedReplies = new Set();   // 手动展开过的回复区（一级评论 id）
+    const collapsedReplies = new Set();  // 手动收起过的回复区
+
+    const commentReplyBtn = (replyTo, nickname, parent, isTop) =>
+        `<button class="reply-btn" data-reply-to="${esc(replyTo)}" data-nick="${esc(nickname)}" data-parent="${esc(parent)}"${isTop ? ' data-top="1"' : ''}>回复</button>`;
+
+    const renderReplyNode = (r, parentId) => `
+                <div class="reply-item" data-reply-id="${esc(r.id)}">
+                    <div class="reply-avatar">${esc((r.nickname || '匿').charAt(0))}</div>
+                    <div class="reply-main">
+                        <div class="reply-head">
+                            <span class="reply-name">${esc(r.nickname)}</span>
+                            ${r.replyToNickname ? `<span class="reply-to">回复 @${esc(r.replyToNickname)}</span>` : ''}
+                            <span class="reply-time">${timeAgo(r.createdAt)}</span>
+                        </div>
+                        <div class="reply-text">${nl2br(esc(r.content))}</div>
+                        <div class="comment-actions">${commentReplyBtn(r.id, r.nickname, parentId, false)}</div>
+                    </div>
+                </div>`;
+
+    /* 回复区展开判定：手动收起 > 手动展开 > 默认（≤2 条展开，≥3 条折叠） */
+    const repliesExpanded = (c) => collapsedReplies.has(c.id)
+        ? false
+        : (expandedReplies.has(c.id) || (c.replies || []).length <= 2);
+
+    function renderCommentListHtml() {
+        const comments = currentStory ? (currentStory.comments || []) : [];
+        return comments.map(c => {
+            const replies = c.replies || [];
+            let repliesBlock = '';
+            if (replies.length) {
+                if (repliesExpanded(c)) {
+                    repliesBlock = `<div class="comment-replies">${replies.map(r => renderReplyNode(r, c.id)).join('')}</div>` +
+                        (replies.length > 2 ? `<button class="replies-toggle" data-parent="${esc(c.id)}">收起回复 ▴</button>` : '');
+                } else {
+                    repliesBlock = `<button class="replies-toggle" data-parent="${esc(c.id)}">💬 查看 ${replies.length} 条回复 ▾</button>`;
+                }
+            }
+            return `
+            <div class="comment-item" data-comment-id="${esc(c.id)}">
+                <div class="comment-avatar">${esc((c.nickname || '匿').charAt(0))}</div>
+                <div class="comment-main">
+                    <div class="comment-head">
+                        <span class="comment-name">${esc(c.nickname)}</span>
+                        <span class="comment-time">${timeAgo(c.createdAt)}</span>
+                    </div>
+                    <div class="comment-text">${nl2br(esc(c.content))}</div>
+                    <div class="comment-actions">${commentReplyBtn(c.id, c.nickname, c.id, true)}</div>
+                    <div class="reply-form-slot"></div>
+                    ${repliesBlock}
+                </div>
+            </div>`; }).join('');
+    }
+
+    function bindCommentListEvents() {
+        // 委托绑在持久容器 modalBody 上（列表 DOM 重建不影响监听器），幂等只绑一次
+        if (modalBody.dataset.commentBound) return;
+        modalBody.dataset.commentBound = '1';
+        modalBody.addEventListener('click', e => {
+            if (!e.target.closest('.comment-list')) return;
+            const toggle = e.target.closest('.replies-toggle');
+            if (toggle) {
+                const pid = toggle.dataset.parent;
+                if (expandedReplies.has(pid)) { expandedReplies.delete(pid); collapsedReplies.add(pid); }
+                else { collapsedReplies.delete(pid); expandedReplies.add(pid); }
+                refreshCommentListDom();
+                return;
+            }
+            const btn = e.target.closest('.reply-btn');
+            if (btn) { toggleReplyForm(btn); return; }
+            const send = e.target.closest('.reply-send');
+            if (send) { submitReply(send.closest('.inline-reply-form')); return; }
+            const cancel = e.target.closest('.reply-cancel');
+            if (cancel) {
+                const f = cancel.closest('.inline-reply-form');
+                if (f) f.remove();
+            }
+        });
+    }
+
+    /* 用内存数据重建评论列表 DOM（折叠切换等，不发请求） */
+    function refreshCommentListDom() {
+        const list = modalBody.querySelector('.comment-list');
+        if (!list) return;
+        list.innerHTML = renderCommentListHtml() || '<div class="loading-tip" style="padding:12px 0;">还没有评论，来说第一句吧～</div>';
+    }
+
+    /* 发评论/回复成功后局部刷新：不重载弹窗（修回复后跳顶 bug），并定位高亮新内容 */
+    async function refreshComments(storyId, highlight) {
+        try {
+            const d = await api('story', { id: storyId, count: 0 });
+            currentStory = d.story;
+            const cnt = modalBody.querySelector('.modal-actions .story-time');
+            if (cnt) cnt.textContent = '💬 ' + fmtNum(currentStory.commentsCount) + ' 条评论';
+            refreshCommentListDom();
+            if (highlight) {
+                const sel = highlight.replyId
+                    ? '.reply-item[data-reply-id="' + CSS.escape(highlight.replyId) + '"]'
+                    : '.comment-item[data-comment-id="' + CSS.escape(highlight.commentId) + '"]';
+                const el = modalBody.querySelector(sel);
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    el.classList.add('flash');
+                    setTimeout(() => el.classList.remove('flash'), 1900);
+                }
+            }
+        } catch (e) {
+            await openStory(storyId); // 局部刷新失败兜底：整弹窗重载
+        }
+    }
+
+    /* 展开或切换内联回复表单：两级下表单统一放在所属一级评论下方 */
     function toggleReplyForm(btn) {
+        if (!currentStory) return;
         const replyTo = btn.dataset.replyTo;
-        const item = btn.closest('.reply-item') || btn.closest('.comment-item');
-        if (!item) return;
-        // 必须取节点自己（直接子级）的 main 与 slot，避免命中嵌套子回复的
-        const main = item.querySelector(':scope > .reply-main, :scope > .comment-main');
-        const slot = main && main.querySelector(':scope > .reply-form-slot');
-        if (!slot) return;
+        const parent = btn.dataset.parent || replyTo;
         // 同一目标再次点击 = 收起
-        const existing = slot.querySelector('.inline-reply-form');
-        if (existing && existing.dataset.replyTo === replyTo) { existing.remove(); return; }
-        // 全弹窗同时只保留一个打开的回复表单
-        modalBody.querySelectorAll('.inline-reply-form').forEach(f => f.remove());
+        const anyForm = modalBody.querySelector('.inline-reply-form');
+        if (anyForm && anyForm.dataset.replyTo === replyTo) { anyForm.remove(); return; }
+        // 回复区若处于折叠态，先展开再放表单；否则仅清理其他打开的表单
+        const parentComment = (currentStory.comments || []).find(c => String(c.id) === String(parent));
+        if (parentComment && !repliesExpanded(parentComment)) {
+            collapsedReplies.delete(String(parent));
+            expandedReplies.add(String(parent));
+            refreshCommentListDom();
+        } else {
+            modalBody.querySelectorAll('.inline-reply-form').forEach(f => f.remove());
+        }
+        const item = modalBody.querySelector('.comment-item[data-comment-id="' + CSS.escape(String(parent)) + '"]');
+        const slot = item && item.querySelector(':scope > .comment-main > .reply-form-slot');
+        if (!slot) return;
         const isTop = btn.dataset.top === '1';
         const nick = btn.dataset.nick || '';
         const form = document.createElement('div');
         form.className = 'inline-reply-form';
         form.dataset.replyTo = replyTo;
+        form.dataset.parent = String(parent);
         form.innerHTML = `
             <input type="text" class="reply-nick" placeholder="昵称（选填，不填将随机生成）" maxlength="20">
             <textarea class="reply-content" rows="2" maxlength="500" placeholder="${isTop ? '写下你的鼓励或共鸣…' : '回复 @' + esc(nick) + ' …'}"></textarea>
@@ -2568,8 +2674,8 @@
         form.querySelector('.reply-content').focus();
     }
 
-    async function submitReply(s, form) {
-        if (!form) return;
+    async function submitReply(form) {
+        if (!form || !currentStory) return;
         const nickEl = form.querySelector('.reply-nick');
         const textEl = form.querySelector('.reply-content');
         const content = textEl.value.trim();
@@ -2577,10 +2683,14 @@
         const btn = form.querySelector('.reply-send');
         btn.disabled = true;
         btn.textContent = '发送中…';
+        const parent = form.dataset.parent || '';
         try {
-            await api('comments', { id: s.id }, { nickname: nickEl.value.trim(), content, replyTo: form.dataset.replyTo });
+            const d = await api('comments', { id: currentStory.id }, { nickname: nickEl.value.trim(), content, replyTo: form.dataset.replyTo });
             toast('💕 回复成功！');
-            await openStory(s.id); // 重新加载详情与评论
+            // 展开该评论的回复区，局部刷新并高亮新回复（不跳顶）
+            expandedReplies.add(String(parent));
+            collapsedReplies.delete(String(parent));
+            await refreshComments(currentStory.id, { replyId: d.comment && d.comment.id });
         } catch (e) {
             toast('回复失败：' + e.message, 'error');
             btn.disabled = false;
@@ -2597,9 +2707,12 @@
         btn.disabled = true;
         btn.innerHTML = '发送中…';
         try {
-            await api('comments', { id }, { nickname: nickEl.value.trim(), content });
+            const d = await api('comments', { id }, { nickname: nickEl.value.trim(), content });
             toast('💕 评论成功！');
-            await openStory(id); // 重新加载详情与评论
+            nickEl.value = '';
+            textEl.value = '';
+            // 局部刷新并定位高亮新评论（不跳顶）
+            await refreshComments(id, { commentId: d.comment && d.comment.id });
         } catch (e) {
             toast('评论失败：' + e.message, 'error');
             btn.disabled = false;
