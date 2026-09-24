@@ -128,16 +128,7 @@ docker compose up -d --build
 | `feedback` | 提交反馈 |
 | `admin_feedback` / `admin_stories` | 管理接口（需 ADMIN_KEY） |
 
----
 
-## 🛣️ Roadmap
-
-- [ ] 故事图片上传
-- [ ] 评论回复与楼层
-- [ ] 管理页数据统计图表
-- [ ] SQLite 存储引擎可选（应对大数据量）
-
----
 
 ## 🤝 贡献
 
