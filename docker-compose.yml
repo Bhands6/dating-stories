@@ -1,0 +1,9 @@
+services:
+  yuanfen-stories:
+    build: .
+    container_name: yuanfen-stories
+    ports:
+      - "8010:80"          # 左边改成你想用的端口
+    volumes:
+      - ./data:/var/www/html/data   # 数据持久化（故事/评论/点赞都存这里）
+    restart: unless-stopped

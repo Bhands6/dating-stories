@@ -1,0 +1,6 @@
+.loomy-attachments/
+.check.js
+*.png
+*.zip
+.git
+.gitignore

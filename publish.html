@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💕</text></svg>">
+    <title>✏️ 发布故事 - 缘分故事屋</title>
+    <style>
+        /* ===== CSS Variables ===== */
+        :root {
+            --primary: #e8556d;
+            --primary-light: #ff7eb3;
+            --primary-dark: #c23555;
+            --secondary: #ff9a76;
+            --accent: #ffc3a0;
+            --bg: #fff5f5;
+            --card-bg: #ffffff;
+            --text: #2d2d3a;
+            --text-light: #6b6b80;
+            --text-lighter: #a0a0b8;
+            --border: #f0e0e5;
+            --shadow: 0 4px 20px rgba(232, 85, 109, 0.08);
+            --shadow-hover: 0 8px 32px rgba(232, 85, 109, 0.15);
+            --radius: 16px;
+            --radius-sm: 10px;
+            --gradient: linear-gradient(135deg, #ff9a76 0%, #e8556d 50%, #c23555 100%);
+            --gradient-soft: linear-gradient(135deg, #fff0f3 0%, #ffe0e8 100%);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+
+        /* ===== Background Decorations ===== */
+        .bg-decor { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; overflow: hidden; }
+        .bg-decor .circle { position: absolute; border-radius: 50%; opacity: 0.04; }
+        .bg-decor .circle:nth-child(1) { width: 600px; height: 600px; background: var(--primary); top: -200px; right: -150px; }
+        .bg-decor .circle:nth-child(2) { width: 400px; height: 400px; background: var(--secondary); bottom: -100px; left: -100px; }
+
+        /* ===== Floating Hearts ===== */
+        .hearts-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; overflow: hidden; }
+        .floating-heart { position: absolute; opacity: 0; animation: floatUp 8s infinite; font-size: 20px; color: var(--primary-light); }
+        .floating-heart:nth-child(1) { left: 10%; animation-delay: 0s; animation-duration: 7s; }
+        .floating-heart:nth-child(2) { left: 25%; animation-delay: 2s; animation-duration: 9s; }
+        .floating-heart:nth-child(3) { left: 50%; animation-delay: 4s; animation-duration: 6s; }
+        .floating-heart:nth-child(4) { left: 75%; animation-delay: 1s; animation-duration: 8s; }
+        .floating-heart:nth-child(5) { left: 90%; animation-delay: 3s; animation-duration: 7s; }
+        .floating-heart:nth-child(6) { left: 40%; animation-delay: 5s; animation-duration: 10s; }
+
+        @keyframes floatUp {
+            0% { opacity: 0; transform: translateY(100vh) rotate(0deg) scale(0.5); }
+            10% { opacity: 0.6; }
+            90% { opacity: 0.3; }
+            100% { opacity: 0; transform: translateY(-100px) rotate(45deg) scale(1.2); }
+        }
+
+        /* ===== Navigation ===== */
+        .navbar {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 1000; padding: 0 24px;
+            transition: all 0.3s ease;
+            background: rgba(255, 245, 245, 0.8);
+            -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(232, 85, 109, 0.06);
+        }
+        .navbar.scrolled { box-shadow: 0 2px 20px rgba(232, 85, 109, 0.1); }
+        .nav-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 72px; }
+        .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; cursor: pointer; }
+        .logo-icon {
+            width: 42px; height: 42px; background: var(--gradient); border-radius: 12px;
+            display: flex; align-items: center; justify-content: center; font-size: 22px;
+            box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3); transition: transform 0.3s ease;
+        }
+        .logo:hover .logo-icon { transform: rotate(-10deg) scale(1.1); }
+        .logo-text { font-size: 22px; font-weight: 700; background: var(--gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .logo-sub { font-size: 11px; color: var(--text-lighter); margin-top: -2px; letter-spacing: 1px; }
+        .nav-links { display: flex; align-items: center; gap: 8px; list-style: none; }
+        .nav-links a {
+            text-decoration: none; color: var(--text-light); padding: 8px 16px; border-radius: 25px;
+            font-size: 14px; font-weight: 500; transition: all 0.3s ease;
+        }
+        .nav-links a:hover { color: var(--primary); background: rgba(232, 85, 109, 0.06); }
+        .nav-links a.active { color: white; background: var(--gradient); box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3); }
+        .nav-cta {
+            padding: 10px 24px !important; border-radius: 25px !important;
+            background: var(--gradient) !important; color: white !important; font-weight: 600 !important;
+            box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3); transition: all 0.3s ease !important;
+        }
+        .nav-cta:hover { transform: translateY(-2px) !important; box-shadow: 0 6px 25px rgba(232, 85, 109, 0.4) !important; }
+
+        /* ===== Hero ===== */
+        .hero { position: relative; padding: 30px 24px 30px; text-align: center; z-index: 1; }
+        .back-wrap { max-width: 1200px; margin: 96px auto 0; padding: 0 24px; }
+        .back-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 9px 24px; background: white; border: 1.5px solid var(--border);
+            border-radius: 25px; color: var(--text-light); font-size: 14px; font-weight: 600;
+            text-decoration: none; transition: all 0.3s ease; box-shadow: 0 4px 20px rgba(232, 85, 109, 0.08);
+        }
+        .back-btn:hover { border-color: var(--primary); color: var(--primary); transform: translateX(-3px); }
+        .hero-inner { max-width: 800px; margin: 0 auto; }
+        .hero-badge {
+            display: inline-flex; align-items: center; gap: 8px; padding: 8px 20px;
+            background: rgba(232, 85, 109, 0.08); border: 1px solid rgba(232, 85, 109, 0.12);
+            border-radius: 50px; font-size: 13px; color: var(--primary); font-weight: 500;
+            margin-bottom: 24px; animation: fadeInDown 0.8s ease;
+        }
+        .hero-badge .dot { width: 8px; height: 8px; background: var(--primary); border-radius: 50%; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.5); } }
+        .hero h1 { font-size: 46px; font-weight: 800; line-height: 1.2; margin-bottom: 16px; animation: fadeInDown 0.8s ease 0.1s both; }
+        .hero h1 .highlight {
+            background: var(--gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text; position: relative;
+        }
+        .hero h1 .highlight::after {
+            content: ''; position: absolute; bottom: 4px; left: 0; right: 0; height: 12px;
+            background: rgba(232, 85, 109, 0.1); border-radius: 6px; z-index: -1;
+        }
+        .hero p { font-size: 17px; color: var(--text-light); max-width: 560px; margin: 0 auto; animation: fadeInDown 0.8s ease 0.2s both; }
+        @keyframes fadeInDown { from { opacity: 0; transform: translateY(-30px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* ===== Section ===== */
+        .section { position: relative; z-index: 1; padding: 30px 24px 80px; }
+        .section-inner { max-width: 860px; margin: 0 auto; }
+
+        /* ===== Story Composer ===== */
+        .composer {
+            background: var(--card-bg); border-radius: 24px; padding: 36px; box-shadow: var(--shadow);
+            border: 1px solid var(--border); transition: all 0.3s ease; position: relative; overflow: hidden;
+        }
+        .composer::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: var(--gradient); }
+        .composer:hover { box-shadow: var(--shadow-hover); }
+        .composer-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+        .composer-title { display: flex; align-items: center; gap: 12px; }
+        .composer-avatar {
+            width: 44px; height: 44px; background: var(--gradient-soft); border: 2px solid var(--border);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px;
+        }
+        .composer-title-text { font-size: 16px; font-weight: 600; }
+        .composer-title-sub { font-size: 12px; color: var(--text-lighter); }
+        .editor-tabs { display: flex; gap: 4px; background: var(--bg); padding: 4px; border-radius: 12px; }
+        .editor-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .upload-btn {
+            display: none; align-items: center; gap: 5px;
+            padding: 8px 16px; border: 1.5px dashed var(--border); border-radius: 12px;
+            background: white; color: var(--text-light); font-size: 12px; font-weight: 600;
+            cursor: pointer; transition: all 0.3s ease;
+        }
+        .upload-btn.show { display: inline-flex; }
+        .upload-btn:hover { border-color: var(--primary-light); color: var(--primary); background: rgba(232, 85, 109, 0.04); }
+        .editor-tab {
+            padding: 8px 20px; border: none; background: transparent; border-radius: 8px;
+            font-size: 13px; font-weight: 600; color: var(--text-light); cursor: pointer; transition: all 0.3s ease;
+        }
+        .editor-tab.active { background: white; color: var(--primary); box-shadow: 0 2px 8px rgba(232, 85, 109, 0.1); }
+        .composer input[type="text"] {
+            width: 100%; padding: 14px 20px; border: 2px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 16px;
+            transition: border-color 0.3s ease; background: #fafafa;
+        }
+        .composer input[type="text"]:focus { outline: none; border-color: var(--primary-light); background: white; }
+        .composer input[type="text"]::placeholder { color: var(--text-lighter); font-weight: 400; }
+        .composer textarea {
+            width: 100%; min-height: 260px; padding: 18px 20px; border: 2px solid var(--border);
+            border-radius: var(--radius-sm); font-size: 15px; line-height: 1.8; color: var(--text);
+            resize: vertical; transition: border-color 0.3s ease; background: #fafafa; font-family: inherit;
+        }
+        .composer textarea:focus { outline: none; border-color: var(--primary-light); background: white; }
+        .composer textarea::placeholder { color: var(--text-lighter); }
+        .composer textarea.html-mode {
+            font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+            font-size: 14px; background: #1e1e2e; color: #cdd6f4; border-color: #313244;
+        }
+        .composer textarea.html-mode:focus { border-color: var(--primary-light); }
+        .composer-footer { display: flex; flex-direction: column; align-items: stretch; gap: 16px; margin-top: 20px; }
+        .composer-options { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .option-btn {
+            display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px;
+            border: 1.5px solid var(--border); border-radius: 25px; background: white;
+            color: var(--text-light); font-size: 13px; cursor: pointer; transition: all 0.3s ease;
+        }
+        .option-btn:hover { border-color: var(--primary-light); color: var(--primary); background: rgba(232, 85, 109, 0.04); }
+        .option-btn.active { border-color: var(--primary); color: var(--primary); background: rgba(232, 85, 109, 0.06); }
+        .preview-btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+            padding: 12px 0; width: 180px;
+            border: 1.5px solid var(--border); border-radius: 25px; background: white;
+            color: var(--text-light); font-size: 15px; font-weight: 600; cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .preview-btn:hover { border-color: var(--secondary); color: var(--secondary); }
+
+        /* 用户自定义 HTML 的样式作用域容器（与服务端一致） */
+        .story-scope { position: relative; z-index: 1; }
+        .story-scope img { max-width: 100%; }
+        .story-scope blockquote {
+            border-left: 3px solid var(--primary-light); background: var(--gradient-soft);
+            padding: 12px 16px; border-radius: 0 10px 10px 0; margin: 12px 0;
+        }
+        .submit-btn {
+            padding: 12px 0; width: 180px; background: var(--gradient); color: white; border: 1.5px solid transparent; border-radius: 25px;
+            font-size: 15px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3);
+            transition: all 0.3s ease; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .submit-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(232, 85, 109, 0.4); }
+        .submit-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .composer-actions { display: flex; align-items: center; justify-content: center; gap: 16px; }
+        .composer-tip { margin-top: 16px; font-size: 12px; color: var(--text-lighter); text-align: center; }
+
+        /* ===== Success View ===== */
+        .success-card {
+            background: var(--card-bg); border-radius: 24px; box-shadow: var(--shadow-hover);
+            border: 1px solid var(--border); text-align: center; padding: 70px 40px;
+            animation: successIn 0.5s cubic-bezier(0.34, 1.4, 0.64, 1);
+        }
+        @keyframes successIn { from { opacity: 0; transform: translateY(30px) scale(0.95); } to { opacity: 1; transform: none; } }
+        .success-card .big-emoji { font-size: 76px; margin-bottom: 20px; display: block; animation: pulse 2s infinite; }
+        .success-card h2 { font-size: 28px; font-weight: 800; margin-bottom: 10px; }
+        .success-card p { color: var(--text-light); margin-bottom: 30px; }
+        .success-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+
+        /* ===== Footer ===== */
+        .footer { position: relative; z-index: 1; margin-top: 40px; padding: 50px 24px 30px; background: white; border-top: 1px solid var(--border); }
+        .footer-inner { max-width: 1200px; margin: 0 auto; text-align: center; }
+        .footer-brand .logo { justify-content: center; display: inline-flex; margin-bottom: 16px; }
+        .footer-brand p { font-size: 14px; color: var(--text-light); }
+        .footer-bottom { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-lighter); }
+        .footer-bottom .heart { color: var(--primary); display: inline-block; animation: heartbeat 1.5s infinite; }
+        @keyframes heartbeat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.2); } }
+
+        /* ===== Back to Top ===== */
+        .back-top {
+            position: fixed;
+            right: 28px;
+            bottom: 28px;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: var(--gradient);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            font-weight: 700;
+            box-shadow: 0 6px 20px rgba(232, 85, 109, 0.35);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(16px);
+            transition: all 0.3s ease;
+            z-index: 1500;
+        }
+        .back-top.show { opacity: 1; visibility: visible; transform: translateY(0); }
+        .back-top:hover { transform: translateY(-4px); box-shadow: 0 10px 28px rgba(232, 85, 109, 0.45); }
+
+        /* ===== Toast ===== */
+        .toast-container { position: fixed; top: 90px; right: 24px; z-index: 3000; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+        .toast {
+            padding: 12px 20px; border-radius: 12px; background: white; box-shadow: var(--shadow-hover);
+            border-left: 3px solid var(--primary); font-size: 14px; color: var(--text);
+            animation: toastIn 0.35s cubic-bezier(0.34, 1.4, 0.64, 1); max-width: 320px;
+        }
+        .toast.error { border-left-color: #d93025; }
+        .toast.out { opacity: 0; transform: translateX(30px); transition: all 0.35s ease; }
+        @keyframes toastIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
+
+        /* ===== Scrollbar ===== */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: rgba(232, 85, 109, 0.2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(232, 85, 109, 0.4); }
+
+        /* ===== Responsive ===== */
+        @media (max-width: 768px) {
+            .nav-links { display: none; }
+            .hero h1 { font-size: 32px; }
+            .hero p { font-size: 15px; }
+            .composer { padding: 24px; }
+            .composer-header { flex-direction: column; gap: 16px; align-items: flex-start; }
+            .composer-footer { flex-direction: column; gap: 16px; align-items: stretch; }
+            .composer-actions { width: 100%; }
+            .submit-btn { width: 100%; justify-content: center; }
+            .preview-btn { width: 100%; }
+            .toast-container { right: 12px; left: 12px; }
+            .toast { max-width: none; }
+            .success-actions .btn { width: 100%; justify-content: center; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Background Decorations -->
+    <div class="bg-decor">
+        <div class="circle"></div>
+        <div class="circle"></div>
+    </div>
+
+    <!-- Floating Hearts -->
+    <div class="hearts-container">
+        <div class="floating-heart">💕</div>
+        <div class="floating-heart">💗</div>
+        <div class="floating-heart">💘</div>
+        <div class="floating-heart">💖</div>
+        <div class="floating-heart">💗</div>
+        <div class="floating-heart">💕</div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="navbar" id="navbar">
+        <div class="nav-inner">
+            <a class="logo" href="index.html">
+                <div class="logo-icon">💕</div>
+                <div>
+                    <div class="logo-text">缘分故事屋</div>
+                    <div class="logo-sub">DATING STORIES</div>
+                </div>
+            </a>
+            <ul class="nav-links">
+                <li><a href="index.html">首页</a></li>
+                <li><a href="index.html#stories">故事广场</a></li>
+                <li><a href="index.html#hot">热门精选</a></li>
+                <li><a href="index.html#about">关于</a></li>
+                <li><a href="publish.html" class="nav-cta active">✏️ 发布故事</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="back-wrap">
+        <a class="back-btn" href="index.html" onclick="if (history.length > 1 && document.referrer) { event.preventDefault(); history.back(); }">← 返回</a>
+    </div>
+
+    <!-- Hero -->
+    <section class="hero">
+        <div class="hero-inner">
+            <div class="hero-badge">
+                <span class="dot"></span>
+                匿名发布 · 无需注册登录
+            </div>
+            <h1>写下你的<span class="highlight">故事</span></h1>
+            <p>甜蜜的、搞笑的、感动的、吐槽的——让每一段经历都有被倾听的机会。</p>
+        </div>
+    </section>
+
+    <!-- Composer Section -->
+    <section class="section" id="compose-section">
+        <div class="section-inner">
+            <div class="composer" id="compose">
+                <div class="composer-header">
+                    <div class="composer-title">
+                        <div class="composer-avatar">✍️</div>
+                        <div>
+                            <div class="composer-title-text">分享你的故事</div>
+                            <div class="composer-title-sub">匿名发布，无需登录</div>
+                        </div>
+                    </div>
+                    <div class="editor-tools">
+                        <div class="editor-tabs">
+                            <button class="editor-tab active" onclick="switchEditor('text')">📝 纯文本</button>
+                            <button class="editor-tab" onclick="switchEditor('html')">🌐 HTML</button>
+                        </div>
+                        <button class="upload-btn" id="upload-btn" onclick="document.getElementById('html-file').click()" title="导入本地 HTML 文件">📄 上传 HTML 文件</button>
+                        <input type="file" id="html-file" accept=".html,.htm,text/html" style="display:none;">
+                    </div>
+                </div>
+                <input type="text" placeholder="你的昵称（选填，不填将随机生成）" id="story-nickname" maxlength="20">
+                <input type="text" placeholder="给你的故事起个标题吧..." id="story-title" maxlength="60">
+                <textarea id="story-content" placeholder="在这里写下你的相亲故事...&#10;&#10;比如：&#10;是怎么认识的？&#10;见面聊了什么？&#10;有没有什么有趣的瞬间？&#10;结局如何？"></textarea>
+                <div class="composer-footer">
+                    <div class="composer-options">
+                        <button class="option-btn active" data-tag="daily" onclick="selectTag(this)">📝 日常</button>
+                        <button class="option-btn" data-tag="sweet" onclick="selectTag(this)">💕 甜蜜</button>
+                        <button class="option-btn" data-tag="funny" onclick="selectTag(this)">😂 搞笑</button>
+                        <button class="option-btn" data-tag="touching" onclick="selectTag(this)">💖 感动</button>
+                        <button class="option-btn" data-tag="complain" onclick="selectTag(this)">💔 吐槽</button>
+                        <button class="option-btn" data-tag="yidi" onclick="selectTag(this)">🌊 异地相亲</button>
+                        <button class="option-btn" data-tag="chujian" onclick="selectTag(this)">👋 初次见面</button>
+                        <button class="option-btn" data-tag="liaotian" onclick="selectTag(this)">💬 聊天记录</button>
+                        <button class="option-btn" data-tag="jiaolv" onclick="selectTag(this)">😰 年龄焦虑</button>
+                        <button class="option-btn" data-tag="cuihun" onclick="selectTag(this)">📞 父母催婚</button>
+                        <button class="option-btn" data-tag="jianjia" onclick="selectTag(this)">🏠 见家长</button>
+                        <button class="option-btn" data-tag="yilian" onclick="selectTag(this)">🌙 异地恋</button>
+                        <button class="option-btn" data-tag="shanhun" onclick="selectTag(this)">💍 闪婚</button>
+                    </div>
+                    <div class="composer-actions">
+                        <button class="preview-btn" id="previewBtn" onclick="togglePreview()">👁️ 预览</button>
+                        <button class="submit-btn" id="submit-btn">💕 发布故事</button>
+                    </div>
+                </div>
+                <div class="composer-tip">🌸 发布后将在首页「故事广场」展示，请尊重他人、真实分享</div>
+            </div>
+
+            <!-- Success View -->
+            <div class="success-card" id="success-view" style="display:none;">
+                <span class="big-emoji">🎉</span>
+                <h2>发布成功！</h2>
+                <p>你的故事已经上线，去首页「故事广场」看看吧～</p>
+                <div class="success-actions">
+                    <a href="index.html?filter=new#stories" class="btn submit-btn" style="text-decoration:none;">📖 查看我的故事</a>
+                    <button class="preview-btn" id="write-again" style="margin-right:0;">✏️ 再写一篇</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-inner">
+            <div class="footer-brand">
+                <a class="logo" href="index.html">
+                    <div class="logo-icon">💕</div>
+                    <div>
+                        <div class="logo-text">缘分故事屋</div>
+                        <div class="logo-sub">DATING STORIES</div>
+                    </div>
+                </a>
+                <p>每一段缘分都值得被记录。在这里分享你的相亲故事，让后来的人知道，爱情有很多种样子。</p>
+            </div>
+            <div class="footer-bottom">
+                <p>© 2025 缘分故事屋 · Made with <span class="heart">❤</span> · 每一个故事都值得被听见</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Toast -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Back to Top -->
+    <button class="back-top" id="back-top" title="返回顶部" aria-label="返回顶部">↑</button>
+
+    <script>
+    'use strict';
+    const $ = s => document.querySelector(s);
+    const $$ = s => Array.from(document.querySelectorAll(s));
+
+    // 返回顶部
+    const backTop = document.getElementById('back-top');
+    window.addEventListener('scroll', () => {
+        backTop.classList.toggle('show', window.scrollY > 400);
+    }, { passive: true });
+    backTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function nl2br(s) { return String(s).replace(/\n/g, '<br>'); }
+
+    function toast(msg, type) {
+        const box = document.createElement('div');
+        box.className = 'toast' + (type === 'error' ? ' error' : '');
+        box.textContent = msg;
+        $('#toast-container').appendChild(box);
+        setTimeout(() => {
+            box.classList.add('out');
+            setTimeout(() => box.remove(), 400);
+        }, 2600);
+    }
+
+    async function api(route, params, body) {
+        const qs = params ? '&' + new URLSearchParams(params).toString() : '';
+        const opt = body !== undefined
+            ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+            : undefined;
+        const r = await fetch('api.php?route=' + encodeURIComponent(route) + qs, opt);
+        const data = await r.json();
+        if (!data.ok) throw new Error(data.error || '请求失败');
+        return data;
+    }
+
+    /* ===== 标签单选 ===== */
+    function selectTag(btn) {
+        document.querySelectorAll('.option-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    }
+
+    /* ===== 编辑器切换 ===== */
+    function switchEditor(mode) {
+        const tabs = document.querySelectorAll('.editor-tab');
+        const textarea = document.getElementById('story-content');
+        const uploadBtn = document.getElementById('upload-btn');
+        tabs.forEach(tab => tab.classList.remove('active'));
+        // 「上传 HTML 文件」按钮仅 HTML 模式显示
+        if (uploadBtn) uploadBtn.classList.toggle('show', mode === 'html');
+
+        if (mode === 'text') {
+            tabs[0].classList.add('active');
+            textarea.classList.remove('html-mode');
+            textarea.placeholder = '在这里写下你的相亲故事...\n\n比如：\n是怎么认识的？\n见面聊了什么？\n有没有什么有趣的瞬间？\n结局如何？';
+        } else {
+            tabs[1].classList.add('active');
+            textarea.classList.add('html-mode');
+            textarea.placeholder = '<!-- 在这里编写HTML内容，或点击上方「上传 HTML 文件」导入 -->\n\n<h2>我的相亲故事</h2>\n<p>那是一个阳光明媚的下午...</p>\n\n<div style="padding: 10px; background: #fff0f3; border-radius: 8px;">\n    <strong>甜蜜瞬间：</strong>他紧张到把咖啡打翻了...\n</div>';
+        }
+    }
+
+    /* ===== 导入本地 HTML 文件 ===== */
+    function handleHtmlFile(file) {
+        if (!file) return;
+        const isHtml = /\.(html?|htm)$/i.test(file.name) || file.type === 'text/html';
+        if (!isHtml) { toast('请选择 .html 或 .htm 文件', 'error'); return; }
+        if (file.size > 500 * 1024) { toast('文件太大啦，最多支持 500KB', 'error'); return; }
+        file.text().then(text => {
+            if (!text.trim()) { toast('这个文件是空的', 'error'); return; }
+            // 先收集全文（含 <head>）里的 <style> 样式表，导入时一并保留
+            const styles = [];
+            text = text.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (m, css) => {
+                styles.push(css);
+                return '';
+            });
+            // 若是完整 HTML 文档，提取 <body> 里的正文部分
+            const bodyMatch = text.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+            let content = (bodyMatch ? bodyMatch[1] : text)
+                .replace(/<!DOCTYPE[^>]*>/gi, '')
+                .replace(/<\/?(html|head)[^>]*>/gi, '')
+                .trim();
+            // 文件里的样式表放到内容开头，发布后样式照常生效
+            if (styles.length) {
+                content = styles.map(c => '<style>' + c.trim() + '</style>').join('\n') + '\n' + content;
+            }
+            if (!content.trim()) { toast('没在文件里找到可用的正文内容', 'error'); return; }
+            const ta = document.getElementById('story-content');
+            if (ta.value.trim() && !confirm('导入「' + file.name + '」会替换当前编辑器里的内容，确定继续吗？')) return;
+            ta.value = content;
+            switchEditor('html');
+            toast(styles.length
+                ? '📄 已导入 ' + file.name + '（含 ' + styles.length + ' 段样式表）'
+                : '📄 已导入 ' + file.name + '（文件未含样式表，如需样式请在内容里加 <style>）');
+        }).catch(() => toast('文件读取失败，请重试', 'error'));
+    }
+
+    document.getElementById('html-file').addEventListener('change', function () {
+        if (this.files && this.files[0]) handleHtmlFile(this.files[0]);
+        this.value = ''; // 允许重复选择同一个文件
+    });
+
+    /* ===== 富文本粘贴：HTML 模式下从网页/文档复制的内容保留排版标签 ===== */
+    document.getElementById('story-content').addEventListener('paste', function (e) {
+        if (!this.classList.contains('html-mode')) return; // 纯文本模式走系统默认
+        const cb = e.clipboardData;
+        if (!cb) return;
+        const html = cb.getData('text/html');
+        // 剪贴板里没有富文本（纯文字复制）时走默认粘贴
+        if (!html || !/<[a-z][\s\S]*>/i.test(html)) return;
+        e.preventDefault();
+        // 轻量清理：去危险标签与属性，保留结构和内联样式（发布时服务端还会再净化）
+        let clean = html
+            .replace(/<\s*(script|iframe|object|embed|form|link|meta)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
+            .replace(/<\s*\/?\s*(script|iframe|object|embed|form|link|meta|input|select|textarea|button)\b[^>]*>/gi, '')
+            .replace(/<!--[\s\S]*?-->/g, '')
+            .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+            .replace(/(href|src)\s*=\s*("|')\s*(javascript|vbscript|data):[^"']*/gi, '$1=$2#')
+            .replace(/<!--[\s\S]*?-->/g, '')
+            .trim();
+        if (!clean) { toast('剪贴板里没有可用的 HTML 内容', 'error'); return; }
+        // 插入到光标处（替换选中内容）
+        const start = this.selectionStart, end = this.selectionEnd;
+        this.value = this.value.slice(0, start) + clean + this.value.slice(end);
+        const pos = start + clean.length;
+        this.setSelectionRange(pos, pos);
+        toast('📋 已按 HTML 格式粘贴（保留了排版标签），点「👁️ 预览」看效果');
+    });
+
+    /* ===== 预览 ===== */
+    function togglePreview() {
+        const textarea = document.getElementById('story-content');
+        const btn = document.getElementById('previewBtn');
+
+        if (textarea.style.display === 'none') {
+            textarea.style.display = '';
+            document.getElementById('html-preview')?.remove();
+            btn.innerHTML = '👁️ 预览';
+            return;
+        }
+
+        const isHtml = textarea.classList.contains('html-mode');
+        if (!textarea.value.trim()) { toast('先写点内容再预览吧～', 'error'); return; }
+
+        textarea.style.display = 'none';
+        const preview = document.createElement('div');
+        preview.id = 'html-preview';
+        preview.style.cssText = 'min-height:260px;';
+        if (isHtml) {
+            // HTML 模式：沙箱 iframe 渲染，样式效果与发布后一致
+            const frame = document.createElement('iframe');
+            frame.style.cssText = 'width:100%;height:60vh;border:2px solid #f0e0e5;border-radius:10px;background:white;';
+            frame.setAttribute('sandbox', 'allow-scripts');
+            frame.srcdoc = '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>html,body{margin:0;padding:16px;}</style></head><body>' + textarea.value + '</body></html>';
+            preview.appendChild(frame);
+        } else {
+            preview.style.cssText += 'padding:18px 20px;border:2px solid #f0e0e5;border-radius:10px;background:#fafafa;overflow:auto;font-size:15px;line-height:1.8;';
+            preview.innerHTML = nl2br(esc(textarea.value));
+        }
+        textarea.parentNode.insertBefore(preview, textarea.nextSibling);
+        btn.innerHTML = '✏️ 编辑';
+    }
+
+    function scopeCssPreview(css, scope) {
+        css = sanitizeCssPreview(css);
+        let out = '';
+        const len = css.length;
+        let i = 0;
+        while (i < len) {
+            const open = css.indexOf('{', i);
+            const close = css.indexOf('}', i);
+            if (open === -1 && close === -1) { out += css.slice(i); break; }
+            if (close !== -1 && (open === -1 || close < open)) { out += css.slice(i, close + 1); i = close + 1; continue; }
+            const selector = css.slice(i, open).trim();
+            let depth = 1, j = open + 1;
+            while (j < len && depth > 0) {
+                if (css[j] === '{') depth++;
+                else if (css[j] === '}') depth--;
+                j++;
+            }
+            const body = css.slice(open + 1, j - 1);
+            if (/^@keyframes/i.test(selector) || /^@font-face/i.test(selector)) {
+                out += selector + '{' + body + '}';
+            } else if (/^@media/i.test(selector)) {
+                out += selector + '{' + scopeCssPreview(body, scope) + '}';
+            } else {
+                const scoped = selector.split(',').map(s => {
+                    s = s.trim();
+                    if (!s) return s;
+                    if (/^(html|body)\b/i.test(s)) return s.replace(/^(html|body)\b/i, () => scope);
+                    return scope + ' ' + s;
+                }).join(', ');
+                out += scoped + '{' + body + '}';
+            }
+            i = j;
+        }
+        return out;
+    }
+
+    function scopeUserHtml(html) {
+        // 提取 <style> 块做作用域化后放回，正文包上 .story-scope 容器
+        const styles = [];
+        html = html.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (m, css) => {
+            styles.push(css);
+            return '<!--YSSTYLE' + (styles.length - 1) + 'YS-->';
+        });
+        html = html.replace(/<!--YSSTYLE(\d+)YS-->/g, (m, idx) => '<style>' + scopeCssPreview(styles[Number(idx)] || '', '.story-scope') + '</style>');
+        return '<div class="story-scope">' + html + '</div>';
+    }
+
+    /* ===== 预览 ===== */
+    function togglePreview() {
+        const textarea = document.getElementById('story-content');
+        const btn = document.getElementById('previewBtn');
+
+        if (textarea.style.display === 'none') {
+            textarea.style.display = '';
+            document.getElementById('html-preview')?.remove();
+            btn.innerHTML = '👁️ 预览';
+            return;
+        }
+
+        const isHtml = textarea.classList.contains('html-mode');
+        if (!textarea.value.trim()) { toast('先写点内容再预览吧～', 'error'); return; }
+
+        textarea.style.display = 'none';
+        const preview = document.createElement('div');
+        preview.id = 'html-preview';
+        preview.style.cssText = 'min-height:260px;padding:18px 20px;border:2px solid #f0e0e5;border-radius:10px;background:#fafafa;overflow:auto;font-size:15px;line-height:1.8;';
+        // HTML 模式：包上作用域容器并隔离用户样式，预览效果与发布后一致
+        preview.innerHTML = isHtml ? scopeUserHtml(textarea.value) : nl2br(esc(textarea.value));
+        textarea.parentNode.insertBefore(preview, textarea.nextSibling);
+        btn.innerHTML = '✏️ 编辑';
+    }
+
+    /* ===== 发布 ===== */
+    async function submitStory() {
+        const titleEl = $('#story-title');
+        const nickEl = $('#story-nickname');
+        const contentEl = $('#story-content');
+        const btn = $('#submit-btn');
+
+        const title = titleEl.value.trim();
+        const content = contentEl.value.trim();
+        const mode = contentEl.classList.contains('html-mode') ? 'html' : 'text';
+        const tags = $$('.option-btn.active').map(b => b.dataset.tag);
+
+        if (!title) { toast('先给故事起个标题吧～', 'error'); titleEl.focus(); return; }
+        if (!content) { toast('故事内容不能为空哦～', 'error'); contentEl.focus(); return; }
+
+        btn.disabled = true;
+        btn.innerHTML = '发布中…';
+        try {
+            const d = await api('stories', null, { title, content, mode, tags, nickname: nickEl.value.trim() });
+            // 记住"我发布的故事"的删除凭证（仅存在本机浏览器）
+            try {
+                const myKeys = JSON.parse(localStorage.getItem('fs_my_keys') || '{}');
+                if (d.story && d.story.editKey) {
+                    myKeys[d.story.id] = d.story.editKey;
+                    localStorage.setItem('fs_my_keys', JSON.stringify(myKeys));
+                }
+            } catch (e) { /* 忽略 */ }
+            toast('💕 发布成功！正在打开你的故事…');
+            // 跳转到首页，自动切「最新」并打开自己刚发布的故事
+            setTimeout(() => {
+                location.href = 'index.html?filter=new&story=' + d.story.id + '#stories';
+            }, 600);
+        } catch (e) {
+            toast('发布失败：' + e.message, 'error');
+            btn.disabled = false;
+            btn.innerHTML = '💕 发布故事';
+        }
+    }
+
+    function resetComposer() {
+        $('#story-title').value = '';
+        $('#story-nickname').value = '';
+        $('#story-content').value = '';
+        $$('.option-btn.active').forEach(b => b.classList.remove('active'));
+        switchEditor('text');
+        $('#success-view').style.display = 'none';
+        $('#compose-section').style.display = '';
+        const btn = $('#submit-btn');
+        btn.disabled = false;
+        btn.innerHTML = '💕 发布故事';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    $('#submit-btn').addEventListener('click', submitStory);
+
+    /* ===== 导航滚动效果 ===== */
+    const navbar = document.getElementById('navbar');
+    window.addEventListener('scroll', () => {
+        if (window.scrollY > 50) navbar.classList.add('scrolled');
+        else navbar.classList.remove('scrolled');
+    }, { passive: true });
+    </script>
+</body>
+</html>

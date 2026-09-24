@@ -1,0 +1,13 @@
+# 附件与临时文件
+.loomy-attachments/
+*.log
+*.png
+
+# 运行时数据（部署后首次访问自动生成；种子数据 seed.json 保留在仓库）
+data/stories.json
+data/feedback.json
+data/views_log.json
+
+# 系统文件
+Thumbs.db
+.DS_Store

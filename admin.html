@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💕</text></svg>">
+    <title>站长管理 - 反馈箱 | 缘分故事屋</title>
+    <style>
+        :root {
+            --primary: #e8556d;
+            --primary-light: #ff7eb3;
+            --bg: #fff5f5;
+            --card-bg: #ffffff;
+            --text: #2d2d3a;
+            --text-light: #6b6b80;
+            --text-lighter: #a0a0b8;
+            --border: #f0e0e5;
+            --shadow: 0 4px 20px rgba(232, 85, 109, 0.08);
+            --shadow-hover: 0 8px 32px rgba(232, 85, 109, 0.15);
+            --gradient: linear-gradient(135deg, #ff9a76 0%, #e8556d 50%, #c23555 100%);
+            --gradient-soft: linear-gradient(135deg, #fff0f3 0%, #ffe0e8 100%);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background: var(--bg); color: var(--text); line-height: 1.7; overflow-x: hidden;
+            min-height: 100vh;
+        }
+        .navbar {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 1000; padding: 0 24px;
+            background: rgba(255, 245, 245, 0.85); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(232, 85, 109, 0.06);
+        }
+        .nav-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 72px; }
+        .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+        .logo-icon { width: 42px; height: 42px; background: var(--gradient); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3); }
+        .logo-text { font-size: 22px; font-weight: 700; background: var(--gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .logo-sub { font-size: 11px; color: var(--text-lighter); margin-top: -2px; letter-spacing: 1px; }
+        .nav-right { display: flex; align-items: center; gap: 12px; }
+        .back-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 9px 22px; background: white; border: 1.5px solid var(--border);
+            border-radius: 25px; color: var(--text-light); font-size: 14px; font-weight: 600;
+            text-decoration: none; transition: all 0.3s ease;
+        }
+        .back-btn:hover { border-color: var(--primary); color: var(--primary); }
+        .page-head { padding: 130px 24px 8px; text-align: center; }
+        .page-tag { display: inline-block; padding: 5px 16px; background: rgba(232, 85, 109, 0.08); border-radius: 25px; font-size: 13px; color: var(--primary); font-weight: 600; margin-bottom: 12px; letter-spacing: 1px; }
+        .page-head h1 { font-size: 32px; font-weight: 800; margin-bottom: 8px; }
+        .page-head p { color: var(--text-light); font-size: 14px; }
+        .section { padding: 26px 24px 70px; }
+        .content-card {
+            max-width: 760px; margin: 0 auto; background: var(--card-bg); border-radius: 24px;
+            padding: 40px 44px; box-shadow: var(--shadow); border: 1px solid var(--border);
+            position: relative; overflow: hidden;
+        }
+        .content-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: var(--gradient); }
+
+        /* ===== 登录 ===== */
+        .login-box { max-width: 380px; margin: 10px auto 0; text-align: center; }
+        .login-box .lock { font-size: 54px; display: block; margin-bottom: 10px; }
+        .login-box p { font-size: 14px; color: var(--text-light); margin-bottom: 22px; }
+        .login-box input {
+            width: 100%; border: 2px solid var(--border); border-radius: 10px; background: #fafafa;
+            padding: 13px 16px; font-size: 15px; font-family: inherit; text-align: center;
+            transition: border-color 0.3s ease; margin-bottom: 16px;
+        }
+        .login-box input:focus { outline: none; border-color: var(--primary-light); background: white; }
+        .login-btn {
+            width: 100%; padding: 13px 0; background: var(--gradient); color: white; border: none;
+            border-radius: 25px; font-size: 15px; font-weight: 600; cursor: pointer;
+            box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3); transition: all 0.3s ease;
+        }
+        .login-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(232, 85, 109, 0.4); }
+
+        /* ===== 列表 ===== */
+        .admin-tabs { display: flex; gap: 10px; margin-bottom: 22px; border-bottom: 1.5px solid var(--border); padding-bottom: 14px; }
+        .admin-tab {
+            padding: 10px 24px; border: 1.5px solid var(--border); border-radius: 25px;
+            background: white; color: var(--text-light); font-size: 14px; font-weight: 600;
+            cursor: pointer; transition: all 0.25s ease;
+        }
+        .admin-tab:hover { border-color: var(--primary-light); color: var(--primary); }
+        .admin-tab.active { background: var(--gradient); color: white; border-color: transparent; box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3); }
+        .list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .list-header h2 { font-size: 18px; font-weight: 700; }
+        .list-header .total { font-size: 13px; color: var(--text-lighter); }
+        .list-actions { display: flex; gap: 10px; }
+        .mini-btn {
+            padding: 8px 18px; border: 1.5px solid var(--border); border-radius: 20px;
+            background: white; color: var(--text-light); font-size: 13px; font-weight: 600;
+            cursor: pointer; transition: all 0.25s ease;
+        }
+        .mini-btn:hover { border-color: var(--primary-light); color: var(--primary); }
+
+        /* ===== 标签筛选条 ===== */
+        .story-tag-filter { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+        .tag-chip {
+            padding: 6px 16px; border: 1.5px solid var(--border); border-radius: 18px;
+            background: white; color: var(--text-light); font-size: 12.5px; font-weight: 500;
+            cursor: pointer; transition: all 0.25s ease;
+        }
+        .tag-chip:hover { border-color: var(--primary-light); color: var(--primary); }
+        .tag-chip.active { background: var(--gradient); color: white; border-color: transparent; box-shadow: 0 3px 12px rgba(232, 85, 109, 0.25); }
+        .fb-tags { margin: 6px 0 2px; display: flex; flex-wrap: wrap; gap: 6px; }
+        .fb-tag {
+            font-size: 11px; padding: 2px 10px; border-radius: 10px;
+            background: var(--gradient-soft); color: var(--primary); font-weight: 500;
+        }
+        .fb-tag.empty { background: #f0f0f4; color: var(--text-lighter); }
+        .fb-list { display: flex; flex-direction: column; gap: 14px; }
+        .fb-item {
+            border: 1.5px solid var(--border); border-radius: 14px; padding: 18px 20px;
+            transition: all 0.25s ease; background: #fdfbfc;
+        }
+        .fb-item:hover { border-color: var(--primary-light); box-shadow: var(--shadow); }
+        .fb-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+        .fb-ava {
+            width: 32px; height: 32px; border-radius: 50%; background: var(--gradient-soft);
+            border: 1.5px solid var(--border); display: flex; align-items: center; justify-content: center;
+            font-size: 14px; flex-shrink: 0;
+        }
+        .fb-name { font-size: 14px; font-weight: 700; }
+        .fb-time { font-size: 12px; color: var(--text-lighter); }
+        .fb-contact { font-size: 12px; color: var(--primary); background: rgba(232, 85, 109, 0.06); padding: 3px 10px; border-radius: 12px; margin-left: auto; }
+        .fb-contact.empty { color: var(--text-lighter); background: transparent; }
+        .fb-content { font-size: 14px; color: var(--text-light); line-height: 1.9; word-break: break-word; white-space: pre-wrap; }
+        .fb-del {
+            margin-top: 10px; padding: 5px 14px; border: 1px solid #f2c4c4; border-radius: 15px;
+            background: white; color: #d96060; font-size: 12px; cursor: pointer; transition: all 0.25s ease;
+        }
+        .fb-del:hover { background: #fef0f0; border-color: #d96060; }
+        .empty-tip { text-align: center; padding: 40px 0; color: var(--text-lighter); font-size: 14px; }
+        .loading-tip { text-align: center; padding: 30px 0; color: var(--text-lighter); font-size: 14px; }
+        .toast-container { position: fixed; top: 90px; right: 24px; z-index: 3000; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+        .toast {
+            padding: 12px 20px; border-radius: 12px; background: white; box-shadow: var(--shadow-hover);
+            border-left: 3px solid var(--primary); font-size: 14px; color: var(--text);
+            animation: toastIn 0.35s cubic-bezier(0.34, 1.4, 0.64, 1); max-width: 320px;
+        }
+        .toast.error { border-left-color: #d93025; }
+        .toast.out { opacity: 0; transform: translateX(30px); transition: all 0.35s ease; }
+        @keyframes toastIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
+        .back-top {
+            position: fixed; right: 28px; bottom: 28px; width: 48px; height: 48px;
+            border-radius: 50%; background: var(--gradient); color: white; border: none;
+            cursor: pointer; font-size: 20px; font-weight: 700;
+            box-shadow: 0 6px 20px rgba(232, 85, 109, 0.35);
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; visibility: hidden; transform: translateY(16px);
+            transition: all 0.3s ease; z-index: 1500;
+        }
+        .back-top.show { opacity: 1; visibility: visible; transform: translateY(0); }
+        .back-top:hover { transform: translateY(-4px); box-shadow: 0 10px 28px rgba(232, 85, 109, 0.45); }
+        @media (max-width: 768px) {
+            .content-card { padding: 26px 20px; }
+            .toast-container { right: 12px; left: 12px; }
+            .toast { max-width: none; }
+            .back-top { right: 16px; bottom: 16px; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-inner">
+            <a class="logo" href="index.html">
+                <div class="logo-icon">💕</div>
+                <div>
+                    <div class="logo-text">缘分故事屋</div>
+                    <div class="logo-sub">DATING STORIES</div>
+                </div>
+            </a>
+            <div class="nav-right">
+                <a class="back-btn" href="index.html">← 返回站点</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="page-head">
+        <div class="page-tag">🔐 ADMIN</div>
+        <h1>网友反馈箱</h1>
+        <p>只有站长能打开这里 · 请妥善保管管理密码</p>
+    </div>
+
+    <div class="section">
+        <div class="content-card">
+            <!-- 登录 -->
+            <div class="login-box" id="login-box">
+                <span class="lock">🔐</span>
+                <p>输入管理密码，查看网友发来的反馈与建议</p>
+                <input type="password" id="admin-key" placeholder="管理密码" autocomplete="off">
+                <button class="login-btn" id="login-btn">解锁反馈箱 💕</button>
+            </div>
+
+            <!-- 列表 -->
+            <div id="list-wrap" style="display:none;">
+                <div class="admin-tabs">
+                    <button class="admin-tab active" data-tab="fb">📮 反馈箱</button>
+                    <button class="admin-tab" data-tab="story">📚 故事管理</button>
+                </div>
+                <div class="list-header">
+                    <h2 id="list-title">📬 收到的反馈 <span class="total" id="list-total"></span></h2>
+                    <div class="list-actions">
+                        <button class="mini-btn" id="refresh-btn">🔄 刷新</button>
+                        <button class="mini-btn" id="logout-btn">退出</button>
+                    </div>
+                </div>
+                <div class="story-tag-filter" id="story-tag-filter" style="display:none;"></div>
+                <div id="fb-list" class="fb-list">
+                    <div class="loading-tip">加载中…</div>
+                </div>
+                <div id="story-list" class="fb-list" style="display:none;">
+                    <div class="loading-tip">加载中…</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Back to Top -->
+    <button class="back-top" id="back-top" title="返回顶部" aria-label="返回顶部">↑</button>
+
+    <script>
+    'use strict';
+    const KEY_STORE = 'yf_admin_key';
+    const $ = s => document.querySelector(s);
+    const $$ = s => Array.from(document.querySelectorAll(s));
+
+    function toast(msg, type) {
+        const box = document.createElement('div');
+        box.className = 'toast' + (type === 'error' ? ' error' : '');
+        box.textContent = msg;
+        $('#toast-container').appendChild(box);
+        setTimeout(() => {
+            box.classList.add('out');
+            setTimeout(() => box.remove(), 400);
+        }, 2600);
+    }
+
+    async function api(body, route) {
+        // 请求超时保护：10 秒未响应则报错，避免列表永远卡在「加载中」
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 10000);
+        let r;
+        try {
+            r = await fetch('api.php?route=' + (route || 'admin_feedback'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+                signal: ctrl.signal
+            });
+        } catch (e) {
+            clearTimeout(timer);
+            throw new Error(e.name === 'AbortError' ? '请求超时，请稍后重试' : '网络请求失败，请检查服务是否运行');
+        }
+        clearTimeout(timer);
+        const data = await r.json();
+        if (!data.ok) throw new Error(data.error || '请求失败');
+        return data;
+    }
+
+    let currentTab = 'fb'; // 'fb' = 反馈箱 | 'story' = 故事管理
+    let storyTag = 'all';  // 故事管理的标签筛选
+
+    const TAG_NAMES = {
+        sweet: '甜蜜脱单', funny: '搞笑经历', touching: '感人故事', complain: '心酸吐槽',
+        daily: '日常记录', yidi: '异地相亲', chujian: '初次见面', liaotian: '聊天记录',
+        jiaolv: '年龄焦虑', cuihun: '父母催婚', jianjia: '见家长', yilian: '异地恋', shanhun: '闪婚'
+    };
+
+    function renderStoryTagFilter() {
+        const wrap = $('#story-tag-filter');
+        const tags = [['all', '🏷️ 全部'], ...Object.entries(TAG_NAMES).map(([v, label]) => [v, label])];
+        wrap.innerHTML = tags.map(([v, label]) =>
+            `<button class="tag-chip${storyTag === v ? ' active' : ''}" data-tag="${v}">${label}</button>`).join('');
+        wrap.querySelectorAll('.tag-chip').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (storyTag === btn.dataset.tag) return;
+                storyTag = btn.dataset.tag;
+                renderStoryTagFilter();
+                loadList();
+            });
+        });
+    }
+
+    function fmtTime(ts) {
+        const d = new Date(Number(ts) * 1000);
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function renderFeedback(items) {
+        $('#list-title').innerHTML = '📬 收到的反馈 <span class="total" id="list-total">· 共 ' + items.length + ' 条</span>';
+        const list = $('#fb-list');
+        if (!items.length) {
+            list.innerHTML = '<div class="empty-tip">📭 暂时还没有反馈，去分享给朋友们吧～</div>';
+            return;
+        }
+        list.innerHTML = items.map(it => `
+            <div class="fb-item">
+                <div class="fb-head">
+                    <div class="fb-ava">${(it.nickname || '匿').charAt(0)}</div>
+                    <span class="fb-name">${it.nickname}</span>
+                    <span class="fb-time">${fmtTime(it.createdAt)}</span>
+                    ${it.contact
+                        ? `<span class="fb-contact">联系方式：${it.contact}</span>`
+                        : `<span class="fb-contact empty">未留联系方式</span>`}
+                </div>
+                <div class="fb-content"></div>
+                <button class="fb-del" data-id="${it.id}">🗑 删除</button>
+            </div>`).join('');
+        // 内容用 textContent 填充，避免 XSS
+        list.querySelectorAll('.fb-item').forEach((el, i) => {
+            el.querySelector('.fb-content').textContent = items[i].content;
+        });
+        list.querySelectorAll('.fb-del').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                if (!confirm('确定删除这条反馈吗？删除后无法恢复。')) return;
+                try {
+                    await api({ key: getKey(), op: 'delete', id: Number(btn.dataset.id) });
+                    toast('🗑 已删除');
+                    loadList();
+                } catch (e) {
+                    toast(e.message, 'error');
+                }
+            });
+        });
+    }
+
+    function renderStories(items) {
+        $('#list-title').innerHTML = '📚 全部故事 <span class="total" id="list-total">· 共 ' + items.length + ' 篇' + (storyTag !== 'all' ? '（' + (TAG_NAMES[storyTag] || storyTag) + '）' : '') + '</span>';
+        const list = $('#story-list');
+        if (!items.length) {
+            list.innerHTML = '<div class="empty-tip">📭 该分类下暂时没有故事</div>';
+            return;
+        }
+        list.innerHTML = items.map(it => {
+            const tagBadges = (it.tags || []).map(t => `<span class="fb-tag">${TAG_NAMES[t] || t}</span>`).join('')
+                || '<span class="fb-tag empty">无标签</span>';
+            return `
+            <div class="fb-item">
+                <div class="fb-head">
+                    <div class="fb-ava">${(it.title || '故').charAt(0)}</div>
+                    <span class="fb-name">${it.title}</span>
+                    <span class="fb-time">${fmtTime(it.createdAt)}</span>
+                    <span class="fb-contact">👁️ ${it.views} · ❤️ ${it.likes} · 💬 ${it.commentsCount}</span>
+                </div>
+                <div class="fb-tags">${tagBadges}</div>
+                <div class="fb-content">✍️ ${it.author}</div>
+                <button class="fb-del" data-id="${it.id}">🗑 删除故事</button>
+            </div>`;
+        }).join('');
+        list.querySelectorAll('.fb-del').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                if (!confirm('确定删除这篇故事吗？其评论也会一并删除，且无法恢复。')) return;
+                try {
+                    await api({ key: getKey(), op: 'delete', id: Number(btn.dataset.id) }, 'admin_stories');
+                    toast('🗑 故事已删除');
+                    loadList();
+                } catch (e) {
+                    toast(e.message, 'error');
+                }
+            });
+        });
+    }
+
+    async function loadList() {
+        const containers = { fb: $('#fb-list'), story: $('#story-list') };
+        Object.values(containers).forEach(el => { if (el) el.innerHTML = '<div class="loading-tip">加载中…</div>'; });
+        try {
+            if (currentTab === 'fb') {
+                const d = await api({ key: getKey(), op: 'list' }, 'admin_feedback');
+                renderFeedback(d.items || []);
+            } else {
+                const d = await api({ key: getKey(), op: 'list', tag: storyTag }, 'admin_stories');
+                renderStories(d.items || []);
+            }
+        } catch (e) {
+            if (e.message.includes('密码')) { clearKey(); showLogin(); }
+            if (containers[currentTab]) containers[currentTab].innerHTML = '<div class="empty-tip">😢 ' + e.message + '</div>';
+        }
+    }
+
+    function switchTab(tab) {
+        if (currentTab === tab) return;
+        currentTab = tab;
+        $$('.admin-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+        $('#fb-list').style.display = tab === 'fb' ? '' : 'none';
+        $('#story-list').style.display = tab === 'story' ? '' : 'none';
+        $('#story-tag-filter').style.display = tab === 'story' ? 'flex' : 'none';
+        loadList();
+    }
+
+    $$('.admin-tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+    function getKey() { return localStorage.getItem(KEY_STORE) || ''; }
+    function setKey(k) { localStorage.setItem(KEY_STORE, k); }
+    function clearKey() { localStorage.removeItem(KEY_STORE); }
+
+    function showLogin() {
+        $('#login-box').style.display = 'block';
+        $('#list-wrap').style.display = 'none';
+    }
+
+    function showList() {
+        $('#login-box').style.display = 'none';
+        $('#list-wrap').style.display = 'block';
+        loadList();
+    }
+
+    async function tryLogin() {
+        const key = $('#admin-key').value;
+        if (!key) { toast('请输入管理密码', 'error'); return; }
+        const btn = $('#login-btn');
+        btn.disabled = true;
+        btn.textContent = '验证中…';
+        try {
+            await api({ key, op: 'list' });
+            setKey(key);
+            showList();
+        } catch (e) {
+            toast(e.message, 'error');
+        }
+        btn.disabled = false;
+        btn.textContent = '解锁反馈箱 💕';
+    }
+
+    $('#login-btn').addEventListener('click', tryLogin);
+    $('#admin-key').addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
+    $('#refresh-btn').addEventListener('click', loadList);
+    $('#logout-btn').addEventListener('click', () => { clearKey(); showLogin(); toast('已退出管理'); });
+
+    // 返回顶部
+    const backTop = document.getElementById('back-top');
+    window.addEventListener('scroll', () => {
+        backTop.classList.toggle('show', window.scrollY > 400);
+    }, { passive: true });
+    backTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+    // 启动：已记住密码则直接进列表
+    renderStoryTagFilter();
+    if (getKey()) showList(); else showLogin();
+    </script>
+</body>
+</html>

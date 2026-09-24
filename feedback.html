@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💕</text></svg>">
+    <title>反馈建议 - 缘分故事屋</title>
+    <style>
+        :root {
+            --primary: #e8556d;
+            --primary-light: #ff7eb3;
+            --bg: #fff5f5;
+            --card-bg: #ffffff;
+            --text: #2d2d3a;
+            --text-light: #6b6b80;
+            --text-lighter: #a0a0b8;
+            --border: #f0e0e5;
+            --shadow: 0 4px 20px rgba(232, 85, 109, 0.08);
+            --shadow-hover: 0 8px 32px rgba(232, 85, 109, 0.15);
+            --gradient: linear-gradient(135deg, #ff9a76 0%, #e8556d 50%, #c23555 100%);
+            --gradient-soft: linear-gradient(135deg, #fff0f3 0%, #ffe0e8 100%);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background: var(--bg); color: var(--text); line-height: 1.7; overflow-x: hidden;
+        }
+        .navbar {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 1000; padding: 0 24px;
+            background: rgba(255, 245, 245, 0.85); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(232, 85, 109, 0.06);
+        }
+        .nav-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 72px; }
+        .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+        .logo-icon { width: 42px; height: 42px; background: var(--gradient); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3); }
+        .logo-text { font-size: 22px; font-weight: 700; background: var(--gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .logo-sub { font-size: 11px; color: var(--text-lighter); margin-top: -2px; letter-spacing: 1px; }
+        .nav-links { display: flex; align-items: center; gap: 8px; list-style: none; }
+        .nav-links a { text-decoration: none; color: var(--text-light); padding: 8px 16px; border-radius: 25px; font-size: 14px; font-weight: 500; transition: all 0.3s ease; }
+        .nav-links a:hover { color: var(--primary); background: rgba(232, 85, 109, 0.06); }
+        .nav-cta { padding: 10px 24px; background: var(--gradient); color: white !important; font-weight: 600 !important; box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3); }
+        .back-wrap { max-width: 1200px; margin: 96px auto 0; padding: 0 24px; }
+        .back-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 9px 24px; background: white; border: 1.5px solid var(--border);
+            border-radius: 25px; color: var(--text-light); font-size: 14px; font-weight: 600;
+            text-decoration: none; transition: all 0.3s ease; box-shadow: 0 4px 20px rgba(232, 85, 109, 0.08);
+        }
+        .back-btn:hover { border-color: var(--primary); color: var(--primary); transform: translateX(-3px); }
+        .page-head { padding: 30px 24px 10px; text-align: center; }
+        .page-tag { display: inline-block; padding: 5px 16px; background: rgba(232, 85, 109, 0.08); border-radius: 25px; font-size: 13px; color: var(--primary); font-weight: 600; margin-bottom: 12px; letter-spacing: 1px; }
+        .page-head h1 { font-size: 36px; font-weight: 800; margin-bottom: 10px; }
+        .page-head p { color: var(--text-light); }
+        .section { padding: 30px 24px 70px; }
+        .content-card {
+            max-width: 720px; margin: 0 auto; background: var(--card-bg); border-radius: 24px;
+            padding: 44px 48px; box-shadow: var(--shadow); border: 1px solid var(--border);
+            position: relative; overflow: hidden;
+        }
+        .content-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: var(--gradient); }
+        .fb-desc { font-size: 14px; color: var(--text-light); line-height: 2; margin-bottom: 24px; }
+        .fb-form label { display: block; font-size: 14px; font-weight: 600; margin: 18px 0 8px; }
+        .fb-form label .opt { font-size: 12px; color: var(--text-lighter); font-weight: 400; }
+        .fb-form input, .fb-form textarea {
+            width: 100%; border: 2px solid var(--border); border-radius: 10px; background: #fafafa;
+            padding: 13px 16px; font-size: 14px; font-family: inherit; color: var(--text);
+            transition: border-color 0.3s ease;
+        }
+        .fb-form textarea { min-height: 160px; resize: vertical; line-height: 1.8; }
+        .fb-form input:focus, .fb-form textarea:focus { outline: none; border-color: var(--primary-light); background: white; }
+        .fb-form input::placeholder, .fb-form textarea::placeholder { color: var(--text-lighter); }
+        .fb-submit {
+            margin-top: 26px; width: 100%; padding: 14px 0; background: var(--gradient); color: white;
+            border: none; border-radius: 25px; font-size: 15px; font-weight: 600; cursor: pointer;
+            box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3); transition: all 0.3s ease;
+        }
+        .fb-submit:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(232, 85, 109, 0.4); }
+        .fb-submit:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .fb-success { display: none; text-align: center; padding: 30px 0 10px; animation: successIn 0.5s cubic-bezier(0.34, 1.4, 0.64, 1); }
+        @keyframes successIn { from { opacity: 0; transform: translateY(20px) scale(0.96); } to { opacity: 1; transform: none; } }
+        .fb-success .big-emoji { font-size: 70px; display: block; margin-bottom: 16px; }
+        .fb-success h2 { font-size: 24px; font-weight: 800; margin-bottom: 10px; }
+        .fb-success p { color: var(--text-light); margin-bottom: 26px; }
+        .fb-success a { display: inline-block; padding: 12px 36px; background: var(--gradient); color: white; border-radius: 25px; text-decoration: none; font-weight: 600; box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3); }
+        .fb-success a:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(232, 85, 109, 0.4); }
+        .toast-container { position: fixed; top: 90px; right: 24px; z-index: 3000; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+        .toast {
+            padding: 12px 20px; border-radius: 12px; background: white; box-shadow: var(--shadow-hover);
+            border-left: 3px solid var(--primary); font-size: 14px; color: var(--text);
+            animation: toastIn 0.35s cubic-bezier(0.34, 1.4, 0.64, 1); max-width: 320px;
+        }
+        .toast.error { border-left-color: #d93025; }
+        .toast.out { opacity: 0; transform: translateX(30px); transition: all 0.35s ease; }
+        @keyframes toastIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
+        .back-top {
+            position: fixed; right: 28px; bottom: 28px; width: 48px; height: 48px;
+            border-radius: 50%; background: var(--gradient); color: white; border: none;
+            cursor: pointer; font-size: 20px; font-weight: 700;
+            box-shadow: 0 6px 20px rgba(232, 85, 109, 0.35);
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; visibility: hidden; transform: translateY(16px);
+            transition: all 0.3s ease; z-index: 1500;
+        }
+        .back-top.show { opacity: 1; visibility: visible; transform: translateY(0); }
+        .back-top:hover { transform: translateY(-4px); box-shadow: 0 10px 28px rgba(232, 85, 109, 0.45); }
+        .footer { margin-top: 30px; padding: 40px 24px 30px; background: white; border-top: 1px solid var(--border); text-align: center; }
+        .footer p { font-size: 13px; color: var(--text-lighter); }
+        .footer .heart { color: var(--primary); display: inline-block; animation: heartbeat 1.5s infinite; }
+        @keyframes heartbeat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.2); } }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: rgba(232, 85, 109, 0.2); border-radius: 4px; }
+        @media (max-width: 768px) {
+            .nav-links { display: none; }
+            .page-head h1 { font-size: 28px; }
+            .content-card { padding: 28px 22px; }
+            .toast-container { right: 12px; left: 12px; }
+            .toast { max-width: none; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-inner">
+            <a class="logo" href="index.html">
+                <div class="logo-icon">💕</div>
+                <div>
+                    <div class="logo-text">缘分故事屋</div>
+                    <div class="logo-sub">DATING STORIES</div>
+                </div>
+            </a>
+            <ul class="nav-links">
+                <li><a href="index.html">首页</a></li>
+                <li><a href="index.html#stories">故事广场</a></li>
+                <li><a href="index.html#hot">热门精选</a></li>
+                <li><a href="index.html#about">关于</a></li>
+                <li><a href="publish.html" class="nav-cta">✏️ 发布故事</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <div class="back-wrap">
+        <a class="back-btn" href="index.html" onclick="if (history.length > 1 && document.referrer) { event.preventDefault(); history.back(); }">← 返回</a>
+    </div>
+
+    <div class="page-head">
+        <div class="page-tag">💌 FEEDBACK</div>
+        <h1>反馈建议</h1>
+        <p>你的每一句话，都会被认真对待</p>
+    </div>
+
+    <div class="section">
+        <div class="content-card">
+            <div id="fb-form-wrap">
+                <p class="fb-desc">
+                    无论是站点的问题报错、功能建议，还是内容投诉（请注明故事标题），都可以告诉我们 🌸<br>
+                    全部字段均为选填身份信息，放心填写。
+                </p>
+                <div class="fb-form">
+                    <label>你的昵称 <span class="opt">（选填，不填将随机生成）</span></label>
+                    <input type="text" id="fb-nickname" maxlength="20" placeholder="怎么称呼你？">
+                    <label>联系方式 <span class="opt">（选填，仅用于回复你）</span></label>
+                    <input type="text" id="fb-contact" maxlength="100" placeholder="邮箱 / QQ / 微信，任选一种">
+                    <label>反馈内容 <span class="opt">（必填，最多 1000 字）</span></label>
+                    <textarea id="fb-content" maxlength="1000" placeholder="想对我们说的话…"></textarea>
+                    <button class="fb-submit" id="fb-submit">💌 提交反馈</button>
+                </div>
+            </div>
+            <div class="fb-success" id="fb-success">
+                <span class="big-emoji">💌</span>
+                <h2>反馈已收到！</h2>
+                <p>感谢你的每一句建议，我们会认真阅读并尽快处理。</p>
+                <a href="index.html">返回首页</a>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <p>© 2025 缘分故事屋 · Made with <span class="heart">❤</span> · 每一个故事都值得被听见</p>
+    </footer>
+
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Back to Top -->
+    <button class="back-top" id="back-top" title="返回顶部" aria-label="返回顶部">↑</button>
+
+    <script>
+    'use strict';
+    // 返回顶部
+    const backTop = document.getElementById('back-top');
+    window.addEventListener('scroll', () => {
+        backTop.classList.toggle('show', window.scrollY > 400);
+    }, { passive: true });
+    backTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+    function toast(msg, type) {
+        const box = document.createElement('div');
+        box.className = 'toast' + (type === 'error' ? ' error' : '');
+        box.textContent = msg;
+        document.getElementById('toast-container').appendChild(box);
+        setTimeout(() => {
+            box.classList.add('out');
+            setTimeout(() => box.remove(), 400);
+        }, 2600);
+    }
+
+    async function submitFeedback() {
+        const nickname = document.getElementById('fb-nickname').value.trim();
+        const contact = document.getElementById('fb-contact').value.trim();
+        const content = document.getElementById('fb-content').value.trim();
+        const btn = document.getElementById('fb-submit');
+        if (!content) { toast('先写点反馈内容吧～', 'error'); return; }
+        btn.disabled = true;
+        btn.textContent = '提交中…';
+        try {
+            const r = await fetch('api.php?route=feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nickname, contact, content })
+            });
+            const data = await r.json();
+            if (!data.ok) throw new Error(data.error || '提交失败');
+            toast('💌 ' + data.message);
+            document.getElementById('fb-form-wrap').style.display = 'none';
+            document.getElementById('fb-success').style.display = 'block';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        } catch (e) {
+            toast('提交失败：' + e.message, 'error');
+            btn.disabled = false;
+            btn.textContent = '💌 提交反馈';
+        }
+    }
+
+    document.getElementById('fb-submit').addEventListener('click', submitFeedback);
+    </script>
+</body>
+</html>

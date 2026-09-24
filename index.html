@@ -1,0 +1,2514 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💕</text></svg>">
+    <title>💕 缘分故事屋 - 分享你的相亲故事</title>
+    <style>
+        /* ===== CSS Variables ===== */
+        :root {
+            --primary: #e8556d;
+            --primary-light: #ff7eb3;
+            --primary-dark: #c23555;
+            --secondary: #ff9a76;
+            --accent: #ffc3a0;
+            --bg: #fff5f5;
+            --card-bg: #ffffff;
+            --text: #2d2d3a;
+            --text-light: #6b6b80;
+            --text-lighter: #a0a0b8;
+            --border: #f0e0e5;
+            --shadow: 0 4px 20px rgba(232, 85, 109, 0.08);
+            --shadow-hover: 0 8px 32px rgba(232, 85, 109, 0.15);
+            --radius: 16px;
+            --radius-sm: 10px;
+            --gradient: linear-gradient(135deg, #ff9a76 0%, #e8556d 50%, #c23555 100%);
+            --gradient-soft: linear-gradient(135deg, #fff0f3 0%, #ffe0e8 100%);
+        }
+
+        /* ===== Reset & Base ===== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+
+        /* ===== Background Decorations ===== */
+        .bg-decor {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .bg-decor .circle {
+            position: absolute;
+            border-radius: 50%;
+            opacity: 0.04;
+        }
+
+        .bg-decor .circle:nth-child(1) {
+            width: 600px;
+            height: 600px;
+            background: var(--primary);
+            top: -200px;
+            right: -150px;
+        }
+
+        .bg-decor .circle:nth-child(2) {
+            width: 400px;
+            height: 400px;
+            background: var(--secondary);
+            bottom: -100px;
+            left: -100px;
+        }
+
+        .bg-decor .circle:nth-child(3) {
+            width: 300px;
+            height: 300px;
+            background: var(--primary-light);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        /* ===== Floating Hearts ===== */
+        .hearts-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .floating-heart {
+            position: absolute;
+            opacity: 0;
+            animation: floatUp 8s infinite;
+            font-size: 20px;
+            color: var(--primary-light);
+        }
+
+        .floating-heart:nth-child(1) { left: 10%; animation-delay: 0s; animation-duration: 7s; }
+        .floating-heart:nth-child(2) { left: 25%; animation-delay: 2s; animation-duration: 9s; }
+        .floating-heart:nth-child(3) { left: 50%; animation-delay: 4s; animation-duration: 6s; }
+        .floating-heart:nth-child(4) { left: 75%; animation-delay: 1s; animation-duration: 8s; }
+        .floating-heart:nth-child(5) { left: 90%; animation-delay: 3s; animation-duration: 7s; }
+        .floating-heart:nth-child(6) { left: 40%; animation-delay: 5s; animation-duration: 10s; }
+        .floating-heart:nth-child(7) { left: 65%; animation-delay: 6s; animation-duration: 8s; }
+        .floating-heart:nth-child(8) { left: 15%; animation-delay: 7s; animation-duration: 9s; }
+
+        @keyframes floatUp {
+            0% {
+                opacity: 0;
+                transform: translateY(100vh) rotate(0deg) scale(0.5);
+            }
+            10% {
+                opacity: 0.6;
+            }
+            90% {
+                opacity: 0.3;
+            }
+            100% {
+                opacity: 0;
+                transform: translateY(-100px) rotate(45deg) scale(1.2);
+            }
+        }
+
+        /* ===== Navigation ===== */
+        .navbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            padding: 0 24px;
+            transition: all 0.3s ease;
+            background: rgba(255, 245, 245, 0.8);
+            -webkit-backdrop-filter: blur(20px);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(232, 85, 109, 0.06);
+        }
+
+        .navbar.scrolled {
+            box-shadow: 0 2px 20px rgba(232, 85, 109, 0.1);
+        }
+
+        .nav-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 72px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .logo-icon {
+            width: 42px;
+            height: 42px;
+            background: var(--gradient);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3);
+            transition: transform 0.3s ease;
+        }
+
+        .logo:hover .logo-icon {
+            transform: rotate(-10deg) scale(1.1);
+        }
+
+        .logo-text {
+            font-size: 22px;
+            font-weight: 700;
+            background: var(--gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .logo-sub {
+            font-size: 11px;
+            color: var(--text-lighter);
+            margin-top: -2px;
+            letter-spacing: 1px;
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            list-style: none;
+        }
+
+        .nav-links a {
+            text-decoration: none;
+            color: var(--text-light);
+            padding: 8px 16px;
+            border-radius: 25px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .nav-links a:hover {
+            color: var(--primary);
+            background: rgba(232, 85, 109, 0.06);
+        }
+
+        .nav-links a.active {
+            color: white;
+            background: var(--gradient);
+            box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3);
+        }
+
+        .nav-cta {
+            padding: 10px 24px !important;
+            border-radius: 25px !important;
+            background: var(--gradient) !important;
+            color: white !important;
+            font-weight: 600 !important;
+            box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3);
+            transition: all 0.3s ease !important;
+        }
+
+        .nav-cta:hover {
+            transform: translateY(-2px) !important;
+            box-shadow: 0 6px 25px rgba(232, 85, 109, 0.4) !important;
+        }
+
+        /* ===== Hero Section ===== */
+        .hero {
+            position: relative;
+            padding: 160px 24px 100px;
+            text-align: center;
+            z-index: 1;
+        }
+
+        .hero-inner {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 20px;
+            background: rgba(232, 85, 109, 0.08);
+            border: 1px solid rgba(232, 85, 109, 0.12);
+            border-radius: 50px;
+            font-size: 13px;
+            color: var(--primary);
+            font-weight: 500;
+            margin-bottom: 28px;
+            animation: fadeInDown 0.8s ease;
+        }
+
+        .hero-badge .dot {
+            width: 8px;
+            height: 8px;
+            background: var(--primary);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.5); }
+        }
+
+        .hero h1 {
+            font-size: 56px;
+            font-weight: 800;
+            line-height: 1.2;
+            margin-bottom: 24px;
+            animation: fadeInDown 0.8s ease 0.1s both;
+        }
+
+        .hero h1 .highlight {
+            background: var(--gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            position: relative;
+        }
+
+        .hero h1 .highlight::after {
+            content: '';
+            position: absolute;
+            bottom: 4px;
+            left: 0;
+            right: 0;
+            height: 12px;
+            background: rgba(232, 85, 109, 0.1);
+            border-radius: 6px;
+            z-index: -1;
+        }
+
+        .hero p {
+            font-size: 18px;
+            color: var(--text-light);
+            max-width: 560px;
+            margin: 0 auto 40px;
+            animation: fadeInDown 0.8s ease 0.2s both;
+        }
+
+        .hero-actions {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            animation: fadeInDown 0.8s ease 0.3s both;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 32px;
+            border-radius: 50px;
+            font-size: 16px;
+            font-weight: 600;
+            text-decoration: none;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: var(--gradient);
+            color: white;
+            box-shadow: 0 6px 25px rgba(232, 85, 109, 0.35);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 35px rgba(232, 85, 109, 0.45);
+        }
+
+        .btn-secondary {
+            background: white;
+            color: var(--primary);
+            border: 2px solid var(--border);
+            box-shadow: var(--shadow);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--primary);
+            transform: translateY(-3px);
+            box-shadow: var(--shadow-hover);
+        }
+
+        /* Stats */
+        .hero-stats {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 48px;
+            margin-top: 60px;
+            animation: fadeInDown 0.8s ease 0.4s both;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 32px;
+            font-weight: 800;
+            background: var(--gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: var(--text-lighter);
+            margin-top: 4px;
+        }
+
+        .stat-divider {
+            width: 1px;
+            height: 40px;
+            background: var(--border);
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* ===== Section Common ===== */
+        .section {
+            position: relative;
+            z-index: 1;
+            padding: 40px 24px 80px;
+        }
+
+        .section-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 48px;
+        }
+
+        .section-tag {
+            display: inline-block;
+            padding: 5px 16px;
+            background: rgba(232, 85, 109, 0.08);
+            border-radius: 25px;
+            font-size: 13px;
+            color: var(--primary);
+            font-weight: 600;
+            margin-bottom: 12px;
+            letter-spacing: 1px;
+        }
+
+        .section-header h2 {
+            font-size: 36px;
+            font-weight: 800;
+            margin-bottom: 12px;
+        }
+
+        .section-header p {
+            color: var(--text-light);
+            font-size: 16px;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        /* ===== Story Composer ===== */
+        .composer {
+            background: var(--card-bg);
+            border-radius: 24px;
+            padding: 36px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            margin-bottom: 48px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .composer::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--gradient);
+        }
+
+        .composer:hover {
+            box-shadow: var(--shadow-hover);
+        }
+
+        .composer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+        }
+
+        .composer-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .composer-avatar {
+            width: 44px;
+            height: 44px;
+            background: var(--gradient-soft);
+            border: 2px solid var(--border);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .composer-title-text {
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .composer-title-sub {
+            font-size: 12px;
+            color: var(--text-lighter);
+        }
+
+        .editor-tabs {
+            display: flex;
+            gap: 4px;
+            background: var(--bg);
+            padding: 4px;
+            border-radius: 12px;
+        }
+
+        .editor-tab {
+            padding: 8px 20px;
+            border: none;
+            background: transparent;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-light);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .editor-tab.active {
+            background: white;
+            color: var(--primary);
+            box-shadow: 0 2px 8px rgba(232, 85, 109, 0.1);
+        }
+
+        .composer input[type="text"] {
+            width: 100%;
+            padding: 14px 20px;
+            border: 2px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 16px;
+            transition: border-color 0.3s ease;
+            background: #fafafa;
+        }
+
+        .composer input[type="text"]:focus {
+            outline: none;
+            border-color: var(--primary-light);
+            background: white;
+        }
+
+        .composer input[type="text"]::placeholder {
+            color: var(--text-lighter);
+            font-weight: 400;
+        }
+
+        .composer textarea {
+            width: 100%;
+            min-height: 200px;
+            padding: 18px 20px;
+            border: 2px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 15px;
+            line-height: 1.8;
+            color: var(--text);
+            resize: vertical;
+            transition: border-color 0.3s ease;
+            background: #fafafa;
+            font-family: inherit;
+        }
+
+        .composer textarea:focus {
+            outline: none;
+            border-color: var(--primary-light);
+            background: white;
+        }
+
+        .composer textarea::placeholder {
+            color: var(--text-lighter);
+        }
+
+        .composer textarea.html-mode {
+            font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+            font-size: 14px;
+            background: #1e1e2e;
+            color: #cdd6f4;
+            border-color: #313244;
+        }
+
+        .composer textarea.html-mode:focus {
+            border-color: var(--primary-light);
+        }
+
+        .composer-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 20px;
+        }
+
+        .composer-options {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .option-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border: 1.5px solid var(--border);
+            border-radius: 25px;
+            background: white;
+            color: var(--text-light);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .option-btn:hover {
+            border-color: var(--primary-light);
+            color: var(--primary);
+            background: rgba(232, 85, 109, 0.04);
+        }
+
+        .option-btn.active {
+            border-color: var(--primary);
+            color: var(--primary);
+            background: rgba(232, 85, 109, 0.06);
+        }
+
+        .preview-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 20px;
+            border: 1.5px solid var(--border);
+            border-radius: 25px;
+            background: white;
+            color: var(--text-light);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-right: 12px;
+        }
+
+        .preview-btn:hover {
+            border-color: var(--secondary);
+            color: var(--secondary);
+        }
+
+        .submit-btn {
+            padding: 12px 32px;
+            background: var(--gradient);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3);
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(232, 85, 109, 0.4);
+        }
+
+        .composer-actions {
+            display: flex;
+            align-items: center;
+        }
+
+        /* ===== Filter Tabs ===== */
+        .filter-bar {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 12px;
+            margin-bottom: 36px;
+        }
+
+        .filter-tab {
+            padding: 10px 12px;
+            border: 1.5px solid var(--border);
+            border-radius: 50px;
+            background: white;
+            color: var(--text-light);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+            text-align: center;
+        }
+
+        .filter-tab:hover {
+            border-color: var(--primary-light);
+            color: var(--primary);
+        }
+
+        .filter-tab.active {
+            background: var(--gradient);
+            color: white;
+            border-color: transparent;
+            box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3);
+        }
+
+        /* ===== Story Cards ===== */
+        .stories-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+            gap: 28px;
+        }
+
+        .story-card {
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            padding: 28px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            transition: all 0.4s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .story-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--gradient);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .story-card:hover {
+            transform: translateY(-6px);
+            box-shadow: var(--shadow-hover);
+        }
+
+        .story-card:hover::before {
+            opacity: 1;
+        }
+
+        .story-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .story-author {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .story-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 600;
+            color: white;
+        }
+
+        .avatar-1 { background: linear-gradient(135deg, #ff9a76, #e8556d); }
+        .avatar-2 { background: linear-gradient(135deg, #a18cd1, #fbc2eb); }
+        .avatar-3 { background: linear-gradient(135deg, #f6d365, #fda085); }
+        .avatar-4 { background: linear-gradient(135deg, #84fab0, #8fd3f4); }
+        .avatar-5 { background: linear-gradient(135deg, #fccb90, #d57eeb); }
+        .avatar-6 { background: linear-gradient(135deg, #e0c3fc, #8ec5fc); }
+
+        .story-author-name {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .story-author-info {
+            font-size: 11px;
+            color: var(--text-lighter);
+        }
+
+        .story-time {
+            font-size: 12px;
+            color: var(--text-lighter);
+        }
+
+        .story-tag {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .tag-success {
+            background: #e8f8f0;
+            color: #2d9f6f;
+        }
+
+        .tag-funny {
+            background: #fff8e1;
+            color: #d4920b;
+        }
+
+        .tag-touching {
+            background: #fce4ec;
+            color: #c23555;
+        }
+
+        .tag-regular {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .tag-preview {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+
+        .story-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            line-height: 1.4;
+            color: var(--text);
+        }
+
+        .story-excerpt {
+            font-size: 14px;
+            color: var(--text-light);
+            line-height: 1.8;
+            margin-bottom: 18px;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .story-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        .story-stats {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .story-stat {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 13px;
+            color: var(--text-lighter);
+            transition: color 0.3s ease;
+            cursor: pointer;
+        }
+
+        .story-stat:hover {
+            color: var(--primary);
+        }
+
+        .story-stat.liked {
+            color: var(--primary);
+        }
+
+        .read-more {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--primary);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: gap 0.3s ease;
+        }
+
+        .read-more:hover {
+            gap: 8px;
+        }
+
+        /* ===== Feature Cards ===== */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            margin-bottom: 48px;
+        }
+
+        .feature-card {
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            padding: 32px;
+            text-align: center;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-hover);
+        }
+
+        .feature-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 16px;
+            border-radius: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+        }
+
+        .feature-icon.pink { background: linear-gradient(135deg, #fff0f3, #ffe0e8); }
+        .feature-icon.orange { background: linear-gradient(135deg, #fff5ec, #ffe8d6); }
+        .feature-icon.purple { background: linear-gradient(135deg, #f5f0ff, #e8e0ff); }
+
+        .feature-card h3 {
+            font-size: 18px;
+            margin-bottom: 8px;
+            font-weight: 700;
+        }
+
+        .feature-card p {
+            font-size: 14px;
+            color: var(--text-light);
+            line-height: 1.6;
+        }
+
+        /* ===== Hot Stories Sidebar ===== */
+        .hot-section {
+            margin-top: 20px;
+        }
+
+        .hot-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .hot-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            padding: 16px;
+            background: var(--card-bg);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .hot-item:hover {
+            border-color: var(--primary-light);
+            box-shadow: var(--shadow);
+        }
+
+        .hot-rank {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 800;
+            flex-shrink: 0;
+        }
+
+        .hot-rank.r1 { background: linear-gradient(135deg, #ff6b6b, #ee5a24); color: white; }
+        .hot-rank.r2 { background: linear-gradient(135deg, #ffa502, #ff7f50); color: white; }
+        .hot-rank.r3 { background: linear-gradient(135deg, #f8c291, #e17055); color: white; }
+        .hot-rank.r4, .hot-rank.r5 { background: var(--bg); color: var(--text-lighter); }
+
+        .hot-info h4 {
+            font-size: 14px;
+            font-weight: 600;
+            line-height: 1.4;
+            margin-bottom: 4px;
+        }
+
+        .hot-info p {
+            font-size: 12px;
+            color: var(--text-lighter);
+        }
+
+        /* ===== Main Layout ===== */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 1fr 340px;
+            gap: 36px;
+            align-items: start;
+        }
+
+        /* ===== Sidebar ===== */
+        .sidebar {
+            position: sticky;
+            top: 100px;
+        }
+
+        .sidebar-card {
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            padding: 28px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            margin-bottom: 24px;
+        }
+
+        .sidebar-card h3 {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sidebar-card h3 .icon {
+            font-size: 22px;
+        }
+
+        .tag-cloud {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .cloud-tag {
+            padding: 8px 18px;
+            border: 1.5px solid var(--border);
+            border-radius: 25px;
+            font-size: 13px;
+            color: var(--text-light);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .cloud-tag:hover {
+            border-color: var(--primary-light);
+            color: var(--primary);
+            background: rgba(232, 85, 109, 0.04);
+        }
+
+        .cloud-tag.hot {
+            border-color: var(--primary-light);
+            color: var(--primary);
+            background: rgba(232, 85, 109, 0.06);
+            font-weight: 600;
+        }
+
+        /* ===== Footer ===== */
+        .footer {
+            position: relative;
+            z-index: 1;
+            margin-top: 40px;
+            padding: 50px 24px 30px;
+            background: white;
+            border-top: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .footer-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .footer-brand {
+            max-width: 520px;
+            margin: 0 auto 32px;
+        }
+
+        .footer-brand .logo {
+            justify-content: center;
+            margin: 0 auto 16px;
+            width: fit-content;
+        }
+
+        .footer-brand p {
+            font-size: 14px;
+            color: var(--text-light);
+            line-height: 1.8;
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 36px;
+        }
+
+        .footer-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 10px 22px;
+            background: var(--bg);
+            border: 1.5px solid var(--border);
+            border-radius: 25px;
+            color: var(--text-light);
+            font-size: 13px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+
+        .footer-link:hover {
+            border-color: var(--primary-light);
+            color: var(--primary);
+            background: rgba(232, 85, 109, 0.05);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(232, 85, 109, 0.12);
+        }
+
+        .footer-bottom {
+            padding-top: 22px;
+            border-top: 1px solid var(--border);
+            font-size: 13px;
+            color: var(--text-lighter);
+        }
+
+        .footer-bottom .heart {
+            color: var(--primary);
+            display: inline-block;
+            animation: heartbeat 1.5s infinite;
+        }
+
+        @keyframes heartbeat {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+
+        /* ===== Empty State ===== */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            display: none;
+        }
+
+        .empty-state .emoji {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+
+        .empty-state h3 {
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+
+        .empty-state p {
+            color: var(--text-light);
+        }
+
+        /* ===== Load More ===== */
+        .load-more {
+            text-align: center;
+            margin-top: 40px;
+        }
+
+        .load-more .btn {
+            padding: 12px 40px;
+        }
+
+        /* ===== Responsive ===== */
+        @media (max-width: 1024px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+            }
+            .sidebar {
+                position: static;
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 20px;
+            }
+            .stories-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 36px;
+            }
+            .filter-bar {
+                grid-template-columns: repeat(4, 1fr);
+                gap: 10px;
+            }
+            .filter-tab {
+                padding: 10px 6px;
+                font-size: 13px;
+            }
+            .hero p {
+                font-size: 15px;
+            }
+            .hero-stats {
+                gap: 24px;
+            }
+            .stat-number {
+                font-size: 24px;
+            }
+            .features {
+                grid-template-columns: 1fr;
+            }
+            .nav-links {
+                display: none;
+            }
+            .hero-actions {
+                flex-direction: column;
+            }
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+            .composer {
+                padding: 24px;
+            }
+            .composer-header {
+                flex-direction: column;
+                gap: 16px;
+                align-items: flex-start;
+            }
+            .composer-footer {
+                flex-direction: column;
+                gap: 16px;
+                align-items: stretch;
+            }
+            .composer-actions {
+                width: 100%;
+            }
+            .submit-btn {
+                width: 100%;
+                justify-content: center;
+            }
+            .sidebar {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* ===== Scroll Animation ===== */
+        .animate-on-scroll {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.6s ease;
+        }
+
+        .animate-on-scroll.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* ===== Custom Scrollbar ===== */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(232, 85, 109, 0.2);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(232, 85, 109, 0.4);
+        }
+        /* ===== Tag: 吐槽 ===== */
+        .tag-complain {
+            background: #efe7fb;
+            color: #7e57c2;
+        }
+
+        /* ===== Tag: 扩展分类 ===== */
+        .tag-blue { background: #e3f2fd; color: #1976d2; }
+        .tag-teal { background: #e0f2f1; color: #00897b; }
+        .tag-orange { background: #fff3e0; color: #ef6c00; }
+        .tag-gray { background: #f0f0f4; color: #757575; }
+        .tag-brown { background: #efebe9; color: #6d4c41; }
+        .tag-gold { background: #fff8e1; color: #b8860b; }
+        .tag-sky { background: #e1f5fe; color: #0288d1; }
+        .tag-rose { background: #fce4ec; color: #c2185b; }
+
+        /* ===== Detail Modal ===== */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(45, 45, 58, 0.45);
+            -webkit-backdrop-filter: blur(8px);
+            backdrop-filter: blur(8px);
+            z-index: 2000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 16px;
+        }
+
+        .modal-overlay.open {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--card-bg);
+            border-radius: 24px;
+            max-width: 760px;
+            width: 100%;
+            max-height: 88vh;
+            overflow-y: auto;
+            position: relative;
+            box-shadow: 0 24px 64px rgba(45, 45, 58, 0.25);
+            animation: modalIn 0.35s cubic-bezier(0.34, 1.4, 0.64, 1);
+        }
+
+        @keyframes modalIn {
+            from { opacity: 0; transform: translateY(28px) scale(0.97); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .modal-close-wrap {
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            display: flex;
+            justify-content: flex-end;
+            padding: 16px 20px 0;
+            margin-bottom: -46px;
+            background: linear-gradient(to bottom, var(--card-bg) 60%, rgba(255,255,255,0));
+        }
+
+        .modal-close {
+            width: 38px;
+            height: 38px;
+            border: none;
+            border-radius: 50%;
+            background: var(--bg);
+            color: var(--text-light);
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            flex-shrink: 0;
+        }
+
+        .modal-close:hover {
+            background: var(--primary);
+            color: white;
+            transform: rotate(90deg);
+        }
+
+        .modal-body {
+            padding: 12px 36px 36px;
+        }
+
+        .modal-body .story-tag {
+            margin-bottom: 14px;
+        }
+
+        .modal-body h2.story-modal-title {
+            font-size: 26px;
+            font-weight: 800;
+            line-height: 1.4;
+            margin-bottom: 16px;
+        }
+
+        .modal-meta {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 22px;
+            flex-wrap: wrap;
+        }
+
+        .modal-author {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-right: auto;
+        }
+
+        .modal-content {
+            font-size: 15px;
+            line-height: 2;
+            color: var(--text);
+            word-break: break-word;
+        }
+
+        /* ===== 用户自定义 HTML 的沙箱阅读容器 ===== */
+        /* mode=html 的故事通过沙箱 iframe 渲染，样式与原文件 100% 一致 */
+        .story-iframe {
+            width: 100%;
+            height: 68vh;
+            border: 1.5px solid var(--border);
+            border-radius: 12px;
+            background: white;
+            display: block;
+        }
+        .modal-content img {
+            max-width: 100%;
+            border-radius: 10px;
+        }
+
+        .modal-content blockquote {
+            border-left: 3px solid var(--primary-light);
+            background: var(--gradient-soft);
+            padding: 12px 16px;
+            border-radius: 0 10px 10px 0;
+            margin: 12px 0;
+        }
+
+        .modal-content pre {
+            background: #1e1e2e;
+            color: #cdd6f4;
+            padding: 14px 16px;
+            border-radius: 10px;
+            overflow-x: auto;
+            font-family: 'Consolas', 'Fira Code', monospace;
+            font-size: 13px;
+        }
+
+        .modal-actions {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            padding: 20px 0;
+            margin-top: 8px;
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .modal-action-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 9px 20px;
+            border-radius: 25px;
+            border: 1.5px solid var(--border);
+            background: white;
+            color: var(--text-light);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+        }
+
+        .modal-action-btn:hover {
+            border-color: var(--primary-light);
+            color: var(--primary);
+        }
+
+        .modal-action-btn.liked {
+            border-color: var(--primary);
+            color: white;
+            background: var(--gradient);
+            box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3);
+        }
+
+        /* ===== Comments ===== */
+        .comments-section {
+            margin-top: 26px;
+        }
+
+        .comments-section h3 {
+            font-size: 17px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .comment-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-bottom: 20px;
+        }
+
+        .comment-item {
+            display: flex;
+            gap: 12px;
+            padding: 14px 0;
+            border-bottom: 1px dashed var(--border);
+        }
+
+        .comment-item:last-child {
+            border-bottom: none;
+        }
+
+        .comment-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--gradient-soft);
+            border: 1.5px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            flex-shrink: 0;
+        }
+
+        .comment-main {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .comment-head {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            margin-bottom: 4px;
+        }
+
+        .comment-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .comment-time {
+            font-size: 11px;
+            color: var(--text-lighter);
+        }
+
+        .comment-text {
+            font-size: 14px;
+            color: var(--text-light);
+            line-height: 1.8;
+            word-break: break-word;
+        }
+
+        .comment-form {
+            background: var(--bg);
+            border: 1.5px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 14px;
+        }
+
+        .comment-form input,
+        .comment-form textarea {
+            width: 100%;
+            border: 1.5px solid var(--border);
+            border-radius: 8px;
+            padding: 9px 12px;
+            font-size: 13px;
+            font-family: inherit;
+            background: white;
+            transition: border-color 0.3s ease;
+            margin-bottom: 10px;
+        }
+
+        .comment-form textarea {
+            min-height: 70px;
+            resize: vertical;
+            line-height: 1.7;
+        }
+
+        .comment-form input:focus,
+        .comment-form textarea:focus {
+            outline: none;
+            border-color: var(--primary-light);
+        }
+
+        .comment-form .comment-submit {
+            float: right;
+            padding: 9px 24px;
+            background: var(--gradient);
+            color: white;
+            border: none;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+        }
+
+        .comment-form .comment-submit:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 18px rgba(232, 85, 109, 0.35);
+        }
+
+        .comment-form .comment-submit:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* ===== Back to Top ===== */
+        .back-top {
+            position: fixed;
+            right: 28px;
+            bottom: 28px;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: var(--gradient);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            font-weight: 700;
+            box-shadow: 0 6px 20px rgba(232, 85, 109, 0.35);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(16px);
+            transition: all 0.3s ease;
+            z-index: 1500;
+        }
+
+        .back-top.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .back-top:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 28px rgba(232, 85, 109, 0.45);
+        }
+
+        /* ===== Toast ===== */
+        .toast-container {
+            position: fixed;
+            top: 90px;
+            right: 24px;
+            z-index: 3000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        .toast {
+            padding: 12px 20px;
+            border-radius: 12px;
+            background: white;
+            box-shadow: var(--shadow-hover);
+            border-left: 3px solid var(--primary);
+            font-size: 14px;
+            color: var(--text);
+            animation: toastIn 0.35s cubic-bezier(0.34, 1.4, 0.64, 1);
+            max-width: 320px;
+        }
+
+        .toast.error {
+            border-left-color: #d93025;
+        }
+
+        .toast.out {
+            opacity: 0;
+            transform: translateX(30px);
+            transition: all 0.35s ease;
+        }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(40px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        /* ===== Loading dots ===== */
+        .loading-tip {
+            text-align: center;
+            padding: 30px 0;
+            color: var(--text-lighter);
+            font-size: 14px;
+        }
+
+        /* ===== Modal responsive ===== */
+        @media (max-width: 768px) {
+            .modal-body {
+                padding: 8px 20px 24px;
+            }
+            .modal-body h2.story-modal-title {
+                font-size: 21px;
+            }
+            .toast-container {
+                right: 12px;
+                left: 12px;
+            }
+            .toast {
+                max-width: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Background Decorations -->
+    <div class="bg-decor">
+        <div class="circle"></div>
+        <div class="circle"></div>
+        <div class="circle"></div>
+    </div>
+
+    <!-- Floating Hearts -->
+    <div class="hearts-container">
+        <div class="floating-heart">💕</div>
+        <div class="floating-heart">💗</div>
+        <div class="floating-heart">💘</div>
+        <div class="floating-heart">💕</div>
+        <div class="floating-heart">💖</div>
+        <div class="floating-heart">💗</div>
+        <div class="floating-heart">💘</div>
+        <div class="floating-heart">💕</div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="navbar" id="navbar">
+        <div class="nav-inner">
+            <a class="logo" href="#">
+                <div class="logo-icon">💕</div>
+                <div>
+                    <div class="logo-text">缘分故事屋</div>
+                    <div class="logo-sub">DATING STORIES</div>
+                </div>
+            </a>
+            <ul class="nav-links">
+                <li><a href="#top" class="active">首页</a></li>
+                <li><a href="#stories">故事广场</a></li>
+                <li><a href="#hot">热门精选</a></li>
+                <li><a href="#about">关于</a></li>
+                <li><a href="publish.html" class="nav-cta">✏️ 发布故事</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero" id="top">
+        <div class="hero-inner">
+            <div class="hero-badge">
+                <span class="dot"></span>
+                正在收集真实故事 · 无需注册登录
+            </div>
+            <h1>
+                每一次相遇<br>
+                都是<span class="highlight">一段缘分</span>
+            </h1>
+            <p>在这里分享你的相亲故事——甜蜜的、搞笑的、感动的、吐槽的。<br>让每一段经历都有被倾听的机会。</p>
+            <div class="hero-actions">
+                <a href="publish.html" class="btn btn-primary">✏️ 分享我的故事</a>
+                <a href="#stories" class="btn btn-secondary">📖 浏览故事</a>
+            </div>
+            <div class="hero-stats">
+                <div class="stat-item">
+                    <div class="stat-number" id="stat-stories">–</div>
+                    <div class="stat-label">个故事</div>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="stat-item">
+                    <div class="stat-number" id="stat-likes">–</div>
+                    <div class="stat-label">次点赞</div>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="stat-item">
+                    <div class="stat-number" id="stat-sweet">–</div>
+                    <div class="stat-label">段甜蜜故事</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="section">
+        <div class="section-inner">
+            <div class="features">
+                <div class="feature-card animate-on-scroll">
+                    <div class="feature-icon pink">✍️</div>
+                    <h3>匿名分享</h3>
+                    <p>无需注册登录，直接书写你的故事，保护隐私，畅所欲言</p>
+                </div>
+                <div class="feature-card animate-on-scroll">
+                    <div class="feature-icon orange">🎨</div>
+                    <h3>富文本支持</h3>
+                    <p>支持纯文本和HTML格式，让你的故事排版更精美</p>
+                </div>
+                <div class="feature-card animate-on-scroll">
+                    <div class="feature-icon purple">💫</div>
+                    <h3>传递缘分</h3>
+                    <p>每一个故事都可能遇见同路人，让缘分在故事间流转</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Main Content -->
+    <section class="section" id="stories">
+        <div class="section-inner">
+            <div class="section-header">
+                <div class="section-tag">📖 STORY PLAZA</div>
+                <h2>故事广场</h2>
+                <p>每一段相亲经历，都值得被认真讲述</p>
+            </div>
+
+            <div class="main-layout">
+                <div class="main-content">
+                    <!-- Filter Tabs -->
+                    <div class="filter-bar" id="filter-bar">
+                        <button class="filter-tab" data-filter="new">🕐 最新</button>
+                        <button class="filter-tab active" data-filter="hot">🔥 热门</button>
+                        <button class="filter-tab" data-filter="daily">📝 日常</button>
+                        <button class="filter-tab" data-filter="sweet">💕 甜蜜</button>
+                        <button class="filter-tab" data-filter="funny">😂 搞笑</button>
+                        <button class="filter-tab" data-filter="touching">💖 感动</button>
+                        <button class="filter-tab" data-filter="complain">💔 吐槽</button>
+                        <button class="filter-tab" data-filter="yidi">🌊 异地相亲</button>
+                        <button class="filter-tab" data-filter="chujian">👋 初次见面</button>
+                        <button class="filter-tab" data-filter="liaotian">💬 聊天记录</button>
+                        <button class="filter-tab" data-filter="jiaolv">😰 年龄焦虑</button>
+                        <button class="filter-tab" data-filter="cuihun">📞 父母催婚</button>
+                        <button class="filter-tab" data-filter="jianjia">🏠 见家长</button>
+                        <button class="filter-tab" data-filter="yilian">🌙 异地恋</button>
+                        <button class="filter-tab" data-filter="shanhun">💍 闪婚</button>
+                    </div>
+                    <!-- Stories Grid（动态渲染） -->
+                    <div class="stories-grid" id="stories-grid"></div>
+
+                    <!-- Empty State -->
+                    <div class="empty-state" id="empty-state">
+                        <div class="emoji">💌</div>
+                        <h3>这里还没有故事</h3>
+                        <p>成为第一个分享缘分的人吧～</p>
+                    </div>
+
+                    <!-- Load More -->
+                    <div class="load-more" id="load-more" style="display:none;">
+                        <button class="btn btn-secondary" id="load-more-btn">📖 加载更多故事</button>
+                    </div>
+                </div>
+
+                <!-- Sidebar -->
+                <aside class="sidebar">
+                    <!-- Hot Stories（动态渲染） -->
+                    <div class="sidebar-card" id="hot">
+                        <h3><span class="icon">🔥</span> 本周热门</h3>
+                        <div class="hot-list" id="hot-list"></div>
+                    </div>
+
+                    <!-- Tag Cloud（动态渲染，可点击筛选） -->
+                    <div class="sidebar-card">
+                        <h3><span class="icon">🏷️</span> 热门标签</h3>
+                        <div class="tag-cloud" id="tag-cloud"></div>
+                    </div>
+
+                    <!-- Announcement -->
+                    <div class="sidebar-card" style="background: var(--gradient-soft); border-color: rgba(232, 85, 109, 0.1);">
+                        <h3><span class="icon">📢</span> 温馨提示</h3>
+                        <p style="font-size: 13px; color: var(--text-light); line-height: 1.8;">
+                            这里是真诚分享的空间 🌸<br>
+                            · 故事支持纯文本和HTML格式<br>
+                            · 请尊重每一位讲述者<br>
+                            · 欢迎分享真实经历<br>
+                            · 不需要注册，匿名发布
+                        </p>
+                    </div>
+                </aside>
+            </div>
+        </div>
+    </section>
+
+    <!-- About Section -->
+    <section class="section" id="about">
+        <div class="section-inner">
+            <div class="section-header">
+                <div class="section-tag">💫 ABOUT US</div>
+                <h2>关于缘分故事屋</h2>
+                <p>一个真诚分享相亲经历的温暖小站</p>
+            </div>
+            <div class="features">
+                <div class="feature-card animate-on-scroll">
+                    <div class="feature-icon pink">🌸</div>
+                    <h3>我们是谁</h3>
+                    <p>「缘分故事屋」是一个匿名的相亲故事分享社区。在这里，每一段相遇——无论结局如何——都值得被认真讲述、被温柔倾听。</p>
+                </div>
+                <div class="feature-card animate-on-scroll">
+                    <div class="feature-icon orange">💌</div>
+                    <h3>分享什么</h3>
+                    <p>甜蜜的、搞笑的、感动的、吐槽的……真实的相亲经历与感悟。无需注册登录，写下即可发布，支持纯文本与 HTML 排版。</p>
+                </div>
+                <div class="feature-card animate-on-scroll">
+                    <div class="feature-icon purple">🤝</div>
+                    <h3>温馨约定</h3>
+                    <p>请尊重每一位讲述者：不辱骂攻击、不传播他人隐私、不发布广告引流。让这里始终保持温柔与真诚 🌷</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-inner">
+            <div class="footer-brand">
+                <a class="logo" href="#top">
+                    <div class="logo-icon">💕</div>
+                    <div>
+                        <div class="logo-text">缘分故事屋</div>
+                        <div class="logo-sub">DATING STORIES</div>
+                    </div>
+                </a>
+                <p>每一段缘分都值得被记录。在这里分享你的相亲故事，让后来的人知道，爱情有很多种样子。</p>
+            </div>
+            <div class="footer-links">
+                <a class="footer-link" href="feedback.html">💌 反馈建议</a>
+                <a class="footer-link" href="terms.html">📖 内容规范</a>
+                <a class="footer-link" href="privacy.html">🔒 隐私声明</a>
+                <a class="footer-link" href="disclaimer.html">📜 免责声明</a>
+            </div>
+            <div class="footer-bottom">
+                <p>© 2025 缘分故事屋 · Made with <span class="heart">❤</span> · 每一个故事都值得被听见</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Story Detail Modal -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal" role="dialog" aria-modal="true">
+            <div class="modal-close-wrap">
+                <button class="modal-close" id="modal-close" title="关闭">✕</button>
+            </div>
+            <div class="modal-body" id="modal-body">
+                <div class="loading-tip">正在打开故事…</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Back to Top -->
+    <button class="back-top" id="back-top" title="返回顶部" aria-label="返回顶部">↑</button>
+
+    <script>
+    'use strict';
+    /* ==================== 工具 ==================== */
+    const $ = s => document.querySelector(s);
+    const $$ = s => Array.from(document.querySelectorAll(s));
+
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function nl2br(s) { return String(s).replace(/\n/g, '<br>'); }
+
+    function fmtNum(n) {
+        n = Number(n) || 0;
+        if (n >= 10000) return (n / 10000).toFixed(1).replace(/\.0$/, '') + 'w';
+        if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+        return String(n);
+    }
+
+    function timeAgo(ts) {
+        const diff = Math.floor(Date.now() / 1000 - Number(ts));
+        if (diff < 60) return '刚刚';
+        if (diff < 3600) return Math.floor(diff / 60) + '分钟前';
+        if (diff < 86400) return Math.floor(diff / 3600) + '小时前';
+        if (diff < 86400 * 30) return Math.floor(diff / 86400) + '天前';
+        const d = new Date(Number(ts) * 1000);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function toast(msg, type) {
+        const box = document.createElement('div');
+        box.className = 'toast' + (type === 'error' ? ' error' : '');
+        box.textContent = msg;
+        $('#toast-container').appendChild(box);
+        setTimeout(() => {
+            box.classList.add('out');
+            setTimeout(() => box.remove(), 400);
+        }, 2600);
+    }
+
+    /* ==================== API ==================== */
+    async function api(route, params, body) {
+        const qs = params ? '&' + new URLSearchParams(params).toString() : '';
+        const opt = body !== undefined
+            ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+            : undefined;
+        // 请求超时保护：15 秒未响应则报错
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 15000);
+        let r;
+        try {
+            r = await fetch('api.php?route=' + encodeURIComponent(route) + qs, { ...opt, signal: ctrl.signal });
+        } catch (e) {
+            clearTimeout(timer);
+            throw new Error(e.name === 'AbortError' ? '请求超时，请稍后重试' : '网络请求失败，请检查服务是否运行');
+        }
+        clearTimeout(timer);
+        const data = await r.json();
+        if (!data.ok) throw new Error(data.error || '请求失败');
+        return data;
+    }
+
+    /* ==================== 状态 ==================== */
+    const state = { filter: 'hot', page: 1, perPage: 6, loading: false, hasMore: false };
+    let likedSet;
+    try { likedSet = new Set(JSON.parse(localStorage.getItem('fs_liked_ids') || '[]')); }
+    catch (e) { likedSet = new Set(); }
+    const saveLiked = () => localStorage.setItem('fs_liked_ids', JSON.stringify([...likedSet]));
+
+    const TAG_META = {
+        sweet:    { label: '💕 甜蜜脱单', cls: 'tag-success' },
+        funny:    { label: '😂 搞笑经历', cls: 'tag-funny' },
+        touching: { label: '💖 感人故事', cls: 'tag-touching' },
+        complain: { label: '💔 心酸吐槽', cls: 'tag-complain' },
+        daily:    { label: '📝 日常记录', cls: 'tag-regular' },
+        yidi:     { label: '🌊 异地相亲', cls: 'tag-blue' },
+        chujian:  { label: '👋 初次见面', cls: 'tag-teal' },
+        liaotian: { label: '💬 聊天记录', cls: 'tag-orange' },
+        jiaolv:   { label: '😰 年龄焦虑', cls: 'tag-gray' },
+        cuihun:   { label: '📞 父母催婚', cls: 'tag-brown' },
+        jianjia:  { label: '🏠 见家长', cls: 'tag-gold' },
+        yilian:   { label: '🌙 异地恋', cls: 'tag-sky' },
+        shanhun:  { label: '💍 闪婚', cls: 'tag-rose' },
+    };
+
+    /* ==================== 故事卡片渲染 ==================== */
+    function tagHtml(tags) {
+        const first = (tags && tags.length) ? TAG_META[tags[0]] : null;
+        if (!first) return '<span class="story-tag tag-regular">📝 日常记录</span>';
+        return `<span class="story-tag ${first.cls}">${first.label}</span>`;
+    }
+
+    function renderCard(story, idx) {
+        const card = document.createElement('div');
+        card.className = 'story-card animate-on-scroll';
+        card.dataset.id = story.id;
+        const av = 'avatar-' + ((idx % 6) + 1);
+        const authorChar = esc((story.author.nickname || '匿').trim().charAt(0) || '匿');
+        const liked = likedSet.has(story.id);
+        card.innerHTML = `
+            <div class="story-meta">
+                <div class="story-author">
+                    <div class="story-avatar ${av}">${authorChar}</div>
+                    <div>
+                        <div class="story-author-name">${esc(story.author.nickname)}</div>
+                        <div class="story-author-info">${esc(story.author.info || '匿名分享')}</div>
+                    </div>
+                </div>
+                <div class="story-time">${timeAgo(story.createdAt)}</div>
+            </div>
+            ${tagHtml(story.tags)}
+            <h3 class="story-title">${esc(story.title)}</h3>
+            <p class="story-excerpt">${esc(story.excerpt)}</p>
+            <div class="story-footer">
+                <div class="story-stats">
+                    <div class="story-stat like-btn ${liked ? 'liked' : ''}" title="点赞">❤️ <span class="like-count">${fmtNum(story.likes)}</span></div>
+                    <div class="story-stat">💬 ${fmtNum(story.commentsCount)}</div>
+                    <div class="story-stat">👁️ ${fmtNum(story.views)}</div>
+                </div>
+                <a href="javascript:void(0)" class="read-more">阅读全文 →</a>
+            </div>`;
+
+        const likeBtn = card.querySelector('.like-btn');
+        likeBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            toggleLike(story.id, likeBtn, e);
+        });
+        card.addEventListener('click', () => openStory(story.id));
+        return card;
+    }
+
+    /* ==================== 列表加载 ==================== */
+    async function loadStories(reset) {
+        if (state.loading) return;
+        state.loading = true;
+        const grid = $('#stories-grid');
+        if (reset) {
+            state.page = 1;
+            grid.innerHTML = '<div class="loading-tip"> loading 中…</div>';
+        }
+        try {
+            const d = await api('stories', { page: state.page, filter: state.filter, limit: state.perPage });
+            if (reset) grid.innerHTML = '';
+            if (reset && d.total === 0) {
+                $('#empty-state').style.display = 'block';
+                $('#load-more').style.display = 'none';
+            } else {
+                $('#empty-state').style.display = 'none';
+                d.stories.forEach((s, i) => grid.appendChild(renderCard(s, (state.page - 1) * state.perPage + i)));
+                state.hasMore = d.hasMore;
+                $('#load-more').style.display = d.hasMore ? 'block' : 'none';
+                grid.querySelectorAll('.animate-on-scroll:not(.visible)').forEach(el => observer.observe(el));
+            }
+        } catch (e) {
+            if (reset) grid.innerHTML = `<div class="loading-tip">😢 加载失败：${esc(e.message)}</div>`;
+            else toast('加载更多失败：' + e.message, 'error');
+        }
+        state.loading = false;
+    }
+
+    /* ==================== 点赞 ==================== */
+    async function toggleLike(id, btn, e) {
+        const undo = btn.classList.contains('liked');
+        try {
+            const d = await api('like', null, { id, undo });
+            btn.classList.toggle('liked', !undo);
+            btn.querySelector('.like-count').textContent = fmtNum(d.likes);
+            if (undo) { likedSet.delete(id); toast('已取消点赞'); }
+            else { likedSet.add(id); heartBurst(e); toast('💕 点赞成功，为缘分加油！'); }
+            saveLiked();
+            loadStats();
+        } catch (err) {
+            toast('点赞失败：' + err.message, 'error');
+        }
+    }
+
+    function heartBurst(e) {
+        const x = (e && e.clientX) || window.innerWidth / 2;
+        const y = (e && e.clientY) || window.innerHeight / 2;
+        const heart = document.createElement('div');
+        heart.innerHTML = '💕';
+        heart.style.cssText = `position:fixed;left:${x}px;top:${y}px;font-size:24px;pointer-events:none;z-index:9999;transition:all 1s ease;`;
+        document.body.appendChild(heart);
+        requestAnimationFrame(() => {
+            heart.style.transform = 'translateY(-80px) scale(1.5)';
+            heart.style.opacity = '0';
+        });
+        setTimeout(() => heart.remove(), 1000);
+    }
+
+    /* ==================== 详情弹窗 ==================== */
+    const overlay = $('#modal-overlay');
+    const modalBody = $('#modal-body');
+
+    function openModal() {
+        overlay.classList.add('open');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeModal() {
+        overlay.classList.remove('open');
+        document.body.style.overflow = '';
+    }
+
+    async function openStory(id) {
+        openModal();
+        modalBody.innerHTML = '<div class="loading-tip">正在打开故事…</div>';
+        try {
+            // 浏览量防刷：同一浏览器会话内重复打开同一故事，不再计数
+            let viewed = [];
+            try { viewed = JSON.parse(sessionStorage.getItem('fs_viewed') || '[]'); } catch (e) { viewed = []; }
+            const shouldCount = !viewed.includes(id);
+            if (shouldCount) {
+                viewed.push(id);
+                try { sessionStorage.setItem('fs_viewed', JSON.stringify(viewed)); } catch (e) { /* 忽略 */ }
+            }
+            const d = await api('story', { id, count: shouldCount ? 1 : 0 });
+            renderStoryModal(d.story);
+        } catch (e) {
+            modalBody.innerHTML = `<div class="loading-tip">😢 ${esc(e.message)}</div>`;
+        }
+    }
+
+    function renderStoryModal(s) {
+        const liked = likedSet.has(s.id);
+        let myKeys = {};
+        try { myKeys = JSON.parse(localStorage.getItem('fs_my_keys') || '{}'); } catch (e) { myKeys = {}; }
+        const isMine = !!(myKeys && myKeys[s.id]);
+        const isHtmlMode = s.mode === 'html';
+        const rawUrl = 'api.php?route=raw&id=' + s.id + '&t=' + (s.createdAt || 0);
+        const contentHtml = isHtmlMode
+            ? '<iframe class="story-iframe" src="' + esc(rawUrl) + '" sandbox="allow-scripts" loading="lazy" title="故事原文"></iframe>'
+            : nl2br(esc(s.content));
+        const commentsHtml = (s.comments || []).map(c => `
+            <div class="comment-item">
+                <div class="comment-avatar">${esc((c.nickname || '匿').charAt(0))}</div>
+                <div class="comment-main">
+                    <div class="comment-head">
+                        <span class="comment-name">${esc(c.nickname)}</span>
+                        <span class="comment-time">${timeAgo(c.createdAt)}</span>
+                    </div>
+                    <div class="comment-text">${nl2br(esc(c.content))}</div>
+                </div>
+            </div>`).join('');
+
+        modalBody.innerHTML = `
+            ${tagHtml(s.tags)}
+            <h2 class="story-modal-title">${esc(s.title)}</h2>
+            <div class="modal-meta">
+                <div class="modal-author">
+                    <div class="story-avatar avatar-1">${esc((s.author.nickname || '匿').charAt(0))}</div>
+                    <div>
+                        <div class="story-author-name">${esc(s.author.nickname)}</div>
+                        <div class="story-author-info">${esc(s.author.info || '匿名分享')} · ${timeAgo(s.createdAt)}</div>
+                    </div>
+                </div>
+                <div class="story-time">👁️ ${fmtNum(s.views)} 阅读</div>
+            </div>
+            <div class="modal-content">${contentHtml}</div>
+            <div class="modal-actions">
+                <button class="modal-action-btn like-btn ${liked ? 'liked' : ''}">❤️ <span class="like-count">${fmtNum(s.likes)}</span>&nbsp;点赞</button>
+                <span class="story-time">💬 ${fmtNum(s.commentsCount)} 条评论</span>
+                ${isHtmlMode ? '<a class="modal-action-btn" href="' + esc(rawUrl) + '" target="_blank" rel="noopener" style="margin-left:auto;text-decoration:none;">📖 原样式全屏阅读</a>' : ''}
+                ${isMine ? '<button class="modal-action-btn" id="del-mine" title="删除这篇故事" style="' + (isHtmlMode ? '' : 'margin-left:auto;') + 'border-color:#f2c4c4;color:#d96060;">🗑 删除我的故事</button>' : ''}
+            </div>
+            <div class="comments-section">
+                <h3>💬 评论</h3>
+                <div class="comment-list">${commentsHtml || '<div class="loading-tip" style="padding:12px 0;">还没有评论，来说第一句吧～</div>'}</div>
+                <div class="comment-form">
+                    <input type="text" id="comment-nickname" placeholder="昵称（选填，不填将随机生成）" maxlength="20">
+                    <textarea id="comment-content" placeholder="写下你的鼓励或共鸣…" maxlength="500"></textarea>
+                    <button class="comment-submit" id="comment-submit">发送 💕</button>
+                    <div style="clear:both;"></div>
+                </div>
+            </div>`;
+
+        modalBody.querySelector('.modal-actions .like-btn').addEventListener('click', e => {
+            toggleLike(s.id, e.currentTarget, e);
+        });
+        const delMine = modalBody.querySelector('#del-mine');
+        if (delMine) {
+            delMine.addEventListener('click', async () => {
+                if (!confirm('确定删除这篇故事吗？删除后无法恢复。')) return;
+                try {
+                    await api('delete_story', null, { id: s.id, editKey: myKeys[s.id] });
+                    delete myKeys[s.id];
+                    localStorage.setItem('fs_my_keys', JSON.stringify(myKeys));
+                    likedSet.delete(s.id);
+                    saveLiked();
+                    toast('🗑 故事已删除');
+                    closeModal();
+                    loadStories(true);
+                    loadHot();
+                    loadStats();
+                } catch (e) {
+                    toast('删除失败：' + e.message, 'error');
+                }
+            });
+        }
+        modalBody.querySelector('#comment-submit').addEventListener('click', () => submitComment(s.id));
+        // 重新渲染后保持滚动位置在顶部
+        modalBody.closest('.modal').scrollTop = 0;
+    }
+
+    async function submitComment(id) {
+        const nickEl = modalBody.querySelector('#comment-nickname');
+        const textEl = modalBody.querySelector('#comment-content');
+        const btn = modalBody.querySelector('#comment-submit');
+        const content = textEl.value.trim();
+        if (!content) { toast('先写点内容再发送吧～', 'error'); textEl.focus(); return; }
+        btn.disabled = true;
+        btn.innerHTML = '发送中…';
+        try {
+            await api('comments', { id }, { nickname: nickEl.value.trim(), content });
+            toast('💕 评论成功！');
+            await openStory(id); // 重新加载详情与评论
+        } catch (e) {
+            toast('评论失败：' + e.message, 'error');
+            btn.disabled = false;
+            btn.innerHTML = '发送 💕';
+        }
+    }
+
+    $('#modal-close').addEventListener('click', closeModal);
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+    /* ==================== 筛选 / 分页 ==================== */
+    function setFilter(f) {
+        if (state.filter === f) return;
+        state.filter = f;
+        const bar = $('#filter-bar');
+        const isFixed = [...bar.querySelectorAll('.filter-tab')].some(t => t.dataset.filter === f);
+        bar.querySelectorAll('.filter-tab').forEach(t => t.classList.toggle('active', t.dataset.filter === f));
+        // 非固定分类（如异地恋、闪婚）用动态 chip 展示当前筛选
+        let chip = bar.querySelector('.filter-chip');
+        if (!isFixed) {
+            if (!chip) {
+                chip = document.createElement('button');
+                chip.className = 'filter-tab filter-chip';
+                chip.title = '点击返回热门';
+                chip.addEventListener('click', () => setFilter('hot'));
+                bar.appendChild(chip);
+            }
+            const meta = TAG_META[f];
+            chip.innerHTML = (meta ? meta.label : '🏷️') + ' ✕';
+            chip.style.display = '';
+        } else if (chip) {
+            chip.style.display = 'none';
+        }
+        loadStories(true);
+    }
+
+    $$('.filter-tab').forEach(tab => {
+        tab.addEventListener('click', function () {
+            setFilter(this.dataset.filter);
+        });
+    });
+
+    $('#load-more-btn').addEventListener('click', () => {
+        if (!state.hasMore) return;
+        state.page += 1;
+        loadStories(false);
+    });
+
+    /* ==================== 侧边栏热门 & 统计 ==================== */
+    const TAG_CLOUD = [
+        { label: '甜蜜脱单', filter: 'sweet' },
+        { label: '搞笑经历', filter: 'funny' },
+        { label: '感人故事', filter: 'touching' },
+        { label: '相亲吐槽', filter: 'complain' },
+        { label: '日常记录', filter: 'daily' },
+        { label: '异地相亲', filter: 'yidi' },
+        { label: '初次见面', filter: 'chujian' },
+        { label: '聊天记录', filter: 'liaotian' },
+        { label: '年龄焦虑', filter: 'jiaolv' },
+        { label: '父母催婚', filter: 'cuihun' },
+        { label: '见家长', filter: 'jianjia' },
+        { label: '异地恋', filter: 'yilian' },
+        { label: '闪婚', filter: 'shanhun' },
+    ];
+
+    async function loadTags() {
+        let counts = {};
+        try {
+            const d = await api('tags');
+            (d.tags || []).forEach(t => { counts[t.tag] = t.count; });
+        } catch (e) { /* 计数获取失败不影响标签展示 */ }
+        const cloud = $('#tag-cloud');
+        if (!cloud) return;
+        cloud.innerHTML = TAG_CLOUD.map(t => {
+            const count = t.filter ? (counts[t.filter] || 0) : 0;
+            const hot = t.filter && count > 0;
+            const num = t.filter ? `<span style="font-size:11px;opacity:.75;">${count}</span>` : '';
+            return `<span class="cloud-tag${hot ? ' hot' : ''}" data-filter="${t.filter || ''}" data-label="${t.label}" title="${t.filter ? '筛选「' + t.label + '」故事' : '该话题暂无故事'}">#${t.label}${num}</span>`;
+        }).join('');
+        cloud.querySelectorAll('.cloud-tag').forEach(el => {
+            el.addEventListener('click', () => {
+                const f = el.dataset.filter;
+                if (f) {
+                    setFilter(f);
+                    document.getElementById('stories').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } else {
+                    toast('「#' + el.dataset.label + '」这个话题还没有故事，点右上角「发布故事」来写第一篇吧 ✏️');
+                }
+            });
+        });
+    }
+
+    async function loadHot() {        try {
+            const d = await api('hot', { limit: 5 });
+            const list = $('#hot-list');
+            list.innerHTML = d.stories.map((s, i) => `
+                <div class="hot-item" data-id="${s.id}">
+                    <div class="hot-rank r${i + 1}">${i + 1}</div>
+                    <div class="hot-info">
+                        <h4>${esc(s.title)}</h4>
+                        <p>🔥 ${fmtNum(s.views)} 阅读 · ${fmtNum(s.commentsCount)} 评论</p>
+                    </div>
+                </div>`).join('');
+            list.querySelectorAll('.hot-item').forEach(item => {
+                item.addEventListener('click', () => openStory(Number(item.dataset.id)));
+            });
+        } catch (e) { /* 侧边栏加载失败不打扰用户 */ }
+    }
+
+    async function loadStats() {
+        try {
+            const d = await api('stats');
+            $('#stat-stories').textContent = fmtNum(d.stats.stories);
+            $('#stat-likes').textContent = fmtNum(d.stats.likes);
+            $('#stat-sweet').textContent = fmtNum(d.stats.sweet);
+        } catch (e) { /* 统计失败静默 */ }
+    }
+
+    /* ==================== 原有交互 ==================== */
+    const navbar = document.getElementById('navbar');
+    window.addEventListener('scroll', () => {
+        if (window.scrollY > 50) navbar.classList.add('scrolled');
+        else navbar.classList.remove('scrolled');
+    });
+
+    // ===== Smooth scroll for nav links =====
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            const href = this.getAttribute('href');
+            if (href === '#') return;
+            const target = document.querySelector(href);
+            if (target) {
+                e.preventDefault();
+                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
+    });
+
+    // ===== Nav scrollspy：导航高亮跟随滚动与点击 =====
+    const navLinks = $$('.nav-links a');
+    function setActiveNav(href) {
+        navLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === href));
+    }
+    const spyTargets = [
+        { href: '#top', el: document.getElementById('top') },
+        { href: '#stories', el: document.getElementById('stories') },
+        { href: '#hot', el: document.getElementById('hot') },
+        { href: '#about', el: document.getElementById('about') },
+    ];
+    function updateSpy() {
+        const lineY = 160;
+        let current = '#top';
+        for (const t of spyTargets) {
+            if (t.el && t.el.getBoundingClientRect().top <= lineY) current = t.href;
+        }
+        setActiveNav(current);
+    }
+    window.addEventListener('scroll', updateSpy, { passive: true });
+    window.addEventListener('resize', updateSpy);
+    updateSpy();
+    navLinks.forEach(a => {
+        a.addEventListener('click', () => {
+            setActiveNav(a.getAttribute('href'));
+            // 导航联动筛选：故事广场 → 最新，热门精选 → 热门
+            if (a.getAttribute('href') === '#stories') setFilter('new');
+            if (a.getAttribute('href') === '#hot') setFilter('hot');
+        });
+    });
+
+    /* ==================== 滚动入场动画 ==================== */
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) entry.target.classList.add('visible');
+        });
+    }, { threshold: 0.1 });
+
+    /* ==================== 返回顶部 ==================== */
+    const backTop = document.getElementById('back-top');
+    window.addEventListener('scroll', () => {
+        backTop.classList.toggle('show', window.scrollY > 400);
+    }, { passive: true });
+    backTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+    /* ==================== 启动 ==================== */
+    // 静态滚动入场动画（特性卡 / 关于卡等）
+    $$('.animate-on-scroll').forEach(el => observer.observe(el));
+
+    // 支持 ?filter=xxx 直达分类（发布页跳回时使用）
+    const URL_FILTERS = ['hot', 'new', 'sweet', 'funny', 'touching', 'complain', 'daily',
+        'yidi', 'chujian', 'liaotian', 'jiaolv', 'cuihun', 'jianjia', 'yilian', 'shanhun'];
+    const urlFilter = new URLSearchParams(location.search).get('filter');
+    if (urlFilter && URL_FILTERS.includes(urlFilter)) {
+        state.filter = urlFilter;
+        $$('.filter-tab').forEach(t => t.classList.toggle('active', t.dataset.filter === urlFilter));
+    }
+
+    loadStories(true);
+    loadHot();
+    loadTags();
+    loadStats();
+
+    // 支持 ?story=ID：发布成功后自动打开自己刚发布的故事
+    const urlStory = parseInt(new URLSearchParams(location.search).get('story'), 10);
+    if (urlStory) {
+        setTimeout(() => openStory(urlStory), 300);
+    }
+    </script>
+</body>
+</html>
