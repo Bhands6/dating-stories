@@ -111,12 +111,12 @@ docker compose up -d --build
 │   ├── feedback.json   # 运行时生成：反馈
 │   └── views_log.json  # 运行时生成：防刷记录
 ├── Dockerfile / docker-compose.yml
-└── 部署说明.md          # 详细部署文档
+└── docs/部署说明.md    # 详细部署文档（docs/ 目录）
 ```
 
 ## 📖 API 概览
 
-统一入口 `api.php?route=xxx`，完整参数见 [部署说明.md](部署说明.md#-api-一览)：
+统一入口 `api.php?route=xxx`，完整参数见 [部署说明.md](docs/部署说明.md#-api-一览)：
 
 | route | 说明 |
 |-------|------|
