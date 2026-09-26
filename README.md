@@ -7,8 +7,7 @@
 
 ![PHP](https://img.shields.io/badge/PHP-7.4%2B-777bb4) ![Database](https://img.shields.io/badge/数据库-无-orange) ![Node](https://img.shields.io/badge/Node-开发服务器-green) ![Docker](https://img.shields.io/badge/Docker-支持-2496ed) ![License](https://img.shields.io/badge/用途-个人项目-pink)
 
-**在线访问**：部署后 `http://你的域名` · **站长管理**：`/admin.html`
-
+**在线访问**：部署后 `http://bhands.me` 
 </div>
 
 ---
