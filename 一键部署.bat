@@ -81,7 +81,7 @@ echo [4/6] 远程解压并重建容器（2核2G 构建约 1-2 分钟，耐心等待）...
 "!WB!" exec --region !REGION! --instance-id !INSTANCE_ID! --timeout 300 --command "cd !REMOTE_DIR! && (which unzip >/dev/null 2>&1 || apt-get install -y unzip) && unzip -o deploy.zip -d . && grep -q 'docker-entrypoint.sh' Dockerfile && echo '[server] Dockerfile version OK' && docker compose up -d --build"
 if errorlevel 1 (echo [X] 远程构建失败，请登录服务器手动检查 & pause & exit /b 1)
 echo [5/6] 验证部署...
-"!WB!" exec --region !REGION! --instance-id !INSTANCE_ID! --timeout 60 --command "docker exec yuanfen-stories ls /var/www/html/ && sleep 2 && echo '--- API test ---' && curl -s http://127.0.0.1:!APP_PORT!/api.php?route=story&id=5&count=0 | head -c 150"
+"!WB!" exec --region !REGION! --instance-id !INSTANCE_ID! --timeout 60 --command "docker exec yuanfen-stories ls /var/www/html/ && sleep 2 && echo '--- API test ---' && curl -s "http://127.0.0.1:!APP_PORT!/api.php?route=story&id=5&count=0" | head -c 200"
 echo.
 goto done
 
@@ -94,7 +94,7 @@ echo [4/6] 远程解压并重建容器...
 ssh -o StrictHostKeyChecking=accept-new !SERVER_USER!@!SERVER_IP! "cd !REMOTE_DIR! && (which unzip >/dev/null 2>&1 || apt-get install -y unzip) && unzip -o deploy.zip -d . && grep -q 'docker-entrypoint.sh' Dockerfile && echo '[server] Dockerfile version OK' && docker compose up -d --build"
 if errorlevel 1 (echo [X] 远程构建失败，请登录服务器手动检查 & pause & exit /b 1)
 echo [5/6] 验证部署...
-ssh !SERVER_USER!@!SERVER_IP! "docker exec yuanfen-stories ls /var/www/html/ && sleep 2 && echo '--- API test ---' && curl -s http://127.0.0.1:!APP_PORT!/api.php?route=story&id=5&count=0 | head -c 150"
+ssh !SERVER_USER!@!SERVER_IP! "docker exec yuanfen-stories ls /var/www/html/ && sleep 2 && echo '--- API test ---' && curl -s "http://127.0.0.1:!APP_PORT!/api.php?route=story&id=5&count=0" | head -c 200"
 echo.
 goto done
 
