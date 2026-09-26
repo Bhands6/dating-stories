@@ -460,6 +460,62 @@
             .ai-guide-footer { flex-direction: column-reverse; }
             .ai-guide-ok { width: 100%; }
         }
+
+        /* 提示词模板卡片 */
+        .ai-guide-template {
+            border: 1.5px dashed #f3cdd6;
+            background: #fffafb;
+            border-radius: 12px;
+            padding: 11px 12px;
+            margin-bottom: 18px;
+        }
+
+        .ai-guide-template-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .ai-guide-template-title {
+            font-size: 12.5px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .ai-guide-copy {
+            border: none;
+            background: var(--gradient-soft);
+            color: var(--primary-dark);
+            font-size: 12px;
+            font-weight: 700;
+            padding: 5px 12px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.22s ease;
+            flex-shrink: 0;
+            font-family: inherit;
+        }
+
+        .ai-guide-copy:hover {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        #ai-template-text {
+            width: 100%;
+            min-height: 150px;
+            max-height: 220px;
+            border: none;
+            background: transparent;
+            resize: vertical;
+            font-size: 12.5px;
+            line-height: 1.75;
+            color: var(--text-light);
+            font-family: inherit;
+            outline: none;
+        }
     </style>
 </head>
 <body>
@@ -683,6 +739,30 @@
             try { localStorage.setItem('ai_guide_dismissed', '1'); } catch (e) { /* 忽略 */ }
         }
     }
+
+    function copyAiTemplate() {
+        const ta = document.getElementById('ai-template-text');
+        const done = () => toast('📋 模板已复制，去粘贴给 AI 吧～');
+        const fallback = () => {
+            ta.focus();
+            ta.select();
+            try {
+                if (document.execCommand('copy')) { done(); return; }
+            } catch (e) { /* 继续走失败分支 */ }
+            toast('复制失败，请手动长按选择文字复制', 'error');
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(ta.value).then(done).catch(fallback);
+        } else {
+            fallback();
+        }
+    }
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && document.getElementById('ai-guide-overlay').classList.contains('open')) {
+            closeAiGuide(false);
+        }
+    });
 
     /* ===== 导入本地 HTML 文件 ===== */
     function handleHtmlFile(file) {
@@ -929,6 +1009,22 @@
                 <div class="ai-guide-step"><span class="num">1</span><span>把故事的大致剧情线用几句话写下来，发给下面<b>任意一位 AI 助手</b></span></div>
                 <div class="ai-guide-step"><span class="num">2</span><span>请 AI 帮你<b>润色故事并排版</b>，生成一个完整的 HTML 网页文件</span></div>
                 <div class="ai-guide-step"><span class="num">3</span><span>把 AI 给你的代码<b>复制保存为 .html 文件</b>，回到这里点上方「📄 上传 HTML 文件」导入即可</span></div>
+            </div>
+            <div class="ai-guide-template">
+                <div class="ai-guide-template-head">
+                    <span class="ai-guide-template-title">💌 提示词模板（把剧情线换成你的故事）</span>
+                    <button class="ai-guide-copy" onclick="copyAiTemplate()">📋 一键复制</button>
+                </div>
+                <textarea id="ai-template-text" spellcheck="false">请你帮我把一段真实经历写成一个精美的 HTML 网页故事，要求如下：
+
+【故事剧情线】
+（在这里用几句话写下你的故事梗概，比如：相亲对象居然是游戏里骂过我的队友，我们从互怼到双排，三个月后他表白了……）
+
+【要求】
+1. 温馨甜美的叙事风格，带一点幽默，符合相亲/恋爱主题；
+2. 粉色系温柔配色，手机和电脑上看都舒服；
+3. 单个 HTML 文件、内联 CSS：包含大标题、分段正文、一句高亮的"金句卡片"，结尾加一句温暖的祝福；
+4. 直接输出完整的 HTML 代码，我会保存为 .html 文件使用。</textarea>
             </div>
             <div class="ai-guide-links">
                 <a class="ai-guide-link" href="https://chat.deepseek.com" target="_blank" rel="noopener">
