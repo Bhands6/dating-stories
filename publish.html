@@ -293,6 +293,173 @@
             .toast { max-width: none; }
             .success-actions .btn { width: 100%; justify-content: center; }
         }
+        /* ===== AI 排版引导弹窗 ===== */
+        .ai-guide-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(45, 45, 58, 0.45);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .ai-guide-overlay.open { display: flex; }
+
+        .ai-guide-modal {
+            background: var(--card-bg);
+            border-radius: 20px;
+            max-width: 520px;
+            width: 100%;
+            padding: 30px 28px 24px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+            animation: guideIn 0.28s ease;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        @keyframes guideIn {
+            from { opacity: 0; transform: translateY(16px) scale(0.97); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .ai-guide-title {
+            font-size: 19px;
+            font-weight: 800;
+            text-align: center;
+            margin-bottom: 6px;
+            background: var(--gradient);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .ai-guide-sub {
+            text-align: center;
+            font-size: 13px;
+            color: var(--text-lighter);
+            margin-bottom: 18px;
+        }
+
+        .ai-guide-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+
+        .ai-guide-step {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 11px 13px;
+            font-size: 13.5px;
+            color: var(--text-light);
+            line-height: 1.65;
+        }
+
+        .ai-guide-step .num {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: var(--gradient);
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .ai-guide-step b { color: var(--text); }
+
+        .ai-guide-links {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+
+        .ai-guide-link {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            text-decoration: none;
+            border: 1.5px solid var(--border);
+            border-radius: 12px;
+            padding: 11px 6px;
+            font-size: 13.5px;
+            font-weight: 600;
+            color: var(--text);
+            background: #fff;
+            transition: all 0.22s ease;
+        }
+
+        .ai-guide-link .dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .ai-guide-link:hover {
+            border-color: var(--primary-light);
+            background: #fff5f7;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(232, 85, 109, 0.14);
+        }
+
+        .ai-guide-link .arrow { color: var(--text-lighter); font-size: 12px; }
+
+        .ai-guide-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .ai-guide-never-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12.5px;
+            color: var(--text-lighter);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .ai-guide-never-label input { accent-color: var(--primary); cursor: pointer; }
+
+        .ai-guide-ok {
+            border: none;
+            background: var(--gradient);
+            color: #fff;
+            font-size: 13.5px;
+            font-weight: 700;
+            padding: 10px 26px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.25s ease;
+        }
+
+        .ai-guide-ok:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 18px rgba(232, 85, 109, 0.35);
+        }
+
+        @media (max-width: 560px) {
+            .ai-guide-links { flex-direction: column; }
+            .ai-guide-link { padding: 12px; }
+            .ai-guide-footer { flex-direction: column-reverse; }
+            .ai-guide-ok { width: 100%; }
+        }
     </style>
 </head>
 <body>
@@ -482,7 +649,7 @@
     }
 
     /* ===== 编辑器切换 ===== */
-    function switchEditor(mode) {
+    function switchEditor(mode, skipGuide) {
         const tabs = document.querySelectorAll('.editor-tab');
         const textarea = document.getElementById('story-content');
         const uploadBtn = document.getElementById('upload-btn');
@@ -498,6 +665,22 @@
             tabs[1].classList.add('active');
             textarea.classList.add('html-mode');
             textarea.placeholder = '<!-- 在这里编写HTML内容，或点击上方「上传 HTML 文件」导入 -->\n\n<h2>我的相亲故事</h2>\n<p>那是一个阳光明媚的下午...</p>\n\n<div style="padding: 10px; background: #fff0f3; border-radius: 8px;">\n    <strong>甜蜜瞬间：</strong>他紧张到把咖啡打翻了...\n</div>';
+            // 切到 HTML 模式时弹出 AI 引导（导入文件场景跳过；用户勾选「不再提示」后不再弹）
+            if (!skipGuide && localStorage.getItem('ai_guide_dismissed') !== '1') {
+                showAiGuide();
+            }
+        }
+    }
+
+    /* ===== AI 排版引导弹窗 ===== */
+    function showAiGuide() {
+        document.getElementById('ai-guide-overlay').classList.add('open');
+    }
+
+    function closeAiGuide(remember) {
+        document.getElementById('ai-guide-overlay').classList.remove('open');
+        if (remember || document.getElementById('ai-guide-never').checked) {
+            try { localStorage.setItem('ai_guide_dismissed', '1'); } catch (e) { /* 忽略 */ }
         }
     }
 
@@ -529,7 +712,7 @@
             const ta = document.getElementById('story-content');
             if (ta.value.trim() && !confirm('导入「' + file.name + '」会替换当前编辑器里的内容，确定继续吗？')) return;
             ta.value = content;
-            switchEditor('html');
+            switchEditor('html', true); // 导入文件场景已会操作，不弹 AI 引导
             toast(styles.length
                 ? '📄 已导入 ' + file.name + '（含 ' + styles.length + ' 段样式表）'
                 : '📄 已导入 ' + file.name + '（文件未含样式表，如需样式请在内容里加 <style>）');
@@ -736,5 +919,35 @@
         else navbar.classList.remove('scrolled');
     }, { passive: true });
     </script>
+
+    <!-- AI 排版引导弹窗（点击 HTML 模式时弹出） -->
+    <div class="ai-guide-overlay" id="ai-guide-overlay" onclick="if (event.target === this) closeAiGuide(false)">
+        <div class="ai-guide-modal" role="dialog" aria-modal="true" aria-label="HTML 排版引导">
+            <div class="ai-guide-title">✨ 不会写 HTML？交给 AI 就好啦</div>
+            <div class="ai-guide-sub">三步搞定精致排版，零基础也能发</div>
+            <div class="ai-guide-steps">
+                <div class="ai-guide-step"><span class="num">1</span><span>把故事的大致剧情线用几句话写下来，发给下面<b>任意一位 AI 助手</b></span></div>
+                <div class="ai-guide-step"><span class="num">2</span><span>请 AI 帮你<b>润色故事并排版</b>，生成一个完整的 HTML 网页文件</span></div>
+                <div class="ai-guide-step"><span class="num">3</span><span>把 AI 给你的代码<b>复制保存为 .html 文件</b>，回到这里点上方「📄 上传 HTML 文件」导入即可</span></div>
+            </div>
+            <div class="ai-guide-links">
+                <a class="ai-guide-link" href="https://chat.deepseek.com" target="_blank" rel="noopener">
+                    <span class="dot" style="background:#4d6bfe;"></span>DeepSeek<span class="arrow">↗</span>
+                </a>
+                <a class="ai-guide-link" href="https://www.doubao.com" target="_blank" rel="noopener">
+                    <span class="dot" style="background:#3b82f6;"></span>豆包<span class="arrow">↗</span>
+                </a>
+                <a class="ai-guide-link" href="https://mimo.xiaomi.com" target="_blank" rel="noopener">
+                    <span class="dot" style="background:#ff6900;"></span>小米 MiMo<span class="arrow">↗</span>
+                </a>
+            </div>
+            <div class="ai-guide-footer">
+                <label class="ai-guide-never-label">
+                    <input type="checkbox" id="ai-guide-never"> 下次不再提示
+                </label>
+                <button class="ai-guide-ok" onclick="closeAiGuide(false)">我知道了</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
