@@ -39,14 +39,14 @@ if !errorlevel! EQU 0 set WB=workbench
 if not defined WB (if exist "C:\Users\Public\workbench\workbench.exe" set "WB=C:\Users\Public\workbench\workbench.exe")
 if not defined WB (if exist "%LOCALAPPDATA%\workbench\workbench.exe" set "WB=%LOCALAPPDATA%\workbench\workbench.exe")
 if not defined WB (
-    echo       [i] workbench probe failed (see output above):
+    echo       [i] workbench probe failed - check probe.txt for details
 ) else (
     "!WB!" list -o json --region !REGION! > probe.txt 2>&1
     if !errorlevel! EQU 0 (
         findstr /c:"i-" probe.txt >nul
         if !errorlevel! EQU 0 set CHANNEL=workbench
     ) else (
-        echo       [i] workbench ¢K1%
+        echo       [i] workbench probe failed - see probe.txt:
         type probe.txt
     )
 )
