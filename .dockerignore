@@ -4,3 +4,4 @@
 *.zip
 .git
 .gitignore
+node_modules/
