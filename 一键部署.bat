@@ -9,11 +9,12 @@ setlocal EnableDelayedExpansion
 :: ================================================
 
 :: ---------- 配置区（按需修改） ----------
-set INSTANCE_ID=
+set INSTANCE_ID=i-7xvel996yq2tycc1h48v
 set SERVER_USER=root
 set SERVER_IP=8.163.10.206
 set REMOTE_DIR=/home/Bhands_StoryBase
 set APP_PORT=8010
+set REGION=cn-guangzhou
 :: --------------------------------------
 
 cd /d %~dp0
@@ -35,10 +36,19 @@ set CHANNEL=
 set WB=
 where workbench >nul 2>nul
 if !errorlevel! EQU 0 set WB=workbench
+if not defined WB (if exist "C:\Users\Public\workbench\workbench.exe" set "WB=C:\Users\Public\workbench\workbench.exe")
 if not defined WB (if exist "%LOCALAPPDATA%\workbench\workbench.exe" set "WB=%LOCALAPPDATA%\workbench\workbench.exe")
-if defined WB (
-    "!WB!" list -o json >nul 2>nul
-    if !errorlevel! EQU 0 set CHANNEL=workbench
+if not defined WB (
+    echo       [i] workbench probe failed (see output above):
+) else (
+    "!WB!" list -o json --region !REGION! > probe.txt 2>&1
+    if !errorlevel! EQU 0 (
+        findstr /c:"i-" probe.txt >nul
+        if !errorlevel! EQU 0 set CHANNEL=workbench
+    ) else (
+        echo       [i] workbench 1%
+        type probe.txt
+    )
 )
 if not defined CHANNEL (
     where ssh >nul 2>nul
@@ -65,13 +75,13 @@ if "!INSTANCE_ID!"=="" (
     exit /b 1
 )
 echo [3/6] 上传 deploy.zip（经阿里云 OSS 中转，免密）...
-"!WB!" upload deploy.zip !REMOTE_DIR!/deploy.zip --instance-id !INSTANCE_ID! --force
+"!WB!" upload deploy.zip !REMOTE_DIR!/deploy.zip --region !REGION! --instance-id !INSTANCE_ID! --force
 if errorlevel 1 (echo [X] 上传失败 & pause & exit /b 1)
 echo [4/6] 远程解压并重建容器（2核2G 构建约 1-2 分钟，耐心等待）...
-"!WB!" exec --instance-id !INSTANCE_ID! --timeout 300 --command "cd !REMOTE_DIR! && (which unzip >/dev/null 2>&1 || apt-get install -y unzip) && unzip -o deploy.zip -d . && grep -q 'docker-entrypoint.sh' Dockerfile && echo '[server] Dockerfile version OK' && docker compose up -d --build"
+"!WB!" exec --region !REGION! --instance-id !INSTANCE_ID! --timeout 300 --command "cd !REMOTE_DIR! && (which unzip >/dev/null 2>&1 || apt-get install -y unzip) && unzip -o deploy.zip -d . && grep -q 'docker-entrypoint.sh' Dockerfile && echo '[server] Dockerfile version OK' && docker compose up -d --build"
 if errorlevel 1 (echo [X] 远程构建失败，请登录服务器手动检查 & pause & exit /b 1)
 echo [5/6] 验证部署...
-"!WB!" exec --instance-id !INSTANCE_ID! --timeout 60 --command "docker exec yuanfen-stories ls /var/www/html/ && sleep 2 && echo '--- API test ---' && curl -s http://127.0.0.1:!APP_PORT!/api.php?route=story&id=5&count=0 | head -c 150"
+"!WB!" exec --region !REGION! --instance-id !INSTANCE_ID! --timeout 60 --command "docker exec yuanfen-stories ls /var/www/html/ && sleep 2 && echo '--- API test ---' && curl -s http://127.0.0.1:!APP_PORT!/api.php?route=story&id=5&count=0 | head -c 150"
 echo.
 goto done
 
@@ -90,6 +100,7 @@ goto done
 
 :: ---------- 完成 ----------
 :done
+del probe.txt >nul 2>nul
 echo [6/6] 部署完成！
 echo       打开 http://!SERVER_IP!:!APP_PORT! 检查站点（或 bhands.me）
 echo       提示：SSH 密码模式每次要输多次密码，想免密可配置 Workbench：
