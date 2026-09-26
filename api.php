@@ -245,38 +245,38 @@ function should_count_view(string $ip, int $id): bool
     return $counted;
 }
 
-/** 评论输出映射（两级楼中楼：一级评论 + 扁平回复列表） */
+/** 评论输出映射（两级楼中楼：一级评论 + 扁平回复列表；字段级兜底，残缺数据不再触发 Warning） */
 function comment_out(array $c): array
 {
     return [
-        'id'              => (string)$c['id'],
-        'nickname'        => (string)$c['nickname'],
-        'content'         => (string)$c['content'],
-        'createdAt'       => (int)$c['createdAt'],
+        'id'              => (string)($c['id'] ?? ''),
+        'nickname'        => (string)($c['nickname'] ?? '匿名'),
+        'content'         => (string)($c['content'] ?? ''),
+        'createdAt'       => (int)($c['createdAt'] ?? 0),
         'replies'         => array_values(array_map(static fn(array $r): array => [
-            'id'              => (string)$r['id'],
-            'nickname'        => (string)$r['nickname'],
-            'content'         => (string)$r['content'],
-            'createdAt'       => (int)$r['createdAt'],
+            'id'              => (string)($r['id'] ?? ''),
+            'nickname'        => (string)($r['nickname'] ?? '匿名'),
+            'content'         => (string)($r['content'] ?? ''),
+            'createdAt'       => (int)($r['createdAt'] ?? 0),
             'replyToNickname' => (string)($r['replyToNickname'] ?? ''),
         ], array_values($c['replies'] ?? []))),
     ];
 }
 
-/** 两级楼中楼：在评论里查找目标（一级或其回复），新回复统一挂到所属一级评论的 replies 末尾 */
-function comment_reply_attach(array &$comments, string $replyTo, array $entry): bool
+/** 两级楼中楼：在评论里查找目标（一级或其回复），新回复统一挂到所属一级评论的 replies 末尾（$entry 引用传递，回填 replyToNickname） */
+function comment_reply_attach(array &$comments, string $replyTo, array &$entry): bool
 {
     foreach ($comments as $i => $c) {
         $found = null;
-        if ((string)$c['id'] === $replyTo) {
+        if ((string)($c['id'] ?? '') === $replyTo) {
             $found = $c;
         } else {
             foreach (($c['replies'] ?? []) as $r) {
-                if ((string)$r['id'] === $replyTo) { $found = $r; break; }
+                if ((string)($r['id'] ?? '') === $replyTo) { $found = $r; break; }
             }
         }
         if ($found !== null) {
-            $entry['replyToNickname'] = (string)$found['nickname'];
+            $entry['replyToNickname'] = (string)($found['nickname'] ?? '匿名');
             $comments[$i]['replies'] = array_values($c['replies'] ?? []);
             $comments[$i]['replies'][] = $entry;
             return true;

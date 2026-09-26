@@ -170,18 +170,18 @@ function randomNickname() {
   return pick(adjs) + pick(nouns) + pick(emos);
 }
 
-/** 评论输出映射（两级楼中楼：一级评论 + 扁平回复列表） */
+/** 评论输出映射（两级楼中楼：一级评论 + 扁平回复列表；字段级兜底，残缺数据不报错） */
 const commentOut = c => ({
-  id: c.id,
-  nickname: c.nickname,
-  content: c.content,
-  createdAt: c.createdAt,
+  id: String(c.id ?? ''),
+  nickname: String(c.nickname ?? '匿名'),
+  content: String(c.content ?? ''),
+  createdAt: Number(c.createdAt ?? 0),
   replies: (c.replies || []).map(r => ({
-    id: r.id,
-    nickname: r.nickname,
-    content: r.content,
-    createdAt: r.createdAt,
-    replyToNickname: r.replyToNickname || '',
+    id: String(r.id ?? ''),
+    nickname: String(r.nickname ?? '匿名'),
+    content: String(r.content ?? ''),
+    createdAt: Number(r.createdAt ?? 0),
+    replyToNickname: String(r.replyToNickname || ''),
   })),
 });
 
@@ -190,15 +190,15 @@ const commentReplyAttach = (comments, replyTo, entry) => {
   for (let i = 0; i < comments.length; i++) {
     const c = comments[i];
     let found = null;
-    if (String(c.id) === replyTo) {
+    if (String(c.id ?? '') === replyTo) {
       found = c;
     } else {
       for (const r of (c.replies || [])) {
-        if (String(r.id) === replyTo) { found = r; break; }
+        if (String(r.id ?? '') === replyTo) { found = r; break; }
       }
     }
     if (found) {
-      entry.replyToNickname = found.nickname;
+      entry.replyToNickname = String(found.nickname ?? '匿名');
       c.replies = c.replies || [];
       c.replies.push(entry);
       return true;
