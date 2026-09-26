@@ -26,9 +26,11 @@ define('VIEWS_LOG', DATA_DIR . '/views_log.json');
 
 /**
  * 管理页密码（用于 admin.html 查看网友反馈）
- * ⚠️ 部署上线前请务必修改成你自己的密码！
+ * 优先读取 data/admin_key.txt（容器首次启动自动生成随机密码，可用 echo '新密码' > data/admin_key.txt 修改）；
+ * 未配置时回退到默认值——公开仓库里可见默认值，生产环境务必配置 admin_key.txt！
  */
-const ADMIN_KEY = 'yuanfen2025';
+$ADMIN_KEY = trim((string)@file_get_contents(DATA_DIR . '/admin_key.txt'));
+if ($ADMIN_KEY === '') { $ADMIN_KEY = 'yuanfen2025'; }
 
 const VALID_TAGS = [
     'sweet',     // 甜蜜脱单
@@ -586,7 +588,7 @@ switch ($route) {
     case 'admin_stories': {
         if ($method !== 'POST') { fail('请使用 POST', 405); }
         $in = body_json();
-        if (!hash_equals(ADMIN_KEY, (string)($in['key'] ?? ''))) { fail('管理密码错误', 403); }
+        if (!hash_equals($ADMIN_KEY, (string)($in['key'] ?? ''))) { fail('管理密码错误', 403); }
 
         $db = db_load();
         if (($in['op'] ?? 'list') === 'delete') {
@@ -620,7 +622,7 @@ switch ($route) {
     case 'admin_feedback': {
         if ($method !== 'POST') { fail('请使用 POST', 405); }
         $in = body_json();
-        if (!hash_equals(ADMIN_KEY, (string)($in['key'] ?? ''))) { fail('管理密码错误', 403); }
+        if (!hash_equals($ADMIN_KEY, (string)($in['key'] ?? ''))) { fail('管理密码错误', 403); }
 
         $db = ['nextId' => 1, 'items' => []];
         if (file_exists(FEEDBACK_FILE)) {

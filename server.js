@@ -23,7 +23,8 @@ const FEEDBACK_FILE = path.join(DATA_DIR, 'feedback.json');
  * 管理页密码（用于 admin.html 查看网友反馈）
  * ⚠️ 部署上线前请务必修改成你自己的密码！
  */
-const ADMIN_KEY = 'yuanfen2025';
+let ADMIN_KEY = 'yuanfen2025';
+try { const fk = fs.readFileSync('./data/admin_key.txt', 'utf8'); if (fk.trim()) ADMIN_KEY = fk.trim(); } catch (e) {}
 const VALID_TAGS = [
   'sweet',     // 甜蜜脱单
   'funny',     // 搞笑经历
