@@ -11,3 +11,6 @@ data/views_log.json
 # 系统文件
 Thumbs.db
 .DS_Store
+
+部署脚本
+一键部署.bat
