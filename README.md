@@ -20,10 +20,11 @@
 | 模块 | 能力 |
 |------|------|
 | 🏠 **故事广场** | 热门/最新排序、13 类标签筛选、分页、详情弹窗、匿名评论、点赞（本地记忆） |
-| ✍️ **发布系统** | 匿名发布（随机昵称）、纯文本/HTML 双模式编辑、上传 HTML 文件、富文本粘贴、实时预览 |
+| 💬 **评论楼中楼** | 评论回复（「回复 @昵称」标注）、≥3 条自动折叠/展开、发评论/回复局部刷新不跳顶并高亮新内容 |
+| ✍️ **发布系统** | 匿名发布（随机昵称）、纯文本/HTML 双模式编辑、上传 HTML 文件、富文本粘贴、实时预览、**AI 排版引导弹窗**（三步指引 + 一键复制提示词模板 + DeepSeek/豆包/小米 MiMo 直达） |
 | 🎨 **HTML 排版故事** | 上传你排版的网页，阅读时以沙箱 iframe 呈现——CSS 变量、`@keyframes`、滚动动画 **100% 原样**，还提供「原文阅读」全屏打开 |
 | 🛡️ **防刷机制** | 浏览量按 IP 24h 去重、点赞本地记忆防连点、内容服务端净化、用户 CSS 沙箱隔离 |
-| 🔐 **站长管理** | 反馈箱（查看/删除网友反馈）、故事管理（最新排序/标签筛选/点击预览/删除），密码保护 |
+| 🔐 **站长管理** | 反馈箱（查看/删除网友反馈）、故事管理（最新排序/标签筛选/点击预览/删除）；密码为容器首次启动**自动生成的 12 位随机密码**（`data/admin_key.txt`） |
 | 📮 **互动与合规** | 反馈建议页、内容规范、隐私声明、免责声明、标签云实时计数、站点统计 |
 
 ---
@@ -57,9 +58,12 @@ docker compose up -d --build
 
 > 📋 完整部署步骤、nginx 注意事项、数据备份与迁移，见 **[部署说明.md](docs/部署说明.md)**
 
-### ⚠️ 部署前必改：管理密码
+### 🔑 管理页密码（无需改代码）
 
-`api.php` 与 `server.js` 顶部的 `ADMIN_KEY`（两处保持一致），是站长管理页（`/admin.html`）的解锁密码。**使用默认密码等于对外开放管理后台，务必修改。**
+管理页 `/admin.html` 的密码**自动生成**：容器首次启动时创建一个 **12 位随机密码**，写入 `data/admin_key.txt` 并打印在 `docker logs` 里。本地（Node）开发时未生成的话，用公开默认值 `yuanfen2025` 登录。
+
+- 手动修改：`echo '新密码' > data/admin_key.txt`（立即生效）
+- ⚠️ 公开仓库里可见的默认值仅是兜底，生产环境以 `admin_key.txt` 为准
 
 ---
 
@@ -105,10 +109,14 @@ docker compose up -d --build
 ├── terms / privacy / disclaimer.html
 ├── api.php             # PHP 后端（生产）
 ├── server.js           # Node 开发服务器
+├── docker-entrypoint.sh # 容器启动钩子（data 权限修复 + 管理密码自动生成）
+├── .gitattributes      # 换行规则锁定（*.sh=LF、*.bat=CRLF）
+├── 一键部署.bat         # Windows 一键部署脚本（仅本地保留，不进仓库）
 ├── data/
 │   ├── seed.json       # 种子数据（首次运行初始化）
 │   ├── stories.json    # 运行时生成：故事/评论/点赞
 │   ├── feedback.json   # 运行时生成：反馈
+│   ├── admin_key.txt   # 运行时生成：管理页密码（随机 12 位）
 │   └── views_log.json  # 运行时生成：防刷记录
 ├── Dockerfile / docker-compose.yml
 └── docs/部署说明.md    # 详细部署文档（docs/ 目录）
@@ -122,11 +130,11 @@ docker compose up -d --build
 |-------|------|
 | `stories` | 列表（筛选/分页）/ 发布（返回一次性删除凭证） |
 | `story` / `raw` | 详情（防刷计数）/ 原文沙箱渲染 |
-| `like` / `comments` | 点赞 / 评论 |
+| `like` / `comments` | 点赞 / 评论与楼中楼回复（replyTo） |
 | `delete_story` | 发布者凭凭证删除 |
 | `tags` / `stats` / `hot` | 标签计数 / 统计 / 热门榜 |
 | `feedback` | 提交反馈 |
-| `admin_feedback` / `admin_stories` | 管理接口（需 ADMIN_KEY） |
+| `admin_feedback` / `admin_stories` | 管理接口（密码为 `data/admin_key.txt` 中的值） |
 
 
 
