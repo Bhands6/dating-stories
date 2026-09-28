@@ -2358,7 +2358,7 @@
                 <div class="story-stats">
                     <div class="story-stat like-btn ${liked ? 'liked' : ''}" data-likes="${Number(story.likes) || 0}" title="点赞">❤️ <span class="like-count">${fmtNum(story.likes)}</span></div>
                     <div class="story-stat">💬 ${fmtNum(story.commentsCount)}</div>
-                    <div class="story-stat">👁️ ${fmtNum(story.views)}</div>
+                    <div class="story-stat views-stat">👁️ ${fmtNum(story.views)}</div>
                 </div>
                 <a href="javascript:void(0)" class="read-more">阅读全文 →</a>
             </div>`;
@@ -2482,6 +2482,28 @@
         }
     }
 
+    /**
+     * 浏览器匿名标识：浏览量按「人」去重用的。
+     * 只存本地、不含任何个人信息；清掉 localStorage 就会重置（后端有 IP 计数上限兜底）。
+     */
+    function visitorId() {
+        try {
+            let v = localStorage.getItem('fs_vid');
+            if (!v || !/^[A-Za-z0-9_-]{8,32}$/.test(v)) {
+                v = (Date.now().toString(36) + Math.random().toString(36).slice(2, 10)).slice(0, 24);
+                localStorage.setItem('fs_vid', v);
+            }
+            return v;
+        } catch (e) { return ''; }
+    }
+
+    /** 打开详情后把卡片上的浏览数刷成最新值（后端已 +1，前端不刷新会让人以为没记上） */
+    function updateCardViews(id, views) {
+        if (views === undefined || views === null) return;
+        const el = document.querySelector('#stories-grid .story-card[data-id="' + id + '"] .views-stat');
+        if (el) el.textContent = '👁️ ' + fmtNum(views);
+    }
+
     async function openStory(id) {
         openModal();
         modalBody.innerHTML = '<div class="loading-tip">正在打开故事…</div>';
@@ -2494,8 +2516,9 @@
                 viewed.push(id);
                 try { sessionStorage.setItem('fs_viewed', JSON.stringify(viewed)); } catch (e) { /* 忽略 */ }
             }
-            const d = await api('story', { id, count: shouldCount ? 1 : 0 });
+            const d = await api('story', { id, count: shouldCount ? 1 : 0, vid: visitorId() });
             renderStoryModal(d.story);
+            updateCardViews(id, d.story && d.story.views);
         } catch (e) {
             modalBody.innerHTML = `<div class="loading-tip">😢 ${esc(e.message)}</div>`;
         }

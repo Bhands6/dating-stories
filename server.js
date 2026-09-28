@@ -425,12 +425,16 @@ const commentReplyAttach = (comments, replyTo, entry) => {
 const commentsCount = s => (s.comments || []).reduce((n, c) => n + 1 + (c.replies || []).length, 0);
 const hotScore = s => s.likes * 3 + commentsCount(s) * 5 + s.views * 0.5;
 
-/* ==================== 浏览量防刷（IP + 时间窗口去重） ==================== */
-// 同一 IP 对同一故事 24 小时内只计 1 次浏览。
+/* ==================== 浏览量防刷（visitorId 去重 + IP 计数上限） ==================== */
+// 主键是「浏览器 visitorId | 故事id」——同一 WiFi / 公司 / 小区出口 IP 下的不同人
+// （不同浏览器）能各记一次，不再像纯 IP 那样被合并成一个人。
+// 兜底是「IP | 故事id」的窗口内计数上限：visitorId 存在 localStorage 里、清掉就重置，
+// 所以必须留一道 IP 维度的闸，否则换个 id 就能无限刷。
 // 与 api.php 保持一致：同样落盘 data/views_log.json（同一份文件、同一格式），
 // 因此本地与线上行为完全等价，重启服务也不会让去重记录失效。
 const VIEWS_LOG = path.join(DATA_DIR, 'views_log.json');
-const VIEW_WINDOW = 24 * 60 * 60;        // 24 小时（秒，与 PHP 同单位）
+const VIEW_WINDOW = 12 * 60 * 60;        // 12 小时（秒，与 PHP 同单位）
+const VIEW_IP_MAX = 20;                  // 同 IP 对同一故事在窗口内的计数上限
 
 /**
  * 是否信任 X-Forwarded-For 头（默认**关闭**）。
@@ -447,29 +451,59 @@ function clientIp(req) {
   return req.socket.remoteAddress || 'unknown';
 }
 
-function shouldCountView(req, storyId) {
-  const key = clientIp(req) + '|' + storyId;
+function shouldCountView(req, storyId, vid) {
   const now = Math.floor(Date.now() / 1000);
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-  let log = {};
+  let raw = {};
   try {
     const parsed = JSON.parse(fs.readFileSync(VIEWS_LOG, 'utf8'));
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) log = parsed;
-  } catch (e) { log = {}; }   // 文件不存在/损坏：按空日志处理（同 PHP）
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) raw = parsed;
+  } catch (e) { raw = {}; }   // 文件不存在/损坏：按空日志处理（同 PHP）
 
-  const last = Number(log[key] || 0);
-  const counted = !(last && now - last < VIEW_WINDOW);
-  if (counted) log[key] = now;
+  let v = {};   // visitorId|id => 时间戳
+  let i = {};   // ip|id => [时间戳, ...]
+  if (raw.v !== undefined || raw.i !== undefined) {
+    if (raw.v && typeof raw.v === 'object') v = raw.v;
+    if (raw.i && typeof raw.i === 'object') i = raw.i;
+  } else {
+    // 旧格式（扁平 { "ip|id": 时间戳 }）整体迁移成 IP 维度记录
+    for (const [k, t] of Object.entries(raw)) {
+      if (typeof t === 'number') i[k] = [t];
+    }
+  }
 
-  // 顺手清理过期记录，防止文件无限增长
-  for (const k of Object.keys(log)) {
-    if (now - Number(log[k]) > VIEW_WINDOW) delete log[k];
+  const ipKey = clientIp(req) + '|' + storyId;
+  const vKey = vid ? vid + '|' + storyId : '';
+
+  // 清理过期记录，防止文件无限增长
+  for (const k of Object.keys(v)) {
+    if (now - Number(v[k]) > VIEW_WINDOW) delete v[k];
+  }
+  for (const k of Object.keys(i)) {
+    const kept = (Array.isArray(i[k]) ? i[k] : []).filter(t => now - Number(t) <= VIEW_WINDOW);
+    if (kept.length) i[k] = kept; else delete i[k];
+  }
+
+  const ipHits = Array.isArray(i[ipKey]) ? i[ipKey].length : 0;
+  let counted;
+  if (ipHits >= VIEW_IP_MAX) {
+    counted = false;                       // IP 兜底：同 IP 对该故事已达上限
+  } else if (vKey) {
+    counted = v[vKey] === undefined;       // 有 visitorId：按 visitor 去重
+  } else {
+    counted = ipHits === 0;                // 无 visitorId：退化为纯 IP 去重
+  }
+
+  if (counted) {
+    if (vKey) v[vKey] = now;
+    if (!Array.isArray(i[ipKey])) i[ipKey] = [];
+    i[ipKey].push(now);
   }
 
   try {
     const tmp = VIEWS_LOG + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(log), 'utf8');
+    fs.writeFileSync(tmp, JSON.stringify({ v, i }), 'utf8');
     fs.renameSync(tmp, VIEWS_LOG);   // 原子替换，避免写一半被读到
   } catch (e) { /* 日志不可写时退化为仅内存判断：不影响浏览本身 */ }
 
@@ -602,13 +636,14 @@ function handleApi(req, res, url, body) {
       return;
     }
 
-    /* ---- 故事详情（浏览量按 IP 24h 去重计数） ---- */
+    /* ---- 故事详情（浏览量按 visitorId 去重，IP 计数上限兜底） ---- */
     case 'story': {
       const db = dbLoad();
       const s = db.stories.find(x => x.id === id);
       if (!s) return fail(res, '故事不存在或已被删除', 404);
-      // 前端会话内重复打开(count=0)或同 IP 24h 内重复访问，都不重复计数
-      if (url.searchParams.get('count') !== '0' && shouldCountView(req, id)) {
+      // 前端会话内重复打开(count=0)或去重命中，都不重复计数
+      const vid = String(url.searchParams.get('vid') || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32);
+      if (url.searchParams.get('count') !== '0' && shouldCountView(req, id, vid)) {
         s.views += 1;
         dbSave(db);
       }

@@ -27,6 +27,8 @@ define('VIEWS_LOG', DATA_DIR . '/views_log.json');
 define('ADMIN_KEY_FILE', DATA_DIR . '/admin_key.txt');
 define('ADMIN_GUARD_FILE', DATA_DIR . '/admin_guard.json');
 define('RATE_GUARD_FILE', DATA_DIR . '/rate_guard.json');
+define('VIEW_WINDOW', 43200);   // 浏览量去重窗口（秒）= 12 小时
+define('VIEW_IP_MAX', 20);      // 同 IP 对同一故事在窗口内的计数上限（防清 localStorage 刷量）
 
 const VALID_TAGS = [
     'sweet',     // 甜蜜脱单
@@ -360,30 +362,63 @@ function client_ip(): string
     return $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 }
 
-/** 浏览量去重：同一 IP 对同一故事 24 小时内只计 1 次 */
-function should_count_view(string $ip, int $id): bool
+/**
+ * 浏览量去重。
+ *
+ * 主键是「浏览器 visitorId | 故事id」——同一 WiFi / 公司 / 小区出口 IP 下的不同人
+ * （不同浏览器）能各记一次，不再像纯 IP 那样被合并成一个人。
+ * 兜底是「IP | 故事id」的窗口内计数上限：visitorId 存在 localStorage 里、清掉就重置，
+ * 所以必须留一道 IP 维度的闸，否则换个 id 就能无限刷。
+ * 没带 visitorId（老浏览器 / 直接 curl）时退化为纯 IP 去重。
+ */
+function should_count_view(string $ip, int $id, string $vid = ''): bool
 {
-    $window = 86400; // 24 小时
     $now = time();
 
     $lock = lock_guard(VIEWS_LOG);
     if (!$lock) { return true; } // 日志不可用时退化为始终计数
 
-    $log = json_decode((string)@file_get_contents(VIEWS_LOG) ?: '', true);
-    if (!is_array($log)) { $log = []; }
-    $key = $ip . '|' . $id;
-    $counted = false;
-    if (isset($log[$key]) && ($now - (int)$log[$key]) < $window) {
-        // 窗口内已计过：不计数
-    } else {
-        $log[$key] = $now;
-        $counted = true;
+    $raw = json_decode((string)@file_get_contents(VIEWS_LOG) ?: '', true);
+    $v = [];  // visitorId|id => 时间戳
+    $i = [];  // ip|id => [时间戳, ...]
+    if (is_array($raw)) {
+        if (isset($raw['v']) || isset($raw['i'])) {
+            $v = is_array($raw['v'] ?? null) ? $raw['v'] : [];
+            $i = is_array($raw['i'] ?? null) ? $raw['i'] : [];
+        } else {
+            // 旧格式（扁平 { "ip|id": 时间戳 }）整体迁移成 IP 维度记录
+            foreach ($raw as $k => $t) {
+                if (is_numeric($t)) { $i[(string)$k] = [(int)$t]; }
+            }
+        }
     }
+
+    $ipKey = $ip . '|' . $id;
+    $vKey  = $vid !== '' ? $vid . '|' . $id : '';
+
     // 清理过期记录，防止文件无限增长
-    foreach ($log as $k => $t) {
-        if (($now - (int)$t) > $window) { unset($log[$k]); }
+    foreach ($v as $k => $t) {
+        if (($now - (int)$t) > VIEW_WINDOW) { unset($v[$k]); }
     }
-    atomic_write(VIEWS_LOG, json_encode($log, JSON_UNESCAPED_UNICODE));
+    foreach ($i as $k => $arr) {
+        $arr = array_values(array_filter((array)$arr, static fn($t): bool => ($now - (int)$t) <= VIEW_WINDOW));
+        if ($arr) { $i[$k] = $arr; } else { unset($i[$k]); }
+    }
+
+    $ipHits = count($i[$ipKey] ?? []);
+    if ($ipHits >= VIEW_IP_MAX) {
+        $counted = false;                      // IP 兜底：同 IP 对该故事已达上限
+    } elseif ($vKey !== '') {
+        $counted = !isset($v[$vKey]);          // 有 visitorId：按 visitor 去重
+    } else {
+        $counted = ($ipHits === 0);            // 无 visitorId：退化为纯 IP 去重
+    }
+
+    if ($counted) {
+        if ($vKey !== '') { $v[$vKey] = $now; }
+        $i[$ipKey][] = $now;
+    }
+    atomic_write(VIEWS_LOG, json_encode(['v' => $v, 'i' => $i], JSON_UNESCAPED_UNICODE));
     unlock_guard($lock);
     return $counted;
 }
@@ -772,10 +807,11 @@ switch ($route) {
         exit;
     }
 
-    /* ---- 故事详情（浏览量按 IP 24h 去重计数） ---- */
+    /* ---- 故事详情（浏览量按 visitorId 去重，IP 计数上限兜底） ---- */
     case 'story': {
-        // 前端会话内重复打开(count=0)或同 IP 24h 内重复访问，都不重复计数
-        $count = ($_GET['count'] ?? '1') !== '0' && should_count_view(client_ip(), $id);
+        // 前端会话内重复打开(count=0)或去重命中，都不重复计数
+        $vid = substr(preg_replace('/[^A-Za-z0-9_-]/', '', (string)($_GET['vid'] ?? '')), 0, 32);
+        $count = ($_GET['count'] ?? '1') !== '0' && should_count_view(client_ip(), $id, $vid);
 
         $found = db_transaction(static function (array &$db) use ($id, $count): ?array {
             foreach ($db['stories'] as $i => $s) {
