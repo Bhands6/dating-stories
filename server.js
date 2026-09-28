@@ -724,12 +724,22 @@ function handleApi(req, res, url, body) {
       const op = String(body.op || 'list');
 
       if (op === 'delete') {
+        // 支持单个 id，也支持 ids 数组（管理页多选批量删除）
+        const ids = Array.isArray(body.ids)
+          ? [...new Set(body.ids.map(v => v | 0))].filter(v => v > 0)
+          : [(body.id | 0)];
+        if (!ids.length) return fail(res, '没有指定要删除的故事');
+
         const db = dbLoad();
-        const id = body.id | 0;
         const before = db.stories.length;
-        db.stories = db.stories.filter(s => s.id !== id);
-        if (db.stories.length === before) return fail(res, '未找到该故事，可能已被删除');
+        db.stories = db.stories.filter(s => !ids.includes(s.id));
+        const removed = before - db.stories.length;
+        if (removed === 0) return fail(res, '未找到这些故事，可能已被删除');
         dbSave(db);
+
+        if (ids.length > 1) {
+          return json(res, { ok: true, message: `已删除 ${removed} 篇故事`, removed });
+        }
       }
 
       // 编辑：只改标题 / 正文 / 标签；点赞、评论、浏览、删除凭证一律原样保留
@@ -932,6 +942,18 @@ function handleApi(req, res, url, body) {
       }
       if (!Array.isArray(db.items)) db.items = [];
 
+      // 标记已读：传 ids 只标这些，不传则全部标为已读
+      if ((body.op || 'list') === 'read') {
+        const ids = Array.isArray(body.ids) ? [...new Set(body.ids.map(v => v | 0))] : [];
+        let marked = 0;
+        for (const it of db.items) {
+          if (ids.length && !ids.includes(it.id | 0)) continue;
+          if (!it.read) { it.read = true; marked++; }
+        }
+        if (marked) writeJsonAtomic(FEEDBACK_FILE, db);
+        return json(res, { ok: true, marked });
+      }
+
       if ((body.op || 'list') === 'delete') {
         const id = body.id | 0;
         const before = db.items.length;
@@ -947,6 +969,51 @@ function handleApi(req, res, url, body) {
       const pageSize = Math.min(100, Math.max(1, parseInt(body.pageSize, 10) || 20));
       const items = all.slice((page - 1) * pageSize, page * pageSize);
       return json(res, { ok: true, total, page, pageSize, hasMore: page * pageSize < total, items });
+    }
+
+    /* ---- 管理页：数据概览（故事/赞/浏览/评论总数 + 今日新增 + 未读反馈） ---- */
+    case 'admin_stats': {
+      if (method !== 'POST') return fail(res, '请使用 POST', 405);
+      if (!adminAuth(req, res, body)) return;
+
+      const db = dbLoad();
+      const todayStart = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+
+      let likes = 0, views = 0, comments = 0, todayStories = 0, todayComments = 0;
+      for (const s of db.stories) {
+        likes += s.likes || 0;
+        views += s.views || 0;
+        if ((s.createdAt || 0) >= todayStart) todayStories++;
+        for (const c of (s.comments || [])) {
+          comments++;
+          if ((c.createdAt || 0) >= todayStart) todayComments++;
+          for (const r of (c.replies || [])) {
+            comments++;
+            if ((r.createdAt || 0) >= todayStart) todayComments++;
+          }
+        }
+      }
+
+      let fb = { items: [] };
+      try { const j = JSON.parse(fs.readFileSync(FEEDBACK_FILE, 'utf8')); if (j && Array.isArray(j.items)) fb = j; } catch (e) {}
+      let fbTotal = 0, fbUnread = 0, todayFb = 0;
+      for (const it of fb.items) {
+        fbTotal++;
+        if (!it.read) fbUnread++;
+        if ((it.createdAt || 0) >= todayStart) todayFb++;
+      }
+
+      const d = new Date();
+      const p = n => String(n).padStart(2, '0');
+      return json(res, {
+        ok: true,
+        stats: {
+          stories: db.stories.length, likes, views, comments,
+          todayStories, todayComments,
+          feedback: fbTotal, feedbackUnread: fbUnread, todayFeedback: todayFb,
+          today: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`,
+        },
+      });
     }
 
     /* ---- 站点统计 ---- */

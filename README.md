@@ -145,7 +145,8 @@ docker compose up -d --build
 | `delete_story` | 发布者凭凭证删除 |
 | `tags` / `stats` / `hot` | 标签计数 / 统计 / 热门榜 |
 | `feedback` | 提交反馈 |
-| `admin_feedback` / `admin_stories` | 管理接口（密码为 `data/admin_key.txt` 中的值，连续错 5 次锁定 15 分钟）；`op=list` 支持 `page` / `pageSize`（默认 20、上限 100），返回 `total` / `page` / `pageSize` / `hasMore` |
+| `admin_feedback` / `admin_stories` / `admin_comments` | 管理接口（密码为 `data/admin_key.txt` 中的值，连续错 5 次锁定 15 分钟）；`op=list` 支持 `page` / `pageSize`（默认 20、上限 100），返回 `total` / `page` / `pageSize` / `hasMore`；`admin_stories` 支持 `q` 搜索、`sort` 排序、`op=update` 编辑、`op=delete` 批量删（`ids` 数组）；`admin_feedback` 支持 `op=read` 标记已读 |
+| `admin_stats` / `admin_export` / `admin_change_key` | 管理页数据概览 / 导出 JSON / 修改管理密码 |
 
 **写接口限流**（按 IP 滑动窗口，超限返回 `429` + 友好提示，记录在 `data/rate_guard.json`）：
 

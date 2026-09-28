@@ -943,13 +943,29 @@ switch ($route) {
         $op = (string)($in['op'] ?? 'list');
 
         if ($op === 'delete') {
-            $id = (int)($in['id'] ?? 0);
-            $removed = db_transaction(static function (array &$db) use ($id): bool {
+            // 支持单个 id，也支持 ids 数组（管理页多选批量删除）
+            if (isset($in['ids']) && is_array($in['ids'])) {
+                $ids = array_values(array_unique(array_map('intval', $in['ids'])));
+            } else {
+                $ids = [(int)($in['id'] ?? 0)];
+            }
+            $ids = array_values(array_filter($ids, static fn(int $v): bool => $v > 0));
+            if (!$ids) { fail('没有指定要删除的故事'); }
+
+            $removed = db_transaction(static function (array &$db) use ($ids): int {
                 $before = count($db['stories']);
-                $db['stories'] = array_values(array_filter($db['stories'], static fn(array $s): bool => (int)$s['id'] !== $id));
-                return count($db['stories']) !== $before;
+                $db['stories'] = array_values(array_filter(
+                    $db['stories'],
+                    static fn(array $s): bool => !in_array((int)$s['id'], $ids, true)
+                ));
+                return $before - count($db['stories']);
             });
-            if (!$removed) { fail('未找到该故事，可能已被删除'); }
+            if ($removed === 0) { fail('未找到这些故事，可能已被删除'); }
+
+            // 批量删除直接返回，不用再拉列表
+            if (count($ids) > 1) {
+                respond(['ok' => true, 'message' => '已删除 ' . $removed . ' 篇故事', 'removed' => $removed]);
+            }
         }
 
         // 编辑：只改标题 / 正文 / 标签；点赞、评论、浏览、删除凭证一律原样保留
@@ -1208,6 +1224,27 @@ switch ($route) {
         if (is_array($loaded)) { $db = $loaded; }
         if (!isset($db['items']) || !is_array($db['items'])) { $db['items'] = []; }
 
+        // 标记已读：传 ids 只标这些，不传则全部标为已读
+        if (($in['op'] ?? 'list') === 'read') {
+            $ids = [];
+            if (isset($in['ids']) && is_array($in['ids'])) {
+                $ids = array_values(array_unique(array_map('intval', $in['ids'])));
+            }
+            $lock = lock_guard(FEEDBACK_FILE);
+            $fresh = json_decode((string)@file_get_contents(FEEDBACK_FILE) ?: '', true);
+            if (is_array($fresh)) { $db = $fresh; }
+            if (!isset($db['items']) || !is_array($db['items'])) { $db['items'] = []; }
+
+            $marked = 0;
+            foreach ($db['items'] as $i => $it) {
+                if ($ids && !in_array((int)($it['id'] ?? 0), $ids, true)) { continue; }
+                if (empty($it['read'])) { $db['items'][$i]['read'] = true; $marked++; }
+            }
+            atomic_write(FEEDBACK_FILE, json_encode($db, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+            unlock_guard($lock);
+            respond(['ok' => true, 'marked' => $marked]);
+        }
+
         if (($in['op'] ?? 'list') === 'delete') {
             $id = (int)($in['id'] ?? 0);
             $lock = lock_guard(FEEDBACK_FILE);
@@ -1240,6 +1277,54 @@ switch ($route) {
             'hasMore'  => ($page * $pageSize) < $total,
             'items'    => $items,
         ]);
+    }
+
+    /* ---- 管理页：数据概览（故事/赞/浏览/评论总数 + 今日新增 + 未读反馈） ---- */
+    case 'admin_stats': {
+        if ($method !== 'POST') { fail('请使用 POST', 405); }
+        $in = body_json();
+        admin_auth($in);
+
+        $db         = db_load();
+        $todayStart = strtotime('today');   // 今天 00:00（服务器时区）
+
+        $likes = 0; $views = 0; $comments = 0; $todayStories = 0; $todayComments = 0;
+        foreach ($db['stories'] as $s) {
+            $likes += (int)($s['likes'] ?? 0);
+            $views += (int)($s['views'] ?? 0);
+            if ((int)($s['createdAt'] ?? 0) >= $todayStart) { $todayStories++; }
+            foreach (($s['comments'] ?? []) as $c) {
+                $comments++;
+                if ((int)($c['createdAt'] ?? 0) >= $todayStart) { $todayComments++; }
+                foreach (($c['replies'] ?? []) as $r) {
+                    $comments++;
+                    if ((int)($r['createdAt'] ?? 0) >= $todayStart) { $todayComments++; }
+                }
+            }
+        }
+
+        $fb = ['items' => []];
+        $loaded = json_decode((string)@file_get_contents(FEEDBACK_FILE) ?: '', true);
+        if (is_array($loaded) && isset($loaded['items'])) { $fb = $loaded; }
+        $fbTotal = 0; $fbUnread = 0; $todayFb = 0;
+        foreach ($fb['items'] as $it) {
+            $fbTotal++;
+            if (empty($it['read'])) { $fbUnread++; }
+            if ((int)($it['createdAt'] ?? 0) >= $todayStart) { $todayFb++; }
+        }
+
+        respond(['ok' => true, 'stats' => [
+            'stories'        => count($db['stories']),
+            'likes'          => $likes,
+            'views'          => $views,
+            'comments'       => $comments,
+            'todayStories'   => $todayStories,
+            'todayComments'  => $todayComments,
+            'feedback'       => $fbTotal,
+            'feedbackUnread' => $fbUnread,
+            'todayFeedback'  => $todayFb,
+            'today'          => date('Y-m-d'),
+        ]]);
     }
 
     /* ---- 站点统计 ---- */
