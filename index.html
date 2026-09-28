@@ -1231,9 +1231,14 @@
             .hero h1 {
                 font-size: 36px;
             }
+            /* 手机：侧边栏改单列（避免 2 列把 main-layout 撑宽到 380px），
+               故事过滤栏改 2 列（避免 4 列 + nowrap 撑宽） */
+            .sidebar {
+                grid-template-columns: 1fr;
+            }
             .filter-bar {
-                grid-template-columns: repeat(4, 1fr);
-                gap: 10px;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 8px;
             }
             .filter-tab {
                 padding: 10px 6px;
