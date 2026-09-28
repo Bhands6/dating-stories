@@ -12,19 +12,162 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const ROOT = __dirname;
 const DATA_DIR = path.join(ROOT, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'stories.json');
 const SEED_FILE = path.join(DATA_DIR, 'seed.json');
 const FEEDBACK_FILE = path.join(DATA_DIR, 'feedback.json');
+const ADMIN_KEY_FILE = path.join(DATA_DIR, 'admin_key.txt');
+const ADMIN_GUARD_FILE = path.join(DATA_DIR, 'admin_guard.json');
 
 /**
  * 管理页密码（用于 admin.html 查看网友反馈）
- * ⚠️ 部署上线前请务必修改成你自己的密码！
+ * 优先读 data/admin_key.txt；文件不存在时自动生成随机密码并落盘。
+ * 与 api.php 行为一致——不再提供公开仓库里可见的兜底默认值。
  */
-let ADMIN_KEY = 'yuanfen2025';
-try { const fk = fs.readFileSync('./data/admin_key.txt', 'utf8'); if (fk.trim()) ADMIN_KEY = fk.trim(); } catch (e) {}
+function adminKey() {
+  let key = '';
+  try { key = String(fs.readFileSync(ADMIN_KEY_FILE, 'utf8')).trim(); } catch (e) { key = ''; }
+  if (key) return key;
+  key = crypto.randomBytes(6).toString('hex'); // 12 位随机密码
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(ADMIN_KEY_FILE, key, 'utf8');
+    console.log('  [首次运行] 已自动生成管理密码，见 data/admin_key.txt');
+  } catch (e) { /* 写不进去时由 adminAuth 给出明确报错 */ }
+  return key;
+}
+
+/** 管理登录限流：同一 IP 连续失败达阈值即锁定（与 api.php 同规则、同记录文件） */
+const ADMIN_MAX_FAILS = 5;        // 允许的连续失败次数
+const ADMIN_LOCK_SECONDS = 900;   // 触发后锁定时长（15 分钟）
+
+/** 恒定时间字符串比较（对应 PHP 的 hash_equals） */
+function safeEqual(a, b) {
+  const ba = Buffer.from(String(a), 'utf8');
+  const bb = Buffer.from(String(b), 'utf8');
+  if (ba.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ba, bb);
+}
+
+/** 读取限流记录：与 api.php 共用 data/admin_guard.json，删掉该文件即可立即解锁 */
+function adminGuardLoad() {
+  try {
+    const d = JSON.parse(fs.readFileSync(ADMIN_GUARD_FILE, 'utf8'));
+    return d && typeof d === 'object' && !Array.isArray(d) ? d : {};
+  } catch (e) { return {}; }
+}
+
+function adminGuardSave(data) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(ADMIN_GUARD_FILE, JSON.stringify(data), 'utf8');
+  } catch (e) { /* 记录不可写时不影响主流程 */ }
+}
+
+/** 校验管理密码；未通过或处于锁定期直接响应并返回 false */
+function adminAuth(req, res, body) {
+  const key = adminKey();
+  if (!key || !fs.existsSync(ADMIN_KEY_FILE)) {
+    fail(res, '管理密码未配置，且 data/ 目录不可写。请手动创建 data/admin_key.txt 并写入你的密码', 500);
+    return false;
+  }
+
+  const ip = clientIp(req);
+  const now = Math.floor(Date.now() / 1000);
+  const guard = adminGuardLoad();
+  const rec = guard[ip];
+
+  // 锁定期内直接拒绝，不再比对密码（防止在锁定窗口里继续试）
+  if (rec && Number(rec.until || 0) > now) {
+    fail(res, '密码错误次数过多，请 ' + Math.ceil((Number(rec.until) - now) / 60) + ' 分钟后再试', 429);
+    return false;
+  }
+
+  if (!safeEqual(key, body.key || '')) {
+    // 累计失败次数，达阈值开始锁定；顺手清理过期记录防止文件无限增长
+    for (const k of Object.keys(guard)) {
+      const v = guard[k] || {};
+      if (Number(v.until || 0) <= now && (now - Number(v.last || 0)) > ADMIN_LOCK_SECONDS) delete guard[k];
+    }
+    const n = Number((rec && rec.n) || 0) + 1;
+    guard[ip] = { n, last: now, until: n >= ADMIN_MAX_FAILS ? now + ADMIN_LOCK_SECONDS : 0 };
+    adminGuardSave(guard);
+    const left = ADMIN_MAX_FAILS - n;
+    fail(res, left > 0 ? '管理密码错误（还可尝试 ' + left + ' 次）' : '密码错误次数过多，请 15 分钟后再试', left > 0 ? 403 : 429);
+    return false;
+  }
+
+  // 登录成功：清空该 IP 的失败记录
+  if (guard[ip]) { delete guard[ip]; adminGuardSave(guard); }
+  return true;
+}
+
+/* ================= 内容写入限流（防脚本刷屏） ================= */
+
+/**
+ * 匿名站没有登录门槛，写接口必须限流，否则可被脚本刷爆。
+ * 与 api.php 的 RATE_LIMITS 同规则、共用 data/rate_guard.json（同格式）。
+ */
+const RATE_GUARD_FILE = path.join(DATA_DIR, 'rate_guard.json');
+const RATE_LIMITS = {
+  stories:  { max: 5,  window: 600,  label: '发布' },
+  comments: { max: 15, window: 300,  label: '评论' },
+  feedback: { max: 3,  window: 1800, label: '提交反馈' },
+};
+
+/** 滑动窗口计数。放行返回 null；超限返回还需等待的分钟数 */
+function rateCheck(action, ip) {
+  const conf = RATE_LIMITS[action];
+  if (!conf) return null;
+
+  const now = Math.floor(Date.now() / 1000);
+  const key = ip + '|' + action;
+
+  let data = {};
+  try {
+    const d = JSON.parse(fs.readFileSync(RATE_GUARD_FILE, 'utf8'));
+    if (d && typeof d === 'object' && !Array.isArray(d)) data = d;
+  } catch (e) { data = {}; }   // 文件不存在/损坏：按空记录处理
+
+  let hits = (Array.isArray(data[key]) ? data[key] : [])
+    .map(Number).filter(t => now - t < conf.window);
+
+  const over = hits.length >= conf.max;
+  if (!over) hits.push(now);
+  data[key] = hits;
+
+  // 顺手清理已过期/为空的键，防止文件无限增长
+  for (const k of Object.keys(data)) {
+    const alive = (Array.isArray(data[k]) ? data[k] : []).map(Number).filter(t => now - t < conf.window);
+    if (!alive.length) delete data[k]; else data[k] = alive;
+  }
+
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    const tmp = RATE_GUARD_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(data), 'utf8');
+    fs.renameSync(tmp, RATE_GUARD_FILE);
+  } catch (e) { /* 记录不可写时不影响主流程（限流是附加保护，不挡正常用户） */ }
+
+  if (!over) return null;
+  // 最早那次命中滑出窗口时即可再次操作
+  return Math.max(1, Math.ceil((Math.min(...hits) + conf.window - now) / 60));
+}
+
+/** 超限直接响应并返回 false */
+function rateGuard(req, res, action) {
+  const wait = rateCheck(action, clientIp(req));
+  if (wait !== null) {
+    const label = (RATE_LIMITS[action] || {}).label || '操作';
+    fail(res, label + '太频繁啦，请 ' + wait + ' 分钟后再试 💕', 429);
+    return false;
+  }
+  return true;
+}
+
 const VALID_TAGS = [
   'sweet',     // 甜蜜脱单
   'funny',     // 搞笑经历
@@ -50,49 +193,61 @@ function json(res, obj, code = 200) {
 
 const fail = (res, msg, code = 400) => json(res, { ok: false, error: msg }, code);
 
+/**
+ * 把 createdAtOffset（相对时间戳）归一化成 createdAt，递归处理 comments / replies。
+ * 与 api.php 的 normalize_created_at() 行为保持一致。
+ *
+ * 背景：PHP 那边踩过坑——`foreach (($node['comments'] ?? []) as &$child)` 这种
+ * 「对表达式取引用」的写法会静默失效，导致线上种子评论时间显示成 1970-01-01。
+ * JS 没有这个陷阱，但两边必须都覆盖到 comments 和 replies。
+ *
+ * @returns {boolean} 是否发生了修改（调用方据此决定要不要写盘）
+ */
+function normalizeCreatedAt(node, now) {
+  let dirty = false;
+
+  if (node.createdAtOffset !== undefined) {
+    if (!node.createdAt) node.createdAt = now - Number(node.createdAtOffset || 0);
+    delete node.createdAtOffset;
+    dirty = true;
+  }
+
+  for (const field of ['comments', 'replies']) {
+    if (!Array.isArray(node[field])) continue;
+    for (const child of node[field]) {
+      if (normalizeCreatedAt(child, now)) dirty = true;
+    }
+  }
+
+  return dirty;
+}
+
 /** 读取数据库（首次运行自动用种子初始化，时间戳按当前时间偏移生成） */
 function dbLoad() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  const now = Math.floor(Date.now() / 1000);
+
   if (!fs.existsSync(DATA_FILE)) {
     let seed = {};
     try { seed = JSON.parse(fs.readFileSync(SEED_FILE, 'utf8')); } catch (e) { seed = {}; }
-    const now = Math.floor(Date.now() / 1000);
-    const stories = (seed.stories || []).map(s => {
-      const copy = { ...s, createdAt: now - (s.createdAtOffset || 0) };
-      delete copy.createdAtOffset;
-      copy.comments = (s.comments || []).map(c => {
-        const cc = { ...c, createdAt: now - (c.createdAtOffset || 0) };
-        delete cc.createdAtOffset;
-        return cc;
-      });
-      return copy;
-    });
+    const stories = seed.stories || [];
+    for (const s of stories) normalizeCreatedAt(s, now);
     const db = { nextId: seed.nextId || stories.length + 1, stories };
     dbSave(db);
     return db;
   }
+
   let db;
   try { db = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch (e) { db = null; }
   if (!db) return { nextId: 1, stories: [] };
   if (!Array.isArray(db.stories)) db.stories = [];
   if (!db.nextId) db.nextId = db.stories.length + 1;
-  // 归一化：兼容旧版/手动导入的 createdAtOffset 形态（转成 createdAt 并清理，一次写入后不再有开销）
-  const now = Math.floor(Date.now() / 1000);
+
+  // 归一化旧版/手动导入的 createdAtOffset 形态（一次写入后不再有开销）
   let dirty = false;
-  db.stories.forEach(s => {
-    if (s.createdAtOffset !== undefined) {
-      if (!s.createdAt) s.createdAt = now - s.createdAtOffset;
-      delete s.createdAtOffset;
-      dirty = true;
-    }
-    (s.comments || []).forEach(c => {
-      if (c.createdAtOffset !== undefined) {
-        if (!c.createdAt) c.createdAt = now - c.createdAtOffset;
-        delete c.createdAtOffset;
-        dirty = true;
-      }
-    });
-  });
+  for (const s of db.stories) {
+    if (normalizeCreatedAt(s, now)) dirty = true;
+  }
   if (dirty) dbSave(db);
   return db;
 }
@@ -232,38 +387,54 @@ const hotScore = s => s.likes * 3 + commentsCount(s) * 5 + s.views * 0.5;
 
 /* ==================== 浏览量防刷（IP + 时间窗口去重） ==================== */
 // 同一 IP 对同一故事 24 小时内只计 1 次浏览。
-// 记录存内存即可：窗口过期自动失效，服务重启重置也无碍。
-const viewLog = new Map();               // key: `${ip}|${storyId}` → value: 上次计数时间戳(ms)
-const VIEW_WINDOW = 24 * 60 * 60 * 1000; // 24 小时
+// 与 api.php 保持一致：同样落盘 data/views_log.json（同一份文件、同一格式），
+// 因此本地与线上行为完全等价，重启服务也不会让去重记录失效。
+const VIEWS_LOG = path.join(DATA_DIR, 'views_log.json');
+const VIEW_WINDOW = 24 * 60 * 60;        // 24 小时（秒，与 PHP 同单位）
+
+/**
+ * 是否信任 X-Forwarded-For 头（默认**关闭**）。
+ * 站点前面没有反向代理时，XFF 完全由客户端伪造——信任它等于把限流和浏览量去重拱手让人。
+ * 将来若在前面挂了 nginx/CDN，再改成 true（并确保代理是**覆盖**而不是追加该头）。
+ */
+const TRUST_FORWARDED_FOR = false;
 
 function clientIp(req) {
-  const xf = req.headers['x-forwarded-for'];
-  if (xf) return String(xf).split(',')[0].trim();   // 经 nginx/Docker 反代时取真实 IP
+  if (TRUST_FORWARDED_FOR) {
+    const xf = req.headers['x-forwarded-for'];
+    if (xf) return String(xf).split(',')[0].trim();   // 经反代时取真实 IP
+  }
   return req.socket.remoteAddress || 'unknown';
 }
 
 function shouldCountView(req, storyId) {
   const key = clientIp(req) + '|' + storyId;
-  const now = Date.now();
-  const last = viewLog.get(key);
-  if (last && now - last < VIEW_WINDOW) return false;
-  viewLog.set(key, now);
-  // 顺手清理过期记录，防止内存无限增长
-  if (viewLog.size > 5000) {
-    for (const [k, t] of viewLog) {
-      if (now - t > VIEW_WINDOW) viewLog.delete(k);
-    }
-  }
-  return true;
-}
+  const now = Math.floor(Date.now() / 1000);
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// 每小时兜底清理一次过期记录
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, t] of viewLog) {
-    if (now - t > VIEW_WINDOW) viewLog.delete(k);
+  let log = {};
+  try {
+    const parsed = JSON.parse(fs.readFileSync(VIEWS_LOG, 'utf8'));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) log = parsed;
+  } catch (e) { log = {}; }   // 文件不存在/损坏：按空日志处理（同 PHP）
+
+  const last = Number(log[key] || 0);
+  const counted = !(last && now - last < VIEW_WINDOW);
+  if (counted) log[key] = now;
+
+  // 顺手清理过期记录，防止文件无限增长
+  for (const k of Object.keys(log)) {
+    if (now - Number(log[k]) > VIEW_WINDOW) delete log[k];
   }
-}, 60 * 60 * 1000).unref();
+
+  try {
+    const tmp = VIEWS_LOG + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(log), 'utf8');
+    fs.renameSync(tmp, VIEWS_LOG);   // 原子替换，避免写一半被读到
+  } catch (e) { /* 日志不可写时退化为仅内存判断：不影响浏览本身 */ }
+
+  return counted;
+}
 
 /** 列表项字段（不含全文） */
 function storyCard(s) {
@@ -319,6 +490,9 @@ function handleApi(req, res, url, body) {
         const tags = [...new Set(tagsIn.filter(t => VALID_TAGS.includes(t)))].slice(0, 4);
         // 一个标签都没选时，默认归为「日常记录」，保证每篇故事都有归属分类
         if (!tags.length) tags.push('daily');
+
+        // 校验通过后才计数：正常用户填错重试不会被罚，只有真正落库的提交才消耗额度
+        if (!rateGuard(req, res, 'stories')) return;
 
         const db = dbLoad();
         const story = {
@@ -427,6 +601,7 @@ function handleApi(req, res, url, body) {
         if (Array.from(content).length > 500) return fail(res, '评论最多 500 个字');
         if (Array.from(nickname).length > 20) return fail(res, '昵称最多 20 个字符');
         if (!nickname) nickname = randomNickname();
+        if (!rateGuard(req, res, 'comments')) return;
         const entry = {
           id: 'c' + Date.now() + Math.floor(Math.random() * 9000 + 1000),
           nickname, content,
@@ -474,6 +649,7 @@ function handleApi(req, res, url, body) {
       if (contact.length > 100) return fail(res, '联系方式最多 100 个字符');
       if (Array.from(nickname).length > 20) return fail(res, '昵称最多 20 个字符');
       if (!nickname) nickname = randomNickname();
+      if (!rateGuard(req, res, 'feedback')) return;
       if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
       let db = { nextId: 1, items: [] };
       if (fs.existsSync(FEEDBACK_FILE)) {
@@ -504,7 +680,7 @@ function handleApi(req, res, url, body) {
     /* ---- 管理页：故事管理（查看/删除任意故事，支持标签筛选、最新在前） ---- */
     case 'admin_stories': {
       if (method !== 'POST') return fail(res, '请使用 POST', 405);
-      if (String(body.key || '') !== ADMIN_KEY) return fail(res, '管理密码错误', 403);
+      if (!adminAuth(req, res, body)) return;
 
       const db = dbLoad();
       if ((body.op || 'list') === 'delete') {
@@ -535,7 +711,7 @@ function handleApi(req, res, url, body) {
     /* ---- 管理页：查看/删除反馈 ---- */
     case 'admin_feedback': {
       if (method !== 'POST') return fail(res, '请使用 POST', 405);
-      if (String(body.key || '') !== ADMIN_KEY) return fail(res, '管理密码错误', 403);
+      if (!adminAuth(req, res, body)) return;
 
       let db = { nextId: 1, items: [] };
       if (fs.existsSync(FEEDBACK_FILE)) {
@@ -602,10 +778,34 @@ const MIME = {
 
 function serveStatic(req, res, pathname) {
   if (pathname === '/') pathname = '/index.html';
-  const file = path.normalize(path.join(ROOT, decodeURIComponent(pathname)));
-  if (!file.startsWith(ROOT)) {
-    res.writeHead(403); res.end('Forbidden'); return;
+
+  let decoded;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch (e) {
+    // 畸形百分号转义（如 /%）会让 decodeURIComponent 抛异常，不接住会直接崩掉进程
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('400 Bad Request');
+    return;
   }
+
+  const file = path.normalize(path.join(ROOT, decoded));
+  // 目录穿越防护：必须严格位于 ROOT 之内。
+  // 用 ROOT + 分隔符比较，否则 `念爱故事屋-evil` 这类同前缀的兄弟目录会被 startsWith 误判为站内。
+  if (file !== ROOT && !file.startsWith(ROOT + path.sep)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('403 Forbidden');
+    return;
+  }
+
+  // 🔒 data/ 目录（管理密码 / 全站数据库 / 删除凭证 / 网友反馈）不允许通过 HTTP 读取，
+  //    与线上 Apache 的 deny 规则保持一致——应用只经 api.php 走文件系统读取。
+  if (file === DATA_DIR || file.startsWith(DATA_DIR + path.sep)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('403 Forbidden');
+    return;
+  }
+
   fs.readFile(file, (err, data) => {
     if (err) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });

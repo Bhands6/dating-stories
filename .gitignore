@@ -1,16 +1,32 @@
 # 附件与临时文件
 .loomy-attachments/
+.loomy-tmp/
 *.log
 *.png
+*.zip
+
+# 部署/调试输出（本机 bat 重定向产物，曾被打包上传到服务器，2026-09-28 清理）
+run-*.txt
+*-out.txt
+*-err.txt
+probe*.txt
 
 # 运行时数据（部署后首次访问自动生成；种子数据 seed.json 保留在仓库）
 data/stories.json
 data/feedback.json
 data/views_log.json
+data/rate_guard.json
+
+# 密钥与安全记录：绝不能进仓库（admin_key.txt 是管理页密码）
+data/admin_key.txt
+data/admin_guard.json
 
 # 系统文件
 Thumbs.db
 .DS_Store
+
+# AI 协作工作区（含服务器信息、隐患梳理等内部笔记，仓库是公开的，勿提交）
+.workbuddy-ai/
 
 部署脚本
 一键部署.bat

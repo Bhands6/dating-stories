@@ -1,3 +1,8 @@
-# 换行规则锁定：sh 脚本必须 LF（CRLF 会让容器 entrypoint 启动失败）、bat 必须 CRLF（cmd 解析需要）
+# 默认：所有文本文件统一 LF
+# 避免 core.autocrlf 在换机器/重新 clone 时把 CRLF 写进 Dockerfile / .htaccess / *.php，
+# CRLF 会被带进容器配置文件导致解析异常
+* text=auto eol=lf
+
+# 例外：sh 脚本必须 LF（CRLF 会让容器 entrypoint 启动失败）、bat 必须 CRLF（cmd 解析需要）
 *.sh text eol=lf
 *.bat text eol=crlf

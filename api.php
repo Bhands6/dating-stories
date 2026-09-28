@@ -13,24 +13,20 @@ declare(strict_types=1);
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Headers: Content-Type');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') { exit; }
+header('Referrer-Policy: no-referrer');
+// 站点为同源应用（所有页面都以相对路径请求 api.php），不需要任何跨域授权。
+// ⚠️ 这里曾放开 `Access-Control-Allow-Origin: *`，会让任意第三方站点在浏览器里
+//    跨域调用 admin_* 管理接口暴力猜密码，已移除；确需跨域时请显式列出自己的域名。
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') { http_response_code(204); exit; }
 
 define('DATA_DIR', __DIR__ . '/data');
 define('DATA_FILE', DATA_DIR . '/stories.json');
 define('SEED_FILE', DATA_DIR . '/seed.json');
 define('FEEDBACK_FILE', DATA_DIR . '/feedback.json');
 define('VIEWS_LOG', DATA_DIR . '/views_log.json');
-
-/**
- * 管理页密码（用于 admin.html 查看网友反馈）
- * 优先读取 data/admin_key.txt（容器首次启动自动生成随机密码，可用 echo '新密码' > data/admin_key.txt 修改）；
- * 未配置时回退到默认值——公开仓库里可见默认值，生产环境务必配置 admin_key.txt！
- */
-$ADMIN_KEY = trim((string)@file_get_contents(DATA_DIR . '/admin_key.txt'));
-if ($ADMIN_KEY === '') { $ADMIN_KEY = 'yuanfen2025'; }
+define('ADMIN_KEY_FILE', DATA_DIR . '/admin_key.txt');
+define('ADMIN_GUARD_FILE', DATA_DIR . '/admin_guard.json');
+define('RATE_GUARD_FILE', DATA_DIR . '/rate_guard.json');
 
 const VALID_TAGS = [
     'sweet',     // 甜蜜脱单
@@ -69,53 +65,67 @@ function body_json(): array
     return is_array($j) ? $j : [];
 }
 
+/**
+ * 把 createdAtOffset（相对时间戳）归一化成 createdAt，递归处理 comments / replies。
+ *
+ * ⚠️ 这里必须**先把数组取到变量再遍历**：
+ *      `foreach (($node['comments'] ?? []) as &$child)` 这种「对表达式取引用」的写法，
+ *      PHP 改的是临时副本，原数组不会被更新——而且**不报错、静默失效**。
+ *      曾经因此让线上所有种子评论的 createdAt 缺失，前端时间显示成 1970-01-01。
+ *
+ * @return bool 是否发生了修改（调用方据此决定要不要写盘）
+ */
+function normalize_created_at(array &$node, int $now): bool
+{
+    $dirty = false;
+
+    if (isset($node['createdAtOffset'])) {
+        if (empty($node['createdAt'])) { $node['createdAt'] = $now - (int)$node['createdAtOffset']; }
+        unset($node['createdAtOffset']);
+        $dirty = true;
+    }
+
+    foreach (['comments', 'replies'] as $field) {
+        if (!isset($node[$field]) || !is_array($node[$field])) { continue; }
+        $list = $node[$field];              // ← 关键：先取到变量，不能对表达式取引用
+        foreach ($list as &$child) {
+            if (normalize_created_at($child, $now)) { $dirty = true; }
+        }
+        unset($child);
+        $node[$field] = $list;
+    }
+
+    return $dirty;
+}
+
 /** 读取数据库（首次运行自动用种子数据初始化，时间戳按当前时间偏移生成） */
 function db_load(): array
 {
     if (!is_dir(DATA_DIR)) { @mkdir(DATA_DIR, 0755, true); }
+    $now = time();
+
     if (!file_exists(DATA_FILE)) {
         $seed = [];
         if (file_exists(SEED_FILE)) {
             $seed = json_decode((string)file_get_contents(SEED_FILE), true) ?: [];
         }
-        $now = time();
         $stories = $seed['stories'] ?? [];
-        foreach ($stories as &$s) {
-            $s['createdAt'] = $now - (int)($s['createdAtOffset'] ?? 0);
-            unset($s['createdAtOffset']);
-            foreach (($s['comments'] ?? []) as &$c) {
-                $c['createdAt'] = $now - (int)($c['createdAtOffset'] ?? 0);
-                unset($c['createdAtOffset']);
-            }
-            unset($c);
-        }
+        foreach ($stories as &$s) { normalize_created_at($s, $now); }
         unset($s);
         $db = ['nextId' => (int)($seed['nextId'] ?? (count($stories) + 1)), 'stories' => $stories];
         db_save($db);
         return $db;
     }
+
     $db = json_decode((string)file_get_contents(DATA_FILE), true);
     if (!is_array($db)) { fail('数据文件损坏，请联系管理员', 500); }
     if (!isset($db['stories']) || !is_array($db['stories'])) { $db['stories'] = []; }
     if (!isset($db['nextId'])) { $db['nextId'] = count($db['stories']) + 1; }
 
-    // 归一化：兼容旧版/手动导入数据里的 createdAtOffset（转成 createdAt 并清理，仅首次修复时写回）
-    $now = time();
+    // 归一化旧版/手动导入数据里的 createdAtOffset（转成 createdAt 并清理，仅在有修复时写回）
     $dirty = false;
     foreach ($db['stories'] as &$s) {
-        if (isset($s['createdAtOffset'])) {
-            if (empty($s['createdAt'])) { $s['createdAt'] = $now - (int)$s['createdAtOffset']; }
-            unset($s['createdAtOffset']);
-            $dirty = true;
-        }
-        foreach (($s['comments'] ?? []) as &$c) {
-            if (isset($c['createdAtOffset'])) {
-                if (empty($c['createdAt'])) { $c['createdAt'] = $now - (int)$c['createdAtOffset']; }
-                unset($c['createdAtOffset']);
-                $dirty = true;
-            }
-        }
-        unset($c);
+        if (normalize_created_at($s, $now)) { $dirty = true; }
     }
     unset($s);
     if ($dirty) { db_save($db); }
@@ -225,10 +235,18 @@ function random_nickname(): string
 
 /* ==================== 浏览量防刷（IP + 时间窗口去重） ==================== */
 
-/** 获取客户端真实 IP（兼容 nginx/Docker 反代） */
+/**
+ * 是否信任 X-Forwarded-For 头（默认**关闭**）。
+ * 本站是「容器 Apache 直连公网」，前面没有反向代理，XFF 完全由客户端伪造——
+ * 信任它等于把限流和浏览量去重拱手让人：加一个请求头就能无限刷。
+ * 将来若在前面挂了 nginx/CDN，再改成 true（并确保代理是**覆盖**而不是追加该头）。
+ */
+const TRUST_FORWARDED_FOR = false;
+
+/** 获取客户端真实 IP */
 function client_ip(): string
 {
-    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+    if (TRUST_FORWARDED_FOR && !empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
         $parts = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
         return trim($parts[0]);
     }
@@ -350,6 +368,159 @@ function story_full(array $s): array
     ]);
 }
 
+/* ================= 管理密码与登录限流 ================= */
+
+/** 管理登录限流参数：同一 IP 连续失败达阈值即锁定一段时间 */
+const ADMIN_MAX_FAILS = 5;        // 允许的连续失败次数
+const ADMIN_LOCK_SECONDS = 900;   // 触发后锁定时长（15 分钟）
+
+/**
+ * 管理页密码。
+ * 优先读 data/admin_key.txt；文件不存在时**自动生成 12 位随机密码并落盘**。
+ * 注意：这里刻意不再提供公开仓库里可见的兜底默认值——否则任何忘记配置的部署都等于没有密码。
+ * 生成失败（data/ 不可写）时返回空串，由 admin_auth() 给出可诊断的报错。
+ */
+function admin_key(): string
+{
+    static $key = null;
+    if ($key !== null) { return $key; }
+    $key = trim((string)@file_get_contents(ADMIN_KEY_FILE));
+    if ($key === '') {
+        $key = bin2hex(random_bytes(6)); // 12 位随机密码
+        if (@file_put_contents(ADMIN_KEY_FILE, $key, LOCK_EX) !== false) {
+            @chmod(ADMIN_KEY_FILE, 0600);
+            error_log('[缘分故事屋] 首次运行已自动生成管理密码，见 data/admin_key.txt');
+        }
+    }
+    return $key;
+}
+
+/** 读取限流记录（data/admin_guard.json，PHP 每次请求独立进程，无法用内存保存） */
+function admin_guard_load(): array
+{
+    $data = json_decode((string)@file_get_contents(ADMIN_GUARD_FILE) ?: '', true);
+    return is_array($data) ? $data : [];
+}
+
+function admin_guard_save(array $data): void
+{
+    @file_put_contents(ADMIN_GUARD_FILE, json_encode($data, JSON_UNESCAPED_UNICODE), LOCK_EX);
+}
+
+/** 校验管理密码；未通过或处于锁定期直接终止响应 */
+function admin_auth(array $in): void
+{
+    $key = admin_key();
+    // 文件既读不到也写不进去：给出明确指引，避免"静默锁死管理页"
+    if ($key === '' || !is_file(ADMIN_KEY_FILE)) {
+        fail('管理密码未配置，且 data/ 目录不可写。请在服务器手动创建 data/admin_key.txt 并写入你的密码', 500);
+    }
+
+    $ip = client_ip();
+    $now = time();
+    $guard = admin_guard_load();
+    $rec = $guard[$ip] ?? null;
+
+    // 锁定期内直接拒绝，不再比对密码（防止在锁定窗口里继续试）
+    if (is_array($rec) && (int)($rec['until'] ?? 0) > $now) {
+        $left = (int)ceil(((int)$rec['until'] - $now) / 60);
+        fail('密码错误次数过多，请 ' . $left . ' 分钟后再试', 429);
+    }
+
+    if (!hash_equals($key, (string)($in['key'] ?? ''))) {
+        // 累计失败次数，达阈值开始锁定；顺手清理过期记录防止文件无限增长
+        foreach ($guard as $k => $v) {
+            if ((int)($v['until'] ?? 0) <= $now && ($now - (int)($v['last'] ?? 0)) > ADMIN_LOCK_SECONDS) {
+                unset($guard[$k]);
+            }
+        }
+        $n = (int)(is_array($rec) ? ($rec['n'] ?? 0) : 0) + 1;
+        $guard[$ip] = [
+            'n'     => $n,
+            'last'  => $now,
+            'until' => $n >= ADMIN_MAX_FAILS ? $now + ADMIN_LOCK_SECONDS : 0,
+        ];
+        admin_guard_save($guard);
+        $left = ADMIN_MAX_FAILS - $n;
+        fail($left > 0 ? '管理密码错误（还可尝试 ' . $left . ' 次）' : '密码错误次数过多，请 15 分钟后再试', $left > 0 ? 403 : 429);
+    }
+
+    // 登录成功：清空该 IP 的失败记录
+    if (isset($guard[$ip])) { unset($guard[$ip]); admin_guard_save($guard); }
+}
+
+/* ================= 内容写入限流（防脚本刷屏） ================= */
+
+/**
+ * 匿名站没有登录门槛，写接口必须限流，否则可被脚本刷爆。
+ * 动作 => [窗口内允许次数, 窗口秒数, 提示文案用的动词]
+ * 阈值刻意留宽松：正常用户几乎碰不到，脚本刷屏会立刻撞墙。
+ */
+const RATE_LIMITS = [
+    'stories'  => [5,  600,  '发布'],
+    'comments' => [15, 300,  '评论'],
+    'feedback' => [3,  1800, '提交反馈'],
+];
+
+/**
+ * 滑动窗口计数。放行返回 null；超限返回还需等待的分钟数。
+ * 与 server.js 的 rateCheck() 共用 data/rate_guard.json（同格式），两边行为一致。
+ */
+function rate_check(string $action, string $ip): ?int
+{
+    $conf = RATE_LIMITS[$action] ?? null;
+    if ($conf === null) { return null; }
+    [$max, $window] = $conf;
+
+    $now = time();
+    $key = $ip . '|' . $action;
+
+    $fp = fopen(RATE_GUARD_FILE, 'c+');
+    // 记录文件不可写时直接放行：限流是附加保护，不该因为写不了日志就把正常用户挡在门外
+    if (!$fp) { return null; }
+    flock($fp, LOCK_EX);
+    rewind($fp);
+    $data = json_decode((string)stream_get_contents($fp) ?: '', true);
+    if (!is_array($data)) { $data = []; }
+
+    // 只保留窗口内的命中记录
+    $hits = array_values(array_filter(
+        (array)($data[$key] ?? []),
+        static fn($t): bool => ($now - (int)$t) < $window
+    ));
+
+    $over = count($hits) >= $max;
+    if (!$over) { $hits[] = $now; }
+    $data[$key] = $hits;
+
+    // 顺手清理已过期/为空的键，防止文件无限增长
+    foreach ($data as $k => $v) {
+        $alive = array_values(array_filter((array)$v, static fn($t): bool => ($now - (int)$t) < $window));
+        if (!$alive) { unset($data[$k]); } else { $data[$k] = $alive; }
+    }
+
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, json_encode($data, JSON_UNESCAPED_UNICODE));
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
+
+    if (!$over) { return null; }
+    // 最早那次命中滑出窗口时即可再次操作
+    return max(1, (int)ceil((min($hits) + $window - $now) / 60));
+}
+
+/** 超限直接终止响应 */
+function rate_guard(string $action): void
+{
+    $wait = rate_check($action, client_ip());
+    if ($wait !== null) {
+        $label = RATE_LIMITS[$action][2] ?? '操作';
+        fail($label . '太频繁啦，请 ' . $wait . ' 分钟后再试 💕', 429);
+    }
+}
+
 /* ================= 路由处理 ================= */
 
 $route = $_GET['route'] ?? '';
@@ -381,6 +552,9 @@ switch ($route) {
             if (count($tags) > 4) { $tags = array_slice($tags, 0, 4); }
             // 一个标签都没选时，默认归为「日常记录」，保证每篇故事都有归属分类
             if (empty($tags)) { $tags = ['daily']; }
+
+            // 校验通过后才计数：正常用户填错重试不会被罚，只有真正落库的提交才消耗额度
+            rate_guard('stories');
 
             $db = db_load();
             $story = [
@@ -515,6 +689,7 @@ switch ($route) {
             if (mb_strlen($content) > 500) { fail('评论最多 500 个字'); }
             if (mb_strlen($nickname) > 20) { fail('昵称最多 20 个字符'); }
             if ($nickname === '') { $nickname = random_nickname(); }
+            rate_guard('comments');
             $entry = [
                 'id'        => 'c' . time() . mt_rand(1000, 9999),
                 'nickname'  => $nickname,
@@ -567,6 +742,7 @@ switch ($route) {
         if (mb_strlen($contact) > 100) { fail('联系方式最多 100 个字符'); }
         if (mb_strlen($nickname) > 20) { fail('昵称最多 20 个字符'); }
         if ($nickname === '') { $nickname = random_nickname(); }
+        rate_guard('feedback');
         if (!is_dir(DATA_DIR)) { @mkdir(DATA_DIR, 0755, true); }
         $db = ['nextId' => 1, 'items' => []];
         if (file_exists(FEEDBACK_FILE)) {
@@ -609,7 +785,7 @@ switch ($route) {
     case 'admin_stories': {
         if ($method !== 'POST') { fail('请使用 POST', 405); }
         $in = body_json();
-        if (!hash_equals($ADMIN_KEY, (string)($in['key'] ?? ''))) { fail('管理密码错误', 403); }
+        admin_auth($in);
 
         $db = db_load();
         if (($in['op'] ?? 'list') === 'delete') {
@@ -643,7 +819,7 @@ switch ($route) {
     case 'admin_feedback': {
         if ($method !== 'POST') { fail('请使用 POST', 405); }
         $in = body_json();
-        if (!hash_equals($ADMIN_KEY, (string)($in['key'] ?? ''))) { fail('管理密码错误', 403); }
+        admin_auth($in);
 
         $db = ['nextId' => 1, 'items' => []];
         if (file_exists(FEEDBACK_FILE)) {

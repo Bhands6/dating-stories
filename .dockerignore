@@ -1,7 +1,21 @@
 .loomy-attachments/
+.loomy-tmp/
 .check.js
 *.png
 *.zip
+run-*.txt
+*-out.txt
+*-err.txt
+probe*.txt
 .git
 .gitignore
+.workbuddy-ai/
 node_modules/
+
+# 运行时数据与密钥不进镜像（seed.json 例外，Dockerfile 会单独 COPY 它做首次初始化）
+data/stories.json
+data/feedback.json
+data/views_log.json
+data/rate_guard.json
+data/admin_key.txt
+data/admin_guard.json

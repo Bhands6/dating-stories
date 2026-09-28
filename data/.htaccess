@@ -1,0 +1,27 @@
+# 🔒 禁止通过 HTTP 直接访问 data/ 目录
+#
+# 本目录存放：
+#   admin_key.txt      管理页密码
+#   stories.json       全站数据库（含每篇故事的删除凭证 editKey）
+#   feedback.json      网友反馈（可能含联系方式）
+#
+# 应用只通过 PHP / Node 的文件系统 API 读取这些文件，HTTP 层永远不需要访问它们。
+# 没有这道拦截时，Web 服务器会把它们当普通静态资源直接返回给公网——
+# 曾经真实发生：http://<站点>/data/admin_key.txt 可被任何人下载。
+#
+# Docker 部署由镜像内的 Apache 配置（/etc/apache2/conf-available/deny-data.conf）兜底；
+# 本文件用于宝塔等直接以站点根目录 + Apache 部署的场景。
+#
+# ⚠️ 若站点用 nginx，本文件不生效，请在站点配置里加：
+#     location ^~ /data/ { deny all; return 404; }
+
+# Apache 2.4+
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+
+# Apache 2.2 兜底
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
