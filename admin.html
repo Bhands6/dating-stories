@@ -241,6 +241,21 @@
         .mini-btn.primary:hover { color: white; opacity: 0.9; }
         .mini-btn.danger { border-color: #f2c4c4; color: #d96060; }
         .mini-btn.danger:hover { background: #fef0f0; border-color: #d96060; color: #d96060; }
+
+        /* ===== 导出选项卡片 ===== */
+        .export-choices { display: flex; flex-direction: column; gap: 10px; padding: 4px 0 8px; }
+        .export-choice {
+            display: flex; align-items: center; gap: 12px;
+            padding: 14px 16px; border: 2px solid var(--border); border-radius: 14px;
+            background: white; cursor: pointer; transition: all 0.2s ease;
+            font-family: inherit; text-align: left; width: 100%; color: var(--text);
+        }
+        .export-choice:hover { border-color: var(--primary-light); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(232, 85, 109, 0.12); }
+        .export-choice:active { transform: translateY(0); }
+        .export-choice .icon { font-size: 22px; flex-shrink: 0; }
+        .export-choice .stack { flex: 1; min-width: 0; }
+        .export-choice .name { display: block; font-weight: 700; font-size: 14px; }
+        .export-choice .desc { display: block; font-size: 12px; color: var(--text-lighter); margin-top: 2px; line-height: 1.5; }
         .mini-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
         /* ===== 数据概览 ===== */
@@ -459,6 +474,38 @@
             <div class="edit-foot">
                 <button class="mini-btn" id="pwd-cancel">取消</button>
                 <button class="mini-btn primary" id="pwd-save">确认修改</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 导出数据弹窗（让用户显式选 stories / feedback，避免 confirm 的「确定/取消」语义错乱） -->
+    <div class="edit-overlay" id="export-overlay">
+        <div class="edit-modal small">
+            <div class="edit-head">
+                <span>⬇️ 导出数据</span>
+                <button class="view-close" id="export-close" title="关闭">✕</button>
+            </div>
+            <div class="edit-body">
+                <p class="edit-hint" style="margin-bottom: 14px;">选要导出的内容，浏览器会立即开始下载 JSON：</p>
+                <div class="export-choices">
+                    <button class="export-choice" id="export-stories-btn" data-what="stories">
+                        <span class="icon">📚</span>
+                        <span class="stack">
+                            <span class="name">故事数据</span>
+                            <span class="desc">stories.json · 含故事、评论、点赞、浏览、编辑/删除凭证</span>
+                        </span>
+                    </button>
+                    <button class="export-choice" id="export-feedback-btn" data-what="feedback">
+                        <span class="icon">📮</span>
+                        <span class="stack">
+                            <span class="name">反馈数据</span>
+                            <span class="desc">feedback.json · 含网友提交的反馈与已读状态</span>
+                        </span>
+                    </button>
+                </div>
+            </div>
+            <div class="edit-foot">
+                <button class="mini-btn" id="export-cancel">关闭</button>
             </div>
         </div>
     </div>
@@ -1020,11 +1067,15 @@
         loadList();
     });
 
-    // 导出数据：确定 = 故事，取消 = 反馈
-    $('#export-btn').addEventListener('click', () => {
-        const what = confirm('点「确定」导出故事数据（stories.json）\n点「取消」导出反馈数据（feedback.json）')
-            ? 'stories' : 'feedback';
-        exportData(what);
+    // 导出数据：弹窗让用户显式选 stories / feedback（取消 = 关闭，不触发导出）
+    const openExport = () => $('#export-overlay').classList.add('open');
+    const closeExport = () => $('#export-overlay').classList.remove('open');
+    $('#export-btn').addEventListener('click', openExport);
+    $('#export-close').addEventListener('click', closeExport);
+    $('#export-cancel').addEventListener('click', closeExport);
+    $('#export-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeExport(); });
+    $$('#export-overlay .export-choice').forEach(b => {
+        b.addEventListener('click', () => { const what = b.dataset.what; closeExport(); exportData(what); });
     });
 
     // 修改密码弹窗
@@ -1048,6 +1099,7 @@
         if (e.key !== 'Escape') return;
         if ($('#edit-overlay').classList.contains('open')) closeEdit();
         if ($('#pwd-overlay').classList.contains('open')) $('#pwd-overlay').classList.remove('open');
+        if ($('#export-overlay').classList.contains('open')) $('#export-overlay').classList.remove('open');
     });
 
     function getKey() { return localStorage.getItem(KEY_STORE) || ''; }
