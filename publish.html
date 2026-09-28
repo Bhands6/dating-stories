@@ -312,12 +312,26 @@
             border-radius: 20px;
             max-width: 520px;
             width: 100%;
-            padding: 30px 28px 24px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
             animation: guideIn 0.28s ease;
             max-height: 90vh;
-            overflow-y: auto;
+            /* 与详情弹窗同理：圆角容器只负责裁剪，滚动交给内部的 .ai-guide-scroll，
+               否则滚动条会戳出圆角外面 */
+            overflow: hidden;
         }
+
+        .ai-guide-scroll {
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 30px 28px 24px;
+        }
+        .ai-guide-scroll::-webkit-scrollbar { width: 8px; }
+        .ai-guide-scroll::-webkit-scrollbar-track { background: transparent; }
+        .ai-guide-scroll::-webkit-scrollbar-thumb {
+            background: rgba(232, 85, 109, 0.22);
+            border-radius: 4px;
+        }
+        .ai-guide-scroll::-webkit-scrollbar-thumb:hover { background: rgba(232, 85, 109, 0.4); }
 
         @keyframes guideIn {
             from { opacity: 0; transform: translateY(16px) scale(0.97); }
@@ -1003,6 +1017,7 @@
     <!-- AI 排版引导弹窗（点击 HTML 模式时弹出） -->
     <div class="ai-guide-overlay" id="ai-guide-overlay" onclick="if (event.target === this) closeAiGuide(false)">
         <div class="ai-guide-modal" role="dialog" aria-modal="true" aria-label="HTML 排版引导">
+        <div class="ai-guide-scroll">
             <div class="ai-guide-title">✨ 不会写 HTML？交给 AI 就好啦</div>
             <div class="ai-guide-sub">三步搞定精致排版，零基础也能发</div>
             <div class="ai-guide-steps">
@@ -1043,6 +1058,7 @@
                 </label>
                 <button class="ai-guide-ok" onclick="closeAiGuide(false)">我知道了</button>
             </div>
+        </div>
         </div>
     </div>
 </body>
