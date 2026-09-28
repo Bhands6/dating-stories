@@ -1362,11 +1362,27 @@
             max-width: 760px;
             width: 100%;
             max-height: 88vh;
-            overflow-y: auto;
+            /* 圆角容器自己不滚，只负责裁剪 —— 滚动交给内部的 .modal-scroll。
+               否则滚动条是矩形、容器是圆角，滚动条的上下两端会「戳出」圆角外面。 */
+            overflow: hidden;
             position: relative;
             box-shadow: 0 24px 64px rgba(45, 45, 58, 0.25);
             animation: modalIn 0.35s cubic-bezier(0.34, 1.4, 0.64, 1);
         }
+
+        /* 真正滚动的内层：放在圆角容器里面，滚动条就会被圆角裁掉 */
+        .modal-scroll {
+            max-height: 88vh;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+        .modal-scroll::-webkit-scrollbar { width: 8px; }
+        .modal-scroll::-webkit-scrollbar-track { background: transparent; }
+        .modal-scroll::-webkit-scrollbar-thumb {
+            background: rgba(232, 85, 109, 0.22);
+            border-radius: 4px;
+        }
+        .modal-scroll::-webkit-scrollbar-thumb:hover { background: rgba(232, 85, 109, 0.4); }
 
         @keyframes modalIn {
             from { opacity: 0; transform: translateY(28px) scale(0.97); }
@@ -2197,11 +2213,13 @@
     <!-- Story Detail Modal -->
     <div class="modal-overlay" id="modal-overlay">
         <div class="modal" role="dialog" aria-modal="true">
-            <div class="modal-close-wrap">
-                <button class="modal-close" id="modal-close" title="关闭">✕</button>
-            </div>
-            <div class="modal-body" id="modal-body">
-                <div class="loading-tip">正在打开故事…</div>
+            <div class="modal-scroll">
+                <div class="modal-close-wrap">
+                    <button class="modal-close" id="modal-close" title="关闭">✕</button>
+                </div>
+                <div class="modal-body" id="modal-body">
+                    <div class="loading-tip">正在打开故事…</div>
+                </div>
             </div>
         </div>
     </div>
@@ -2552,7 +2570,8 @@
         /* 评论区事件委托（绑在持久容器上，幂等）：折叠 / 回复 / 发送 / 收起 */
         bindCommentListEvents();
         // 首次打开弹窗保持滚动位置在顶部（发评论/回复走局部刷新，不会走到这里）
-        modalBody.closest('.modal').scrollTop = 0;
+        const scroller = modalBody.closest('.modal-scroll') || modalBody.closest('.modal');
+        if (scroller) scroller.scrollTop = 0;
     }
 
     /* ==================== 评论区（两级楼中楼 + 折叠 + 局部刷新） ==================== */
