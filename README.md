@@ -23,7 +23,7 @@
 | ✍️ **发布系统** | 匿名发布（随机昵称）、纯文本/HTML 双模式编辑、上传 HTML 文件、富文本粘贴、实时预览、**AI 排版引导弹窗**（三步指引 + 一键复制提示词模板 + DeepSeek/豆包/小米 MiMo 直达） |
 | 🎨 **HTML 排版故事** | 上传你排版的网页，阅读时以沙箱 iframe 呈现——CSS 变量、`@keyframes`、滚动动画 **100% 原样**，还提供「原文阅读」全屏打开 |
 | 🛡️ **防刷机制** | 浏览量按 IP 24h 去重、点赞本地记忆防连点、**写接口按 IP 滑动窗口限流**（发布 5 篇/10 分钟、评论 15 条/5 分钟、反馈 3 条/30 分钟）、内容服务端净化、用户 CSS 沙箱隔离 |
-| 🔐 **站长管理** | 反馈箱（查看/删除网友反馈）、故事管理（最新排序/标签筛选/点击预览/删除）；密码自动生成（`data/admin_key.txt`），连续输错 5 次锁定 15 分钟 |
+| 🔐 **站长管理** | 反馈箱（查看/删除网友反馈）、故事管理（最新排序/标签筛选/点击预览/删除），两个列表均支持分页；密码自动生成（`data/admin_key.txt`），连续输错 5 次锁定 15 分钟 |
 | 📮 **互动与合规** | 反馈建议页、内容规范、隐私声明、免责声明、标签云实时计数、站点统计 |
 
 ---
@@ -94,13 +94,15 @@ docker compose up -d --build
         │  api.php      │  PHP 单文件后端（生产）
         │  或 server.js │  Node 零依赖开发服务器（接口完全对齐）
         └───────┬───────┘
-                ▼  JSON 文件读写（flock 文件锁）
+                ▼  JSON 文件读写（独立 .lock 互斥 + 临时文件原子替换）
         data/stories.json   故事/评论/点赞/删除凭证
         data/feedback.json  网友反馈
         data/views_log.json 浏览量防刷记录
+        data/*.lock         互斥锁（0 字节，运行时生成，删掉会自动重建）
 ```
 
 - **零数据库**：无 MySQL/SQLite，数据即文件，备份 = 复制 `data/` 目录
+- **数据一致性**：所有写盘走「临时文件 + `rename` 原子替换」，进程中断不会留下残缺 JSON；互斥用**独立的 `.lock` 文件**（`flock` 锁的是 inode，若直接锁数据文件，`rename` 之后锁就失效了）；PHP 侧的「读-改-写」全程持锁（`db_transaction()`），并发下不会丢更新
 - **双后端对齐**：`server.js`（本地）与 `api.php`（生产）接口行为一致，同一份 `data/` 无缝迁移
 - **安全设计**：UGC 内容服务端净化（script/事件属性/危险协议/CSS 表达式全清）；HTML 排版故事以 `CSP: sandbox` 沙箱 iframe 渲染，内部脚本无法触碰站点数据；管理接口密码校验 + 同 IP 失败限流锁定；**写接口按 IP 滑动窗口限流**（防脚本刷屏）；**接口不做跨域授权**（站点为同源部署，杜绝第三方站点跨域猜密码）；**不信任 `X-Forwarded-For`**（无反向代理时该头可由客户端伪造，信任它会让限流被一个请求头绕过）；🔒 **`/data/` 目录禁止 HTTP 访问**（内含管理密码与故事删除凭证，Apache 由 `.htaccess` + 镜像内 deny 规则双重拦截）；发布者删除凭证（随机 editKey，仅存发布者本机）
 
@@ -115,7 +117,7 @@ docker compose up -d --build
 ├── api.php             # PHP 后端（生产）
 ├── server.js           # Node 开发服务器
 ├── docker-entrypoint.sh # 容器启动钩子（data 权限修复 + 管理密码自动生成）
-├── .gitattributes      # 换行规则锁定（*.sh=LF、*.bat=CRLF）
+├── .gitattributes      # 换行规则（* text=auto eol=lf 统一 LF；*.sh=LF、*.bat=CRLF 作例外）
 ├── 一键部署.bat         # Windows 一键部署脚本（仅本地保留，不进仓库）
 ├── data/               # 🔒 必须禁止 HTTP 访问（含密码与删除凭证）
 │   ├── .htaccess       # Apache 拒绝 HTTP 访问本目录（nginx 需自行配置）
@@ -125,7 +127,8 @@ docker compose up -d --build
 │   ├── admin_key.txt   # 运行时生成：管理页密码（随机 12 位，已 gitignore）
 │   ├── admin_guard.json# 运行时生成：管理登录失败限流记录
 │   ├── rate_guard.json # 运行时生成：写接口（发布/评论/反馈）限流记录
-│   └── views_log.json  # 运行时生成：防刷记录
+│   ├── views_log.json  # 运行时生成：防刷记录
+│   └── *.lock          # 运行时生成：互斥锁（0 字节，删掉会自动重建）
 ├── Dockerfile / docker-compose.yml
 └── docs/部署说明.md    # 详细部署文档（docs/ 目录）
 ```
@@ -142,7 +145,7 @@ docker compose up -d --build
 | `delete_story` | 发布者凭凭证删除 |
 | `tags` / `stats` / `hot` | 标签计数 / 统计 / 热门榜 |
 | `feedback` | 提交反馈 |
-| `admin_feedback` / `admin_stories` | 管理接口（密码为 `data/admin_key.txt` 中的值，连续错 5 次锁定 15 分钟） |
+| `admin_feedback` / `admin_stories` | 管理接口（密码为 `data/admin_key.txt` 中的值，连续错 5 次锁定 15 分钟）；`op=list` 支持 `page` / `pageSize`（默认 20、上限 100），返回 `total` / `page` / `pageSize` / `hasMore` |
 
 **写接口限流**（按 IP 滑动窗口，超限返回 `429` + 友好提示，记录在 `data/rate_guard.json`）：
 
@@ -154,6 +157,7 @@ docker compose up -d --build
 
 > 阈值刻意留得宽松，正常用户基本碰不到。**校验不通过的提交不消耗额度**（填错重试不会被罚）。
 > 想调整就改 `api.php` 顶部的 `RATE_LIMITS` 与 `server.js` 的 `RATE_LIMITS`（两边要一致）。
+> 清理过期记录时**按各自动作自己的窗口**判过期（三个动作窗口不同），不会互相误删。
 
 
 
