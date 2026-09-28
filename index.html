@@ -2332,7 +2332,7 @@
             <p class="story-excerpt">${esc(story.excerpt)}</p>
             <div class="story-footer">
                 <div class="story-stats">
-                    <div class="story-stat like-btn ${liked ? 'liked' : ''}" title="点赞">❤️ <span class="like-count">${fmtNum(story.likes)}</span></div>
+                    <div class="story-stat like-btn ${liked ? 'liked' : ''}" data-likes="${Number(story.likes) || 0}" title="点赞">❤️ <span class="like-count">${fmtNum(story.likes)}</span></div>
                     <div class="story-stat">💬 ${fmtNum(story.commentsCount)}</div>
                     <div class="story-stat">👁️ ${fmtNum(story.views)}</div>
                 </div>
@@ -2378,17 +2378,47 @@
     }
 
     /* ==================== 点赞 ==================== */
+
+    /**
+     * 把某篇故事的点赞状态同步到**所有**正在显示它的位置。
+     *
+     * 之前 toggleLike 只更新「被点的那个按钮」，所以在详情弹窗里点赞后，
+     * 列表卡片的数字不会变；关掉弹窗看起来就像「点了没反应」，非得刷新页面才更新。
+     */
+    function syncLikeUI(id, likes, liked) {
+        const apply = btn => {
+            btn.classList.toggle('liked', liked);
+            btn.dataset.likes = String(likes);
+            const cnt = btn.querySelector('.like-count');
+            if (cnt) cnt.textContent = fmtNum(likes);
+        };
+        // 列表卡片
+        document.querySelectorAll('#stories-grid .story-card[data-id="' + id + '"] .like-btn')
+            .forEach(apply);
+        // 详情弹窗（只有当前打开的就是这篇时才需要）
+        if (currentStory && Number(currentStory.id) === Number(id)) {
+            currentStory.likes = likes;
+            const btn = modalBody.querySelector('.modal-actions .like-btn');
+            if (btn) apply(btn);
+        }
+    }
+
     async function toggleLike(id, btn, e) {
         const undo = btn.classList.contains('liked');
+        // 乐观更新：先按本地值立刻改 UI，点击就有反馈；随后用服务端返回值校正
+        const cur = Number(btn.dataset.likes) || 0;
+        syncLikeUI(id, undo ? Math.max(0, cur - 1) : cur + 1, !undo);
+
         try {
             const d = await api('like', null, { id, undo });
-            btn.classList.toggle('liked', !undo);
-            btn.querySelector('.like-count').textContent = fmtNum(d.likes);
+            syncLikeUI(id, Number(d.likes) || 0, !undo);
             if (undo) { likedSet.delete(id); toast('已取消点赞'); }
             else { likedSet.add(id); heartBurst(e); toast('💕 点赞成功，为缘分加油！'); }
             saveLiked();
             loadStats();
         } catch (err) {
+            // 请求失败：回滚成点击前的状态
+            syncLikeUI(id, cur, undo);
             toast('点赞失败：' + err.message, 'error');
         }
     }
@@ -2478,7 +2508,7 @@
             </div>
             <div class="modal-content">${contentHtml}</div>
             <div class="modal-actions">
-                <button class="modal-action-btn like-btn ${liked ? 'liked' : ''}">❤️ <span class="like-count">${fmtNum(s.likes)}</span>&nbsp;点赞</button>
+                <button class="modal-action-btn like-btn ${liked ? 'liked' : ''}" data-likes="${Number(s.likes) || 0}">❤️ <span class="like-count">${fmtNum(s.likes)}</span>&nbsp;点赞</button>
                 <span class="story-time">💬 ${fmtNum(s.commentsCount)} 条评论</span>
                 ${isMine ? '<button class="modal-action-btn" id="del-mine" title="删除这篇故事" style="margin-left:auto;border-color:#f2c4c4;color:#d96060;">🗑 删除我的故事</button>' : ''}
             </div>
