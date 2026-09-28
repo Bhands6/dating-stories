@@ -19,3 +19,5 @@ data/views_log.json
 data/rate_guard.json
 data/admin_key.txt
 data/admin_guard.json
+data/*.lock
+data/*.tmp

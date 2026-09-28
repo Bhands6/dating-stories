@@ -160,9 +160,14 @@ function rateCheck(action, ip) {
   if (!over) hits.push(now);
   data[key] = hits;
 
-  // 顺手清理已过期/为空的键，防止文件无限增长
+  // 清理过期/为空的键，防止文件无限增长。
+  // ⚠️ 每个键必须按**它自己那个动作**的窗口判过期：三个动作窗口不同（发布 600s / 评论 300s / 反馈 1800s），
+  //    拿当前请求动作的窗口去过滤别的动作，会把仍在有效期内的记录误删 ——
+  //    表现就是「发满 5 篇后随便发一条评论，发布额度就被重置」。
   for (const k of Object.keys(data)) {
-    const alive = (Array.isArray(data[k]) ? data[k] : []).map(Number).filter(t => now - t < conf.window);
+    const bar = k.indexOf('|');
+    const w = (RATE_LIMITS[bar === -1 ? '' : k.slice(bar + 1)] || {}).window || conf.window;
+    const alive = (Array.isArray(data[k]) ? data[k] : []).map(Number).filter(t => now - t < w);
     if (!alive.length) delete data[k]; else data[k] = alive;
   }
 
@@ -285,6 +290,14 @@ function dbSave(db) {
   const tmp = DATA_FILE + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(db, null, 2), 'utf8');
   fs.renameSync(tmp, DATA_FILE);
+}
+
+/** 原子写 JSON：先写临时文件再 rename（与 api.php 的 atomic_write() 对应） */
+function writeJsonAtomic(file, obj) {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), 'utf8');
+  fs.renameSync(tmp, file);
 }
 
 /** HTML 轻净化：去 script/危险属性（保留 style/结构/动画）。
@@ -685,7 +698,7 @@ function handleApi(req, res, url, body) {
       if (!Array.isArray(db.items)) db.items = [];
       if (!db.nextId) db.nextId = db.items.length + 1;
       db.items.push({ id: db.nextId++, nickname, contact, content, createdAt: Math.floor(Date.now() / 1000) });
-      fs.writeFileSync(FEEDBACK_FILE, JSON.stringify(db, null, 2), 'utf8');
+      writeJsonAtomic(FEEDBACK_FILE, db);
       return json(res, { ok: true, message: '反馈已收到，感谢你的每一句建议 💕' });
     }
 
@@ -756,7 +769,7 @@ function handleApi(req, res, url, body) {
         const before = db.items.length;
         db.items = db.items.filter(it => it.id !== id);
         if (db.items.length === before) return fail(res, '未找到该条反馈，可能已被删除');
-        fs.writeFileSync(FEEDBACK_FILE, JSON.stringify(db, null, 2), 'utf8');
+        writeJsonAtomic(FEEDBACK_FILE, db);
       }
 
       // 分页：默认每页 20 条、最多 100（反馈按时间倒序，与 api.php 一致）
@@ -780,7 +793,7 @@ function handleApi(req, res, url, body) {
       return json(res, { ok: true, stats: { stories: db.stories.length, likes, views, sweet } });
     }
 
-    /* ---- 本周热门 ---- */
+    /* ---- 热门精选（按全时段热度排序，没有时间窗口） ---- */
     case 'hot': {
       const limit = Math.min(10, Math.max(1, parseInt(url.searchParams.get('limit'), 10) || 5));
       const db = dbLoad();

@@ -17,6 +17,11 @@ data/feedback.json
 data/views_log.json
 data/rate_guard.json
 
+# 互斥锁与原子写的临时文件（运行时产物，不进仓库）
+data/*.lock
+data/*.tmp
+*.tmp
+
 # 密钥与安全记录：绝不能进仓库（admin_key.txt 是管理页密码）
 data/admin_key.txt
 data/admin_guard.json

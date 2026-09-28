@@ -66,6 +66,46 @@ function body_json(): array
 }
 
 /**
+ * 原子写文件：先写同目录临时文件，再 rename 覆盖。
+ *
+ * rename 在同一文件系统内是原子操作，读者要么看到旧内容、要么看到新内容；
+ * 而直接 `ftruncate + fwrite` 中间会有一段「文件已被清空但还没写完」的窗口，
+ * 此时进程被杀 / 断电就会留下残缺的 JSON —— 数据文件一旦这样坏掉就是全站读不出来。
+ */
+function atomic_write(string $file, string $content): bool
+{
+    $tmp = $file . '.tmp';
+    if (@file_put_contents($tmp, $content, LOCK_EX) === false) { return false; }
+    if (!@rename($tmp, $file)) { @unlink($tmp); return false; }
+    return true;
+}
+
+/**
+ * 取得某个文件的排他锁。
+ *
+ * 为什么用**独立的 `.lock` 文件**而不是锁数据文件本身：
+ * 原子写靠 rename 替换文件，而 flock 锁的是 inode —— rename 之后原来的锁
+ * 就跟着旧 inode 一起作废了，后续请求会锁到新 inode 上，互斥直接失效。
+ * 所以锁必须落在一个不会被替换的文件上。
+ *
+ * @return resource|null 成功返回句柄（调用方负责 unlock_guard()），失败返回 null
+ */
+function lock_guard(string $file)
+{
+    $fp = @fopen($file . '.lock', 'c');
+    if (!$fp) { return null; }
+    if (!flock($fp, LOCK_EX)) { fclose($fp); return null; }
+    return $fp;
+}
+
+function unlock_guard($fp): void
+{
+    if (!$fp) { return; }
+    flock($fp, LOCK_UN);
+    fclose($fp);
+}
+
+/**
  * 把 createdAtOffset（相对时间戳）归一化成 createdAt，递归处理 comments / replies。
  *
  * ⚠️ 这里必须**先把数组取到变量再遍历**：
@@ -149,24 +189,22 @@ function db_load(): array
 }
 
 /**
- * 写数据库（带文件锁）。
+ * 写数据库（独立锁文件互斥 + 原子替换）。
  *
- * ⚠️ 它只保证「这一次写入」不被写坏，**并不保护「读-改-写」整个事务**。
+ * ⚠️ 它只保证「这一次写入」安全，**并不保护「读-改-写」整个事务**。
  *    凡是「先读出来、改完再写回」的接口，一律用 db_transaction()，
  *    否则并发下会丢更新（见下）。
  */
 function db_save(array $db): void
 {
     if (!is_dir(DATA_DIR)) { @mkdir(DATA_DIR, 0755, true); }
-    $fp = fopen(DATA_FILE, 'c+');
-    if (!$fp) { fail('无法写入数据文件', 500); }
-    flock($fp, LOCK_EX);
-    ftruncate($fp, 0);
-    rewind($fp);
-    fwrite($fp, json_encode($db, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
-    fflush($fp);
-    flock($fp, LOCK_UN);
-    fclose($fp);
+    $payload = json_encode($db, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    $lock = lock_guard(DATA_FILE);
+    if ($payload === false || !atomic_write(DATA_FILE, $payload)) {
+        unlock_guard($lock);
+        fail('无法写入数据文件', 500);
+    }
+    unlock_guard($lock);
 }
 
 /**
@@ -196,12 +234,10 @@ function db_transaction(callable $fn)
     if (!is_dir(DATA_DIR)) { @mkdir(DATA_DIR, 0755, true); }
     $now = time();
 
-    $fp = fopen(DATA_FILE, 'c+');
-    if (!$fp) { fail('无法打开数据文件', 500); }
-    if (!flock($fp, LOCK_EX)) { fclose($fp); fail('数据文件繁忙，请稍后重试', 503); }
+    $lock = lock_guard(DATA_FILE);
+    if (!$lock) { fail('数据文件繁忙，请稍后重试', 503); }
 
-    rewind($fp);
-    $db = json_decode((string)stream_get_contents($fp) ?: '', true);
+    $db = json_decode((string)@file_get_contents(DATA_FILE) ?: '', true);
     if (!is_array($db)) { $db = db_from_seed($now); }   // 文件为空/损坏 → 按首次运行初始化
     db_normalize($db, $now);
 
@@ -211,15 +247,9 @@ function db_transaction(callable $fn)
 
     if ($after !== $before) {
         $payload = json_encode($db, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-        if ($payload !== false) {
-            ftruncate($fp, 0);
-            rewind($fp);
-            fwrite($fp, $payload);
-            fflush($fp);
-        }
+        if ($payload !== false) { atomic_write(DATA_FILE, $payload); }
     }
-    flock($fp, LOCK_UN);
-    fclose($fp);
+    unlock_guard($lock);
 
     return $result;
 }
@@ -335,12 +365,11 @@ function should_count_view(string $ip, int $id): bool
 {
     $window = 86400; // 24 小时
     $now = time();
-    $fp = fopen(VIEWS_LOG, 'c+');
-    if (!$fp) { return true; } // 日志不可用时退化为始终计数
-    flock($fp, LOCK_EX);
-    rewind($fp);
-    $raw = stream_get_contents($fp);
-    $log = json_decode($raw ?: '', true);
+
+    $lock = lock_guard(VIEWS_LOG);
+    if (!$lock) { return true; } // 日志不可用时退化为始终计数
+
+    $log = json_decode((string)@file_get_contents(VIEWS_LOG) ?: '', true);
     if (!is_array($log)) { $log = []; }
     $key = $ip . '|' . $id;
     $counted = false;
@@ -354,12 +383,8 @@ function should_count_view(string $ip, int $id): bool
     foreach ($log as $k => $t) {
         if (($now - (int)$t) > $window) { unset($log[$k]); }
     }
-    ftruncate($fp, 0);
-    rewind($fp);
-    fwrite($fp, json_encode($log, JSON_UNESCAPED_UNICODE));
-    fflush($fp);
-    flock($fp, LOCK_UN);
-    fclose($fp);
+    atomic_write(VIEWS_LOG, json_encode($log, JSON_UNESCAPED_UNICODE));
+    unlock_guard($lock);
     return $counted;
 }
 
@@ -462,13 +487,20 @@ function admin_key(): string
     static $key = null;
     if ($key !== null) { return $key; }
     $key = trim((string)@file_get_contents(ADMIN_KEY_FILE));
+    if ($key !== '') { return $key; }
+
+    // 首次运行：生成随机密码。加锁并复查一次，避免两个并发请求各生成一个、
+    // 后写的把先写的顶掉（那样先拿到密码的那个请求等于拿到一个立刻失效的密码）。
+    $lock = lock_guard(ADMIN_KEY_FILE);
+    $key = trim((string)@file_get_contents(ADMIN_KEY_FILE));
     if ($key === '') {
         $key = bin2hex(random_bytes(6)); // 12 位随机密码
-        if (@file_put_contents(ADMIN_KEY_FILE, $key, LOCK_EX) !== false) {
+        if (atomic_write(ADMIN_KEY_FILE, $key)) {
             @chmod(ADMIN_KEY_FILE, 0600);
             error_log('[缘分故事屋] 首次运行已自动生成管理密码，见 data/admin_key.txt');
         }
     }
+    unlock_guard($lock);
     return $key;
 }
 
@@ -481,7 +513,7 @@ function admin_guard_load(): array
 
 function admin_guard_save(array $data): void
 {
-    @file_put_contents(ADMIN_GUARD_FILE, json_encode($data, JSON_UNESCAPED_UNICODE), LOCK_EX);
+    atomic_write(ADMIN_GUARD_FILE, json_encode($data, JSON_UNESCAPED_UNICODE));
 }
 
 /**
@@ -575,12 +607,11 @@ function rate_check(string $action, string $ip): ?int
     $now = time();
     $key = $ip . '|' . $action;
 
-    $fp = fopen(RATE_GUARD_FILE, 'c+');
+    $lock = lock_guard(RATE_GUARD_FILE);
     // 记录文件不可写时直接放行：限流是附加保护，不该因为写不了日志就把正常用户挡在门外
-    if (!$fp) { return null; }
-    flock($fp, LOCK_EX);
-    rewind($fp);
-    $data = json_decode((string)stream_get_contents($fp) ?: '', true);
+    if (!$lock) { return null; }
+
+    $data = json_decode((string)@file_get_contents(RATE_GUARD_FILE) ?: '', true);
     if (!is_array($data)) { $data = []; }
 
     // 只保留窗口内的命中记录
@@ -593,18 +624,20 @@ function rate_check(string $action, string $ip): ?int
     if (!$over) { $hits[] = $now; }
     $data[$key] = $hits;
 
-    // 顺手清理已过期/为空的键，防止文件无限增长
+    // 清理过期/为空的键，防止文件无限增长。
+    // ⚠️ 每个键必须按**它自己那个动作**的窗口判过期：三个动作窗口不同（发布 600s / 评论 300s / 反馈 1800s），
+    //    拿当前请求动作的窗口去过滤别的动作，会把仍在有效期内的记录误删 ——
+    //    表现就是「发满 5 篇后随便发一条评论，发布额度就被重置」。
     foreach ($data as $k => $v) {
-        $alive = array_values(array_filter((array)$v, static fn($t): bool => ($now - (int)$t) < $window));
+        $pos = strpos($k, '|');
+        $act = $pos === false ? '' : substr($k, $pos + 1);
+        $w = RATE_LIMITS[$act][1] ?? $window;
+        $alive = array_values(array_filter((array)$v, static fn($t): bool => ($now - (int)$t) < $w));
         if (!$alive) { unset($data[$k]); } else { $data[$k] = $alive; }
     }
 
-    ftruncate($fp, 0);
-    rewind($fp);
-    fwrite($fp, json_encode($data, JSON_UNESCAPED_UNICODE));
-    fflush($fp);
-    flock($fp, LOCK_UN);
-    fclose($fp);
+    atomic_write(RATE_GUARD_FILE, json_encode($data, JSON_UNESCAPED_UNICODE));
+    unlock_guard($lock);
 
     if (!$over) { return null; }
     // 最早那次命中滑出窗口时即可再次操作
@@ -857,11 +890,15 @@ switch ($route) {
         if ($nickname === '') { $nickname = random_nickname(); }
         rate_guard('feedback');
         if (!is_dir(DATA_DIR)) { @mkdir(DATA_DIR, 0755, true); }
+
+        // 加锁保护「读-改-写」：访客提交与管理端删除可能同时发生
+        $lock = lock_guard(FEEDBACK_FILE);
         $db = ['nextId' => 1, 'items' => []];
-        if (file_exists(FEEDBACK_FILE)) {
-            $loaded = json_decode((string)file_get_contents(FEEDBACK_FILE), true);
-            if (is_array($loaded)) { $db = $loaded; }
-        }
+        $loaded = json_decode((string)@file_get_contents(FEEDBACK_FILE) ?: '', true);
+        if (is_array($loaded)) { $db = $loaded; }
+        if (!isset($db['items']) || !is_array($db['items'])) { $db['items'] = []; }
+        if (!isset($db['nextId'])) { $db['nextId'] = count($db['items']) + 1; }
+
         $item = [
             'id'        => (int)$db['nextId']++,
             'nickname'  => $nickname,
@@ -870,7 +907,8 @@ switch ($route) {
             'createdAt' => time(),
         ];
         $db['items'][] = $item;
-        @file_put_contents(FEEDBACK_FILE, json_encode($db, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), LOCK_EX);
+        atomic_write(FEEDBACK_FILE, json_encode($db, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+        unlock_guard($lock);
         respond(['ok' => true, 'message' => '反馈已收到，感谢你的每一句建议 💕']);
     }
 
@@ -954,18 +992,26 @@ switch ($route) {
         admin_auth($in);
 
         $db = ['nextId' => 1, 'items' => []];
-        if (file_exists(FEEDBACK_FILE)) {
-            $loaded = json_decode((string)file_get_contents(FEEDBACK_FILE), true);
-            if (is_array($loaded)) { $db = $loaded; }
-        }
+        $loaded = json_decode((string)@file_get_contents(FEEDBACK_FILE) ?: '', true);
+        if (is_array($loaded)) { $db = $loaded; }
         if (!isset($db['items']) || !is_array($db['items'])) { $db['items'] = []; }
 
         if (($in['op'] ?? 'list') === 'delete') {
             $id = (int)($in['id'] ?? 0);
+            $lock = lock_guard(FEEDBACK_FILE);
+            // 拿到锁后重新读一次，避免用过期快照做删除
+            $fresh = json_decode((string)@file_get_contents(FEEDBACK_FILE) ?: '', true);
+            if (is_array($fresh)) { $db = $fresh; }
+            if (!isset($db['items']) || !is_array($db['items'])) { $db['items'] = []; }
+
             $before = count($db['items']);
             $db['items'] = array_values(array_filter($db['items'], static fn(array $it): bool => (int)$it['id'] !== $id));
-            if (count($db['items']) === $before) { fail('未找到该条反馈，可能已被删除'); }
-            @file_put_contents(FEEDBACK_FILE, json_encode($db, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), LOCK_EX);
+            if (count($db['items']) === $before) {
+                unlock_guard($lock);
+                fail('未找到该条反馈，可能已被删除');
+            }
+            atomic_write(FEEDBACK_FILE, json_encode($db, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+            unlock_guard($lock);
         }
 
         // 分页：默认每页 20 条、最多 100（反馈按时间倒序，原先一次性返回全部）
@@ -1001,7 +1047,7 @@ switch ($route) {
         ]]);
     }
 
-    /* ---- 本周热门 TOP N ---- */
+    /* ---- 热门精选 TOP N（按全时段热度排序，没有时间窗口） ---- */
     case 'hot': {
         $limit = min(10, max(1, (int)($_GET['limit'] ?? 5)));
         $db = db_load();
