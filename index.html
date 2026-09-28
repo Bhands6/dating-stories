@@ -2079,8 +2079,8 @@
                 <div class="main-content">
                     <!-- Filter Tabs -->
                     <div class="filter-bar" id="filter-bar">
-                        <button class="filter-tab" data-filter="new">🕐 最新</button>
-                        <button class="filter-tab active" data-filter="hot">🔥 热门</button>
+                        <button class="filter-tab active" data-filter="new">🕐 最新</button>
+                        <button class="filter-tab" data-filter="hot">🔥 热门</button>
                         <button class="filter-tab" data-filter="daily">📝 日常</button>
                         <button class="filter-tab" data-filter="sweet">💕 甜蜜</button>
                         <button class="filter-tab" data-filter="funny">😂 搞笑</button>
@@ -2280,7 +2280,8 @@
     }
 
     /* ==================== 状态 ==================== */
-    const state = { filter: 'hot', page: 1, perPage: 6, loading: false, hasMore: false };
+    // 故事广场默认按「最新」展示（「热门精选」有独立的侧边栏区块，不需要这里也默认热门）
+    const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: false };
     let likedSet;
     try { likedSet = new Set(JSON.parse(localStorage.getItem('fs_liked_ids') || '[]')); }
     catch (e) { likedSet = new Set(); }
@@ -2767,8 +2768,8 @@
             if (!chip) {
                 chip = document.createElement('button');
                 chip.className = 'filter-tab filter-chip';
-                chip.title = '点击返回热门';
-                chip.addEventListener('click', () => setFilter('hot'));
+                chip.title = '点击返回最新';
+                chip.addEventListener('click', () => setFilter('new'));
                 bar.appendChild(chip);
             }
             const meta = TAG_META[f];
