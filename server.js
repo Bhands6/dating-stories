@@ -837,11 +837,14 @@ function handleApi(req, res, url, body) {
         return fail(res, '评论不存在或已被删除', 404);
       }
 
-      // 列表：把所有故事的一级评论与回复摊平成一条按时间倒序的时间线
+      // 列表：把所有故事的一级评论与回复摊平成一条按时间倒序的时间线。
+      // storyId 传了且 > 0 时只返回那一篇的评论（管理页故事卡片的「内联评论面板」用）。
       const db = dbLoad();
       const q = String(body.q || '').trim();
+      const onlyId = body.storyId ? (body.storyId | 0) : 0;
       let rows = [];
       for (const s of db.stories) {
+        if (onlyId && s.id !== onlyId) continue;
         for (const c of (s.comments || [])) {
           rows.push({
             storyId: s.id, storyTitle: s.title,

@@ -1097,13 +1097,16 @@ switch ($route) {
             respond(['ok' => true, 'message' => '评论已删除']);
         }
 
-        // 列表：把所有故事的一级评论与回复摊平成一条按时间倒序的时间线
-        $db   = db_load();
-        $q    = trim((string)($in['q'] ?? ''));
-        $rows = [];
+        // 列表：把所有故事的一级评论与回复摊平成一条按时间倒序的时间线。
+        // storyId 传了且 > 0 时只返回那一篇的评论（管理页故事卡片的「内联评论面板」用）。
+        $db     = db_load();
+        $q      = trim((string)($in['q'] ?? ''));
+        $onlyId = isset($in['storyId']) && (int)$in['storyId'] > 0 ? (int)$in['storyId'] : 0;
+        $rows   = [];
 
         foreach ($db['stories'] as $s) {
             $sid    = (int)($s['id'] ?? 0);
+            if ($onlyId && $sid !== $onlyId) { continue; }
             $stitle = (string)($s['title'] ?? '');
             foreach (array_values($s['comments'] ?? []) as $c) {
                 $rows[] = [

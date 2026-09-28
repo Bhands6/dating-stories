@@ -167,19 +167,37 @@
         }
         .admin-toolbar select:focus { outline: none; border-color: var(--primary-light); }
 
-        /* ===== 评论管理条目 ===== */
-        .cm-story {
-            display: inline-block; font-size: 12px; color: var(--primary);
-            background: rgba(232, 85, 109, 0.07); padding: 2px 10px; border-radius: 10px; margin-bottom: 8px;
-        }
-        .cm-reply-flag { font-size: 12px; color: var(--text-lighter); margin-left: 6px; }
-        .cm-content { font-size: 14px; line-height: 1.7; color: var(--text); white-space: pre-wrap; word-break: break-word; }
-        .fb-actions { display: flex; gap: 8px; align-items: center; }
-        .fb-edit {
+        /* ===== 故事卡片的操作按钮 ===== */
+        .fb-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .fb-edit, .fb-cm {
             margin-top: 10px; padding: 5px 14px; border: 1px solid var(--border); border-radius: 15px;
-            background: white; color: var(--text-light); font-size: 12px; cursor: pointer; transition: all 0.25s ease;
+            background: white; color: var(--text-light); font-size: 12px; cursor: pointer;
+            transition: all 0.25s ease; font-family: inherit;
         }
-        .fb-edit:hover { background: #fff5f7; border-color: var(--primary-light); color: var(--primary); }
+        .fb-edit:hover, .fb-cm:hover { background: #fff5f7; border-color: var(--primary-light); color: var(--primary); }
+        .fb-cm.on { background: var(--gradient); color: white; border-color: transparent; }
+
+        /* ===== 故事卡片内联评论面板 ===== */
+        .cm-panel { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); cursor: default; }
+        .cm-panel-head { font-size: 12px; color: var(--text-lighter); margin-bottom: 6px; }
+        .cm-empty { font-size: 13px; color: var(--text-lighter); padding: 8px 0; }
+        .cm-line { display: flex; gap: 10px; padding: 9px 0; align-items: flex-start; }
+        .cm-line.is-reply { margin-left: 32px; border-left: 2px solid var(--border); padding-left: 12px; }
+        .cm-line-ava {
+            width: 28px; height: 28px; border-radius: 50%; background: var(--gradient-soft);
+            display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0;
+        }
+        .cm-line-body { flex: 1; min-width: 0; }
+        .cm-line-meta { font-size: 12px; color: var(--text-lighter); margin-bottom: 3px; }
+        .cm-line-meta b { color: var(--text-light); }
+        .cm-line-to { color: var(--primary); margin-left: 4px; }
+        .cm-line-time { margin-left: 6px; }
+        .cm-line-text { font-size: 13px; color: var(--text); line-height: 1.7; word-break: break-word; white-space: pre-wrap; }
+        .cm-line-del {
+            border: none; background: transparent; cursor: pointer; font-size: 14px;
+            opacity: 0.45; padding: 2px 6px; border-radius: 6px; flex-shrink: 0; transition: all 0.2s ease;
+        }
+        .cm-line-del:hover { opacity: 1; background: #fef0f0; }
 
         /* ===== 编辑 / 改密码弹窗 ===== */
         .edit-overlay {
@@ -309,7 +327,6 @@
                 <div class="admin-tabs">
                     <button class="admin-tab active" data-tab="fb">📮 反馈箱</button>
                     <button class="admin-tab" data-tab="story">📚 故事管理</button>
-                    <button class="admin-tab" data-tab="cm">💬 评论管理</button>
                 </div>
                 <div class="list-header">
                     <h2 id="list-title">📬 收到的反馈 <span class="total" id="list-total"></span></h2>
@@ -339,10 +356,6 @@
                     <div class="loading-tip">加载中…</div>
                 </div>
                 <div class="pager" id="story-pager" style="display:none;"></div>
-                <div id="cm-list" class="fb-list" style="display:none;">
-                    <div class="loading-tip">加载中…</div>
-                </div>
-                <div class="pager" id="cm-pager" style="display:none;"></div>
             </div>
         </div>
     </div>
@@ -451,7 +464,6 @@
     const PAGER = {
         fb:    { page: 1, pageSize: 20, total: 0 },
         story: { page: 1, pageSize: 20, total: 0 },
-        cm:    { page: 1, pageSize: 20, total: 0 },
     };
 
     /** 渲染分页条；只有一页时整条隐藏 */
@@ -584,14 +596,17 @@
                 <div class="fb-content">✍️ ${it.author}</div>
                 <div class="fb-actions">
                     <button class="fb-edit" data-id="${it.id}">✏️ 编辑</button>
+                    <button class="fb-cm" data-id="${it.id}">💬 评论${it.commentsCount ? ' (' + it.commentsCount + ')' : ''}</button>
                     <button class="fb-del" data-id="${it.id}">🗑 删除故事</button>
                 </div>
+                <div class="cm-panel" id="cm-panel-${it.id}" style="display:none;"></div>
             </div>`;
         }).join('');
         // 点击卡片 → 查看故事（编辑 / 删除按钮除外）
         list.querySelectorAll('.fb-item').forEach(el => {
             el.addEventListener('click', e => {
-                if (e.target.closest('.fb-del') || e.target.closest('.fb-edit')) return;
+                if (e.target.closest('.fb-del') || e.target.closest('.fb-edit')
+                    || e.target.closest('.fb-cm') || e.target.closest('.cm-panel')) return;
                 openView(Number(el.dataset.id), el.dataset.title);
             });
         });
@@ -599,6 +614,12 @@
             btn.addEventListener('click', e => {
                 e.stopPropagation();
                 openEdit(Number(btn.dataset.id));
+            });
+        });
+        list.querySelectorAll('.fb-cm').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                toggleStoryComments(Number(btn.dataset.id), btn);
             });
         });
         list.querySelectorAll('.fb-del').forEach(btn => {
@@ -616,45 +637,77 @@
         });
     }
 
-    /* ==================== 评论管理 ==================== */
-    function renderComments(items, total) {
-        const n = (total === undefined ? items.length : total);
-        $('#list-title').innerHTML = '💬 全部评论 <span class="total" id="list-total">· 共 ' + n + ' 条</span>';
-        const list = $('#cm-list');
-        if (!items.length) {
-            list.innerHTML = '<div class="empty-tip">📭 还没有评论</div>';
+    /* ==================== 故事卡片的内联评论面板 ==================== */
+
+    /** 展开 / 收起某篇故事的评论面板 */
+    async function toggleStoryComments(storyId, btn) {
+        const panel = document.getElementById('cm-panel-' + storyId);
+        if (!panel) return;
+        if (panel.style.display !== 'none') {      // 已展开 → 收起
+            panel.style.display = 'none';
+            btn.classList.remove('on');
             return;
         }
-        list.innerHTML = items.map(it => `
-            <div class="fb-item" style="cursor:default;">
-                <div class="cm-story">📖 ${it.storyTitle}</div>
-                <div class="fb-head">
-                    <div class="fb-ava">${(it.nickname || '匿').charAt(0)}</div>
-                    <span class="fb-name">${it.nickname}</span>
-                    <span class="fb-time">${fmtTime(it.createdAt)}</span>
-                    ${it.isReply
-                        ? `<span class="cm-reply-flag">↩ 回复 ${it.replyTo || '某人'}</span>`
-                        : (it.replyCount ? `<span class="cm-reply-flag">· ${it.replyCount} 条回复</span>` : '')}
-                </div>
-                <div class="cm-content"></div>
-                <button class="fb-del" data-story="${it.storyId}" data-cid="${it.id}">🗑 删除${it.isReply ? '这条回复' : '这条评论'}</button>
-            </div>`).join('');
-        // 内容用 textContent 填充，避免 XSS
-        list.querySelectorAll('.fb-item').forEach((el, i) => {
-            el.querySelector('.cm-content').textContent = items[i].content;
-        });
-        list.querySelectorAll('.fb-del').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                if (!confirm('确定删除这条评论吗？删除后无法恢复。\n如果它是一级评论，它下面的所有回复也会一起删除。')) return;
-                try {
-                    await api({ key: getKey(), op: 'delete', storyId: Number(btn.dataset.story), commentId: btn.dataset.cid }, 'admin_comments');
-                    toast('🗑 评论已删除');
-                    loadList();
-                } catch (err) {
-                    toast(err.message, 'error');
-                }
+        panel.style.display = '';
+        btn.classList.add('on');
+        await loadStoryComments(storyId);
+    }
+
+    /** 拉取并渲染某篇故事的评论（一级 + 缩进回复，各带删除按钮） */
+    async function loadStoryComments(storyId) {
+        const panel = document.getElementById('cm-panel-' + storyId);
+        if (!panel) return;
+        panel.innerHTML = '<div class="loading-tip">加载中…</div>';
+        try {
+            const d = await api({ key: getKey(), op: 'list', storyId: storyId, pageSize: 100 }, 'admin_comments');
+            const items = d.items || [];
+            if (!items.length) {
+                panel.innerHTML = '<div class="cm-empty">还没有评论</div>';
+                return;
+            }
+            panel.innerHTML =
+                `<div class="cm-panel-head">共 ${items.length} 条</div>` +
+                items.map(it => `
+                    <div class="cm-line${it.isReply ? ' is-reply' : ''}">
+                        <div class="cm-line-ava">${(it.nickname || '匿').charAt(0)}</div>
+                        <div class="cm-line-body">
+                            <div class="cm-line-meta">
+                                <b>${it.nickname}</b>
+                                ${it.isReply ? `<span class="cm-line-to">↩ ${it.replyTo || '某人'}</span>` : ''}
+                                <span class="cm-line-time">${fmtTime(it.createdAt)}</span>
+                            </div>
+                            <div class="cm-line-text"></div>
+                        </div>
+                        <button class="cm-line-del" data-story="${storyId}" data-cid="${it.id}" title="删除这条${it.isReply ? '回复' : '评论'}">🗑</button>
+                    </div>`).join('');
+
+            // 内容用 textContent 填充，避免 XSS
+            panel.querySelectorAll('.cm-line').forEach((el, i) => {
+                el.querySelector('.cm-line-text').textContent = items[i].content;
             });
-        });
+            panel.querySelectorAll('.cm-line-del').forEach(b => {
+                b.addEventListener('click', async e => {
+                    e.stopPropagation();
+                    if (!confirm('确定删除这条评论吗？删除后无法恢复。\n如果它是一级评论，它下面的所有回复也会一起删除。')) return;
+                    try {
+                        await api({ key: getKey(), op: 'delete', storyId: Number(b.dataset.story), commentId: b.dataset.cid }, 'admin_comments');
+                        toast('🗑 评论已删除');
+                        await loadList();                    // 刷新列表（评论数变了），卡片会重建
+                        const np = document.getElementById('cm-panel-' + storyId);
+                        if (np) {                            // 重建后自动重新展开
+                            np.style.display = '';
+                            const nb = document.querySelector('.fb-cm[data-id="' + storyId + '"]');
+                            if (nb) nb.classList.add('on');
+                            await loadStoryComments(storyId);
+                        }
+                    } catch (err) {
+                        toast(err.message, 'error');
+                    }
+                });
+            });
+        } catch (e) {
+            panel.innerHTML = '<div class="cm-empty">😢 ' + e.message + '</div>';
+        }
     }
 
     /* ==================== 编辑故事 ==================== */
@@ -767,10 +820,10 @@
         btn.disabled = false;
     }
 
-    const ROUTE_OF = { fb: 'admin_feedback', story: 'admin_stories', cm: 'admin_comments' };
+    const ROUTE_OF = { fb: 'admin_feedback', story: 'admin_stories' };
 
     async function loadList() {
-        const containers = { fb: $('#fb-list'), story: $('#story-list'), cm: $('#cm-list') };
+        const containers = { fb: $('#fb-list'), story: $('#story-list') };
         const which = currentTab;
         const st = PAGER[which];
         containers[which].innerHTML = '<div class="loading-tip">加载中…</div>';
@@ -780,8 +833,6 @@
                 payload.tag = storyTag;
                 payload.sort = $('#sort-select').value || 'new';
                 payload.q = $('#search-input').value.trim();
-            } else if (which === 'cm') {
-                payload.q = $('#search-input').value.trim();
             }
             const d = await api(payload, ROUTE_OF[which]);
             const items = d.items || [];
@@ -789,8 +840,7 @@
             // 删掉当前页最后一条后本页会变空 → 自动回退一页再取
             if (!items.length && st.page > 1) { st.page -= 1; return loadList(); }
             if (which === 'fb') renderFeedback(items, st.total);
-            else if (which === 'story') renderStories(items, st.total);
-            else renderComments(items, st.total);
+            else renderStories(items, st.total);
             renderPager(which);
         } catch (e) {
             if (e.message.includes('密码')) { clearKey(); showLogin(); }
@@ -804,18 +854,15 @@
         $$('.admin-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
         $('#fb-list').style.display = tab === 'fb' ? '' : 'none';
         $('#story-list').style.display = tab === 'story' ? '' : 'none';
-        $('#cm-list').style.display = tab === 'cm' ? '' : 'none';
         $('#story-tag-filter').style.display = tab === 'story' ? 'flex' : 'none';
-        // 搜索 + 排序只对「故事管理」「评论管理」有意义
-        $('#admin-toolbar').style.display = (tab === 'story' || tab === 'cm') ? 'flex' : 'none';
-        // 换 tab 时清空搜索词、排序回默认，避免上一个 tab 的条件串过来
+        // 搜索 + 排序只对「故事管理」有意义
+        $('#admin-toolbar').style.display = tab === 'story' ? 'flex' : 'none';
+        // 换 tab 时清空搜索词、排序回默认，避免条件串过来
         $('#search-input').value = '';
         $('#sort-select').value = 'new';
-        if (tab === 'cm') PAGER.cm.page = 1;
         // 分页条先全部收起，loadList() 里按当前列表重新渲染
         $('#fb-pager').style.display = 'none';
         $('#story-pager').style.display = 'none';
-        $('#cm-pager').style.display = 'none';
         loadList();
     }
 
