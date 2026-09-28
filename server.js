@@ -76,6 +76,24 @@ function dbLoad() {
   if (!db) return { nextId: 1, stories: [] };
   if (!Array.isArray(db.stories)) db.stories = [];
   if (!db.nextId) db.nextId = db.stories.length + 1;
+  // 归一化：兼容旧版/手动导入的 createdAtOffset 形态（转成 createdAt 并清理，一次写入后不再有开销）
+  const now = Math.floor(Date.now() / 1000);
+  let dirty = false;
+  db.stories.forEach(s => {
+    if (s.createdAtOffset !== undefined) {
+      if (!s.createdAt) s.createdAt = now - s.createdAtOffset;
+      delete s.createdAtOffset;
+      dirty = true;
+    }
+    (s.comments || []).forEach(c => {
+      if (c.createdAtOffset !== undefined) {
+        if (!c.createdAt) c.createdAt = now - c.createdAtOffset;
+        delete c.createdAtOffset;
+        dirty = true;
+      }
+    });
+  });
+  if (dirty) dbSave(db);
   return db;
 }
 

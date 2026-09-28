@@ -98,6 +98,27 @@ function db_load(): array
     if (!is_array($db)) { fail('数据文件损坏，请联系管理员', 500); }
     if (!isset($db['stories']) || !is_array($db['stories'])) { $db['stories'] = []; }
     if (!isset($db['nextId'])) { $db['nextId'] = count($db['stories']) + 1; }
+
+    // 归一化：兼容旧版/手动导入数据里的 createdAtOffset（转成 createdAt 并清理，仅首次修复时写回）
+    $now = time();
+    $dirty = false;
+    foreach ($db['stories'] as &$s) {
+        if (isset($s['createdAtOffset'])) {
+            if (empty($s['createdAt'])) { $s['createdAt'] = $now - (int)$s['createdAtOffset']; }
+            unset($s['createdAtOffset']);
+            $dirty = true;
+        }
+        foreach (($s['comments'] ?? []) as &$c) {
+            if (isset($c['createdAtOffset'])) {
+                if (empty($c['createdAt'])) { $c['createdAt'] = $now - (int)$c['createdAtOffset']; }
+                unset($c['createdAtOffset']);
+                $dirty = true;
+            }
+        }
+        unset($c);
+    }
+    unset($s);
+    if ($dirty) { db_save($db); }
     return $db;
 }
 
