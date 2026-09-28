@@ -152,6 +152,75 @@
         }
         .pager button:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
         .pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* ===== 工具栏：搜索 + 排序 ===== */
+        .admin-toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+        .admin-toolbar input[type="search"] {
+            flex: 1; min-width: 200px; padding: 9px 16px;
+            border: 1.5px solid var(--border); border-radius: 20px;
+            font-size: 13px; font-family: inherit; background: white; color: var(--text);
+        }
+        .admin-toolbar input[type="search"]:focus { outline: none; border-color: var(--primary-light); }
+        .admin-toolbar select {
+            padding: 9px 14px; border: 1.5px solid var(--border); border-radius: 20px;
+            font-size: 13px; font-family: inherit; background: white; color: var(--text-light); cursor: pointer;
+        }
+        .admin-toolbar select:focus { outline: none; border-color: var(--primary-light); }
+
+        /* ===== 评论管理条目 ===== */
+        .cm-story {
+            display: inline-block; font-size: 12px; color: var(--primary);
+            background: rgba(232, 85, 109, 0.07); padding: 2px 10px; border-radius: 10px; margin-bottom: 8px;
+        }
+        .cm-reply-flag { font-size: 12px; color: var(--text-lighter); margin-left: 6px; }
+        .cm-content { font-size: 14px; line-height: 1.7; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+        .fb-actions { display: flex; gap: 8px; align-items: center; }
+        .fb-edit {
+            margin-top: 10px; padding: 5px 14px; border: 1px solid var(--border); border-radius: 15px;
+            background: white; color: var(--text-light); font-size: 12px; cursor: pointer; transition: all 0.25s ease;
+        }
+        .fb-edit:hover { background: #fff5f7; border-color: var(--primary-light); color: var(--primary); }
+
+        /* ===== 编辑 / 改密码弹窗 ===== */
+        .edit-overlay {
+            position: fixed; inset: 0; background: rgba(45, 45, 58, 0.55);
+            z-index: 3000; display: none; align-items: center; justify-content: center; padding: 20px;
+        }
+        .edit-overlay.open { display: flex; }
+        .edit-modal {
+            background: white; border-radius: 18px; width: 100%; max-width: 720px;
+            max-height: 90vh; display: flex; flex-direction: column; overflow: hidden;
+            box-shadow: 0 24px 64px rgba(45, 45, 58, 0.3);
+        }
+        .edit-modal.small { max-width: 440px; }
+        .edit-head {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 16px 20px; border-bottom: 1px solid var(--border);
+            font-size: 15px; font-weight: 700; flex-shrink: 0;
+        }
+        .edit-body { padding: 18px 20px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+        .edit-label { display: block; font-size: 13px; font-weight: 600; color: var(--text-light); margin: 0 0 8px; }
+        .edit-input, .edit-textarea {
+            width: 100%; padding: 11px 14px; border: 1.5px solid var(--border); border-radius: 12px;
+            font-size: 14px; font-family: inherit; color: var(--text); background: white;
+            margin-bottom: 18px; box-sizing: border-box;
+        }
+        .edit-input:focus, .edit-textarea:focus { outline: none; border-color: var(--primary-light); }
+        .edit-textarea { min-height: 300px; line-height: 1.7; resize: vertical; }
+        .edit-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+        .edit-tag {
+            padding: 6px 14px; border: 1.5px solid var(--border); border-radius: 16px;
+            background: white; color: var(--text-light); font-size: 13px; cursor: pointer;
+            transition: all 0.2s ease; font-family: inherit;
+        }
+        .edit-tag.on { background: var(--gradient); color: white; border-color: transparent; }
+        .edit-hint { font-size: 12px; color: var(--text-lighter); line-height: 1.7; margin: 0; }
+        .edit-foot {
+            display: flex; justify-content: flex-end; gap: 10px;
+            padding: 14px 20px; border-top: 1px solid var(--border); flex-shrink: 0;
+        }
+        .mini-btn.primary { background: var(--gradient); color: white; border-color: transparent; }
+        .mini-btn.primary:hover { color: white; opacity: 0.9; }
         .fb-item {
             border: 1.5px solid var(--border); border-radius: 14px; padding: 18px 20px;
             transition: all 0.25s ease; background: #fdfbfc;
@@ -240,13 +309,26 @@
                 <div class="admin-tabs">
                     <button class="admin-tab active" data-tab="fb">📮 反馈箱</button>
                     <button class="admin-tab" data-tab="story">📚 故事管理</button>
+                    <button class="admin-tab" data-tab="cm">💬 评论管理</button>
                 </div>
                 <div class="list-header">
                     <h2 id="list-title">📬 收到的反馈 <span class="total" id="list-total"></span></h2>
                     <div class="list-actions">
                         <button class="mini-btn" id="refresh-btn">🔄 刷新</button>
+                        <button class="mini-btn" id="export-btn">⬇️ 导出数据</button>
+                        <button class="mini-btn" id="passwd-btn">🔑 改密码</button>
                         <button class="mini-btn" id="logout-btn">退出</button>
                     </div>
+                </div>
+                <div class="admin-toolbar" id="admin-toolbar" style="display:none;">
+                    <input type="search" id="search-input" placeholder="搜索标题 / 作者 / 正文…" autocomplete="off">
+                    <select id="sort-select" title="排序方式">
+                        <option value="new">🕐 最新发布</option>
+                        <option value="hot">🔥 热度</option>
+                        <option value="likes">❤️ 点赞最多</option>
+                        <option value="views">👁️ 浏览最多</option>
+                        <option value="comments">💬 评论最多</option>
+                    </select>
                 </div>
                 <div class="story-tag-filter" id="story-tag-filter" style="display:none;"></div>
                 <div id="fb-list" class="fb-list">
@@ -257,6 +339,10 @@
                     <div class="loading-tip">加载中…</div>
                 </div>
                 <div class="pager" id="story-pager" style="display:none;"></div>
+                <div id="cm-list" class="fb-list" style="display:none;">
+                    <div class="loading-tip">加载中…</div>
+                </div>
+                <div class="pager" id="cm-pager" style="display:none;"></div>
             </div>
         </div>
     </div>
@@ -271,6 +357,48 @@
                 <button class="view-close" id="view-close" title="关闭">✕</button>
             </div>
             <iframe class="view-frame" id="view-frame" sandbox="allow-scripts" title="故事预览"></iframe>
+        </div>
+    </div>
+
+    <!-- 编辑故事弹窗 -->
+    <div class="edit-overlay" id="edit-overlay">
+        <div class="edit-modal">
+            <div class="edit-head">
+                <span>✏️ 编辑故事</span>
+                <button class="view-close" id="edit-close" title="关闭">✕</button>
+            </div>
+            <div class="edit-body">
+                <label class="edit-label">标题</label>
+                <input class="edit-input" id="edit-title" maxlength="60" placeholder="故事标题">
+                <label class="edit-label">标签（最多 4 个，不选则默认「日常记录」）</label>
+                <div class="edit-tags" id="edit-tags"></div>
+                <label class="edit-label">正文</label>
+                <textarea class="edit-textarea" id="edit-content" placeholder="故事正文"></textarea>
+                <p class="edit-hint">保存后点赞、评论、浏览数都不会变。HTML 排版故事会重新走一次净化。</p>
+            </div>
+            <div class="edit-foot">
+                <button class="mini-btn" id="edit-cancel">取消</button>
+                <button class="mini-btn primary" id="edit-save">💾 保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 修改密码弹窗 -->
+    <div class="edit-overlay" id="pwd-overlay">
+        <div class="edit-modal small">
+            <div class="edit-head">
+                <span>🔑 修改管理密码</span>
+                <button class="view-close" id="pwd-close" title="关闭">✕</button>
+            </div>
+            <div class="edit-body">
+                <label class="edit-label">新密码（至少 8 位，最多 64 位）</label>
+                <input class="edit-input" id="pwd-new" autocomplete="new-password" placeholder="输入新密码">
+                <p class="edit-hint">改完立即生效。本机浏览器会自动记住新密码，其他设备需要重新输入。</p>
+            </div>
+            <div class="edit-foot">
+                <button class="mini-btn" id="pwd-cancel">取消</button>
+                <button class="mini-btn primary" id="pwd-save">确认修改</button>
+            </div>
         </div>
     </div>
 
@@ -323,6 +451,7 @@
     const PAGER = {
         fb:    { page: 1, pageSize: 20, total: 0 },
         story: { page: 1, pageSize: 20, total: 0 },
+        cm:    { page: 1, pageSize: 20, total: 0 },
     };
 
     /** 渲染分页条；只有一页时整条隐藏 */
@@ -453,14 +582,23 @@
                 </div>
                 <div class="fb-tags">${tagBadges}</div>
                 <div class="fb-content">✍️ ${it.author}</div>
-                <button class="fb-del" data-id="${it.id}">🗑 删除故事</button>
+                <div class="fb-actions">
+                    <button class="fb-edit" data-id="${it.id}">✏️ 编辑</button>
+                    <button class="fb-del" data-id="${it.id}">🗑 删除故事</button>
+                </div>
             </div>`;
         }).join('');
-        // 点击卡片 → 查看故事（删除按钮除外）
+        // 点击卡片 → 查看故事（编辑 / 删除按钮除外）
         list.querySelectorAll('.fb-item').forEach(el => {
             el.addEventListener('click', e => {
-                if (e.target.closest('.fb-del')) return; // 删除按钮不触发查看
+                if (e.target.closest('.fb-del') || e.target.closest('.fb-edit')) return;
                 openView(Number(el.dataset.id), el.dataset.title);
+            });
+        });
+        list.querySelectorAll('.fb-edit').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                openEdit(Number(btn.dataset.id));
             });
         });
         list.querySelectorAll('.fb-del').forEach(btn => {
@@ -478,21 +616,181 @@
         });
     }
 
+    /* ==================== 评论管理 ==================== */
+    function renderComments(items, total) {
+        const n = (total === undefined ? items.length : total);
+        $('#list-title').innerHTML = '💬 全部评论 <span class="total" id="list-total">· 共 ' + n + ' 条</span>';
+        const list = $('#cm-list');
+        if (!items.length) {
+            list.innerHTML = '<div class="empty-tip">📭 还没有评论</div>';
+            return;
+        }
+        list.innerHTML = items.map(it => `
+            <div class="fb-item" style="cursor:default;">
+                <div class="cm-story">📖 ${it.storyTitle}</div>
+                <div class="fb-head">
+                    <div class="fb-ava">${(it.nickname || '匿').charAt(0)}</div>
+                    <span class="fb-name">${it.nickname}</span>
+                    <span class="fb-time">${fmtTime(it.createdAt)}</span>
+                    ${it.isReply
+                        ? `<span class="cm-reply-flag">↩ 回复 ${it.replyTo || '某人'}</span>`
+                        : (it.replyCount ? `<span class="cm-reply-flag">· ${it.replyCount} 条回复</span>` : '')}
+                </div>
+                <div class="cm-content"></div>
+                <button class="fb-del" data-story="${it.storyId}" data-cid="${it.id}">🗑 删除${it.isReply ? '这条回复' : '这条评论'}</button>
+            </div>`).join('');
+        // 内容用 textContent 填充，避免 XSS
+        list.querySelectorAll('.fb-item').forEach((el, i) => {
+            el.querySelector('.cm-content').textContent = items[i].content;
+        });
+        list.querySelectorAll('.fb-del').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                if (!confirm('确定删除这条评论吗？删除后无法恢复。\n如果它是一级评论，它下面的所有回复也会一起删除。')) return;
+                try {
+                    await api({ key: getKey(), op: 'delete', storyId: Number(btn.dataset.story), commentId: btn.dataset.cid }, 'admin_comments');
+                    toast('🗑 评论已删除');
+                    loadList();
+                } catch (err) {
+                    toast(err.message, 'error');
+                }
+            });
+        });
+    }
+
+    /* ==================== 编辑故事 ==================== */
+    let editingId = null;
+    let editingTags = [];
+
+    async function openEdit(id) {
+        editingId = id;
+        try {
+            // 注意：本页的 api() 只发 POST，而 story 是 GET 接口，这里直接 fetch
+            const r = await fetch('api.php?route=story&id=' + encodeURIComponent(id) + '&count=0');
+            const d = await r.json();
+            if (!d.ok) throw new Error(d.error || '加载失败');
+            const s = d.story;
+            editingTags = (s.tags || []).slice();
+            $('#edit-title').value = s.title || '';
+            $('#edit-content').value = s.content || '';
+            renderEditTags();
+            $('#edit-overlay').classList.add('open');
+        } catch (e) {
+            toast('打开编辑失败：' + e.message, 'error');
+        }
+    }
+
+    function renderEditTags() {
+        const wrap = $('#edit-tags');
+        wrap.innerHTML = Object.entries(TAG_NAMES).map(([v, label]) =>
+            `<button class="edit-tag${editingTags.includes(v) ? ' on' : ''}" data-tag="${v}">${label}</button>`).join('');
+        wrap.querySelectorAll('.edit-tag').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const t = btn.dataset.tag;
+                if (editingTags.includes(t)) {
+                    editingTags = editingTags.filter(x => x !== t);
+                } else {
+                    if (editingTags.length >= 4) { toast('最多选 4 个标签', 'error'); return; }
+                    editingTags.push(t);
+                }
+                renderEditTags();
+            });
+        });
+    }
+
+    function closeEdit() {
+        $('#edit-overlay').classList.remove('open');
+        editingId = null;
+    }
+
+    async function saveEdit() {
+        if (editingId === null) return;
+        const title = $('#edit-title').value.trim();
+        const content = $('#edit-content').value.trim();
+        if (!title) { toast('标题不能为空', 'error'); return; }
+        if (!content) { toast('正文不能为空', 'error'); return; }
+        const btn = $('#edit-save');
+        btn.disabled = true;
+        try {
+            await api({ key: getKey(), op: 'update', id: editingId, title, content, tags: editingTags }, 'admin_stories');
+            toast('💾 已保存');
+            closeEdit();
+            loadList();
+        } catch (e) {
+            toast(e.message, 'error');
+        }
+        btn.disabled = false;
+    }
+
+    /* ==================== 导出数据 ==================== */
+    async function exportData(what) {
+        try {
+            const r = await fetch('api.php?route=admin_export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: getKey(), what })
+            });
+            if (!r.ok) {
+                let msg = '导出失败';
+                try { msg = (await r.json()).error || msg; } catch (e) { /* 非 JSON */ }
+                throw new Error(msg);
+            }
+            const blob = await r.blob();
+            const cd = r.headers.get('Content-Disposition') || '';
+            const m = cd.match(/filename="?([^"]+)"?/);
+            const name = m ? m[1] : (what === 'feedback' ? 'feedback.json' : 'stories.json');
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = name;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            toast('⬇️ 已开始下载 ' + name);
+        } catch (e) {
+            toast('导出失败：' + e.message, 'error');
+        }
+    }
+
+    /* ==================== 修改密码 ==================== */
+    async function savePassword() {
+        const newKey = $('#pwd-new').value.trim();
+        if (newKey.length < 8) { toast('新密码至少 8 位', 'error'); return; }
+        const btn = $('#pwd-save');
+        btn.disabled = true;
+        try {
+            await api({ key: getKey(), newKey }, 'admin_change_key');
+            setKey(newKey);              // 本机浏览器同步记住新密码
+            toast('🔑 密码已更新');
+            $('#pwd-overlay').classList.remove('open');
+            $('#pwd-new').value = '';
+        } catch (e) {
+            toast(e.message, 'error');
+        }
+        btn.disabled = false;
+    }
+
+    const ROUTE_OF = { fb: 'admin_feedback', story: 'admin_stories', cm: 'admin_comments' };
+
     async function loadList() {
-        const containers = { fb: $('#fb-list'), story: $('#story-list') };
+        const containers = { fb: $('#fb-list'), story: $('#story-list'), cm: $('#cm-list') };
         const which = currentTab;
         const st = PAGER[which];
         containers[which].innerHTML = '<div class="loading-tip">加载中…</div>';
         try {
             const payload = { key: getKey(), op: 'list', page: st.page, pageSize: st.pageSize };
-            if (which === 'story') payload.tag = storyTag;
-            const d = await api(payload, which === 'fb' ? 'admin_feedback' : 'admin_stories');
+            if (which === 'story') {
+                payload.tag = storyTag;
+                payload.sort = $('#sort-select').value || 'new';
+                payload.q = $('#search-input').value.trim();
+            } else if (which === 'cm') {
+                payload.q = $('#search-input').value.trim();
+            }
+            const d = await api(payload, ROUTE_OF[which]);
             const items = d.items || [];
             st.total = Number(d.total || 0);
             // 删掉当前页最后一条后本页会变空 → 自动回退一页再取
             if (!items.length && st.page > 1) { st.page -= 1; return loadList(); }
             if (which === 'fb') renderFeedback(items, st.total);
-            else renderStories(items, st.total);
+            else if (which === 'story') renderStories(items, st.total);
+            else renderComments(items, st.total);
             renderPager(which);
         } catch (e) {
             if (e.message.includes('密码')) { clearKey(); showLogin(); }
@@ -506,14 +804,67 @@
         $$('.admin-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
         $('#fb-list').style.display = tab === 'fb' ? '' : 'none';
         $('#story-list').style.display = tab === 'story' ? '' : 'none';
+        $('#cm-list').style.display = tab === 'cm' ? '' : 'none';
         $('#story-tag-filter').style.display = tab === 'story' ? 'flex' : 'none';
+        // 搜索 + 排序只对「故事管理」「评论管理」有意义
+        $('#admin-toolbar').style.display = (tab === 'story' || tab === 'cm') ? 'flex' : 'none';
+        // 换 tab 时清空搜索词、排序回默认，避免上一个 tab 的条件串过来
+        $('#search-input').value = '';
+        $('#sort-select').value = 'new';
+        if (tab === 'cm') PAGER.cm.page = 1;
         // 分页条先全部收起，loadList() 里按当前列表重新渲染
         $('#fb-pager').style.display = 'none';
         $('#story-pager').style.display = 'none';
+        $('#cm-pager').style.display = 'none';
         loadList();
     }
 
     $$('.admin-tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+    // 搜索（防抖 350ms）+ 排序
+    let searchTimer = null;
+    $('#search-input').addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+            const st = PAGER[currentTab];
+            if (st) st.page = 1;
+            loadList();
+        }, 350);
+    });
+    $('#sort-select').addEventListener('change', () => {
+        PAGER.story.page = 1;
+        loadList();
+    });
+
+    // 导出数据：确定 = 故事，取消 = 反馈
+    $('#export-btn').addEventListener('click', () => {
+        const what = confirm('点「确定」导出故事数据（stories.json）\n点「取消」导出反馈数据（feedback.json）')
+            ? 'stories' : 'feedback';
+        exportData(what);
+    });
+
+    // 修改密码弹窗
+    $('#passwd-btn').addEventListener('click', () => {
+        $('#pwd-new').value = '';
+        $('#pwd-overlay').classList.add('open');
+        setTimeout(() => $('#pwd-new').focus(), 50);
+    });
+    $('#pwd-cancel').addEventListener('click', () => $('#pwd-overlay').classList.remove('open'));
+    $('#pwd-close').addEventListener('click', () => $('#pwd-overlay').classList.remove('open'));
+    $('#pwd-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) $('#pwd-overlay').classList.remove('open'); });
+    $('#pwd-save').addEventListener('click', savePassword);
+
+    // 编辑故事弹窗
+    $('#edit-cancel').addEventListener('click', closeEdit);
+    $('#edit-close').addEventListener('click', closeEdit);
+    $('#edit-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeEdit(); });
+    $('#edit-save').addEventListener('click', saveEdit);
+
+    document.addEventListener('keydown', e => {
+        if (e.key !== 'Escape') return;
+        if ($('#edit-overlay').classList.contains('open')) closeEdit();
+        if ($('#pwd-overlay').classList.contains('open')) $('#pwd-overlay').classList.remove('open');
+    });
 
     function getKey() { return localStorage.getItem(KEY_STORE) || ''; }
     function setKey(k) { localStorage.setItem(KEY_STORE, k); }

@@ -935,14 +935,14 @@ switch ($route) {
         respond(['ok' => true, 'message' => '故事已删除']);
     }
 
-    /* ---- 管理页：故事管理（查看/删除任意故事，支持标签筛选、最新在前） ---- */
+    /* ---- 管理页：故事管理（查看/编辑/删除，支持标签筛选、关键词搜索、排序、分页） ---- */
     case 'admin_stories': {
         if ($method !== 'POST') { fail('请使用 POST', 405); }
         $in = body_json();
         admin_auth($in);
+        $op = (string)($in['op'] ?? 'list');
 
-        $db = db_load();
-        if (($in['op'] ?? 'list') === 'delete') {
+        if ($op === 'delete') {
             $id = (int)($in['id'] ?? 0);
             $removed = db_transaction(static function (array &$db) use ($id): bool {
                 $before = count($db['stories']);
@@ -952,15 +952,79 @@ switch ($route) {
             if (!$removed) { fail('未找到该故事，可能已被删除'); }
         }
 
-        $db = db_load();
-        $tag = (string)($in['tag'] ?? 'all');
-        $items = array_values(array_filter($db['stories'], static function (array $s) use ($tag): bool {
+        // 编辑：只改标题 / 正文 / 标签；点赞、评论、浏览、删除凭证一律原样保留
+        if ($op === 'update') {
+            $id      = (int)($in['id'] ?? 0);
+            $title   = trim((string)($in['title'] ?? ''));
+            $content = trim((string)($in['content'] ?? ''));
+            $tagsIn  = $in['tags'] ?? null;
+
+            if ($title === '') { fail('标题不能为空'); }
+            if (mb_strlen($title) > 60) { fail('标题最多 60 个字'); }
+            if ($content === '') { fail('正文不能为空'); }
+
+            $status = db_transaction(static function (array &$db) use ($id, $title, $content, $tagsIn): string {
+                foreach ($db['stories'] as $i => $s) {
+                    if ((int)$s['id'] !== $id) { continue; }
+                    $mode = ($s['mode'] ?? 'text') === 'html' ? 'html' : 'text';
+                    $max  = $mode === 'html' ? 50000 : 20000;
+                    if (mb_strlen($content) > $max) { return 'too_long:' . $max; }
+
+                    $db['stories'][$i]['title']   = $title;
+                    $db['stories'][$i]['content'] = $mode === 'html' ? sanitize_html($content) : $content;
+                    if (is_array($tagsIn)) {
+                        $tags = array_values(array_unique(array_intersect($tagsIn, VALID_TAGS)));
+                        if (count($tags) > 4) { $tags = array_slice($tags, 0, 4); }
+                        if (empty($tags)) { $tags = ['daily']; }
+                        $db['stories'][$i]['tags'] = $tags;
+                    }
+                    return 'ok';
+                }
+                return 'not_found';
+            });
+
+            if ($status === 'not_found') { fail('故事不存在或已被删除', 404); }
+            if (strpos($status, 'too_long:') === 0) {
+                fail('内容太长啦，最多 ' . substr($status, 9) . ' 个字符');
+            }
+            respond(['ok' => true, 'message' => '已保存']);
+        }
+
+        // 列表
+        $db   = db_load();
+        $tag  = (string)($in['tag'] ?? 'all');
+        $q    = trim((string)($in['q'] ?? ''));
+        $sort = (string)($in['sort'] ?? 'new');
+
+        $items = array_values(array_filter($db['stories'], static function (array $s) use ($tag, $q): bool {
             if ($tag !== 'all' && (!isset($s['tags']) || !in_array($tag, (array)$s['tags'], true))) { return false; }
+            if ($q !== '') {
+                $hay = (string)($s['title'] ?? '') . ' '
+                     . (string)($s['content'] ?? '') . ' '
+                     . (string)($s['author']['nickname'] ?? '');
+                if (mb_stripos($hay, $q) === false) { return false; }
+            }
             return true;
         }));
-        usort($items, static fn(array $a, array $b): int => ((int)($b['createdAt'] ?? 0)) <=> ((int)($a['createdAt'] ?? 0)));
 
-        // 分页：默认每页 20 条、最多 100（原先一次性返回全部，故事多了响应会越来越大）
+        switch ($sort) {
+            case 'likes':
+                usort($items, static fn(array $a, array $b): int => ((int)$b['likes']) <=> ((int)$a['likes']));
+                break;
+            case 'views':
+                usort($items, static fn(array $a, array $b): int => ((int)$b['views']) <=> ((int)$a['views']));
+                break;
+            case 'comments':
+                usort($items, static fn(array $a, array $b): int => comments_count($b) <=> comments_count($a));
+                break;
+            case 'hot':
+                usort($items, static fn(array $a, array $b): int => hot_score($b) <=> hot_score($a));
+                break;
+            default:
+                usort($items, static fn(array $a, array $b): int => ((int)($b['createdAt'] ?? 0)) <=> ((int)($a['createdAt'] ?? 0)));
+        }
+
+        // 分页：默认每页 20 条、最多 100
         $total    = count($items);
         $page     = max(1, (int)($in['page'] ?? 1));
         $pageSize = min(100, max(1, (int)($in['pageSize'] ?? 20)));
@@ -973,6 +1037,8 @@ switch ($route) {
             'views'         => (int)$s['views'],
             'commentsCount' => comments_count($s),
             'createdAt'     => (int)($s['createdAt'] ?? 0),
+            'mode'          => (string)($s['mode'] ?? 'text'),
+            'excerpt'       => make_excerpt((string)($s['content'] ?? ''), (string)($s['mode'] ?? 'text')),
         ], array_slice($items, ($page - 1) * $pageSize, $pageSize));
 
         respond([
@@ -983,6 +1049,149 @@ switch ($route) {
             'hasMore'  => ($page * $pageSize) < $total,
             'items'    => $items,
         ]);
+    }
+
+    /* ---- 管理页：评论管理（全站评论时间线 / 删除一级评论或单条回复） ---- */
+    case 'admin_comments': {
+        if ($method !== 'POST') { fail('请使用 POST', 405); }
+        $in = body_json();
+        admin_auth($in);
+
+        if (($in['op'] ?? 'list') === 'delete') {
+            $storyId   = (int)($in['storyId'] ?? 0);
+            $commentId = trim((string)($in['commentId'] ?? ''));
+            if ($commentId === '') { fail('缺少 commentId'); }
+
+            $status = db_transaction(static function (array &$db) use ($storyId, $commentId): string {
+                foreach ($db['stories'] as $i => $s) {
+                    if ((int)$s['id'] !== $storyId) { continue; }
+                    $comments = array_values($s['comments'] ?? []);
+
+                    // ① 命中一级评论 → 连同它的所有回复一起删
+                    foreach ($comments as $ci => $c) {
+                        if ((string)($c['id'] ?? '') === $commentId) {
+                            array_splice($comments, $ci, 1);
+                            $db['stories'][$i]['comments'] = $comments;
+                            return 'deleted';
+                        }
+                    }
+                    // ② 命中某条回复 → 只删这一条
+                    foreach ($comments as $ci => $c) {
+                        $reps = array_values($c['replies'] ?? []);
+                        foreach ($reps as $ri => $r) {
+                            if ((string)($r['id'] ?? '') === $commentId) {
+                                array_splice($reps, $ri, 1);
+                                $comments[$ci]['replies'] = $reps;
+                                $db['stories'][$i]['comments'] = $comments;
+                                return 'deleted';
+                            }
+                        }
+                    }
+                    return 'not_found';
+                }
+                return 'no_story';
+            });
+
+            if ($status === 'no_story')  { fail('故事不存在或已被删除', 404); }
+            if ($status === 'not_found') { fail('评论不存在或已被删除', 404); }
+            respond(['ok' => true, 'message' => '评论已删除']);
+        }
+
+        // 列表：把所有故事的一级评论与回复摊平成一条按时间倒序的时间线
+        $db   = db_load();
+        $q    = trim((string)($in['q'] ?? ''));
+        $rows = [];
+
+        foreach ($db['stories'] as $s) {
+            $sid    = (int)($s['id'] ?? 0);
+            $stitle = (string)($s['title'] ?? '');
+            foreach (array_values($s['comments'] ?? []) as $c) {
+                $rows[] = [
+                    'storyId'    => $sid,
+                    'storyTitle' => $stitle,
+                    'id'         => (string)($c['id'] ?? ''),
+                    'nickname'   => (string)($c['nickname'] ?? '匿名'),
+                    'content'    => (string)($c['content'] ?? ''),
+                    'createdAt'  => (int)($c['createdAt'] ?? 0),
+                    'isReply'    => false,
+                    'replyTo'    => '',
+                    'replyCount' => count($c['replies'] ?? []),
+                ];
+                foreach (array_values($c['replies'] ?? []) as $r) {
+                    $rows[] = [
+                        'storyId'    => $sid,
+                        'storyTitle' => $stitle,
+                        'id'         => (string)($r['id'] ?? ''),
+                        'nickname'   => (string)($r['nickname'] ?? '匿名'),
+                        'content'    => (string)($r['content'] ?? ''),
+                        'createdAt'  => (int)($r['createdAt'] ?? 0),
+                        'isReply'    => true,
+                        'replyTo'    => (string)($r['replyToNickname'] ?? ''),
+                        'replyCount' => 0,
+                    ];
+                }
+            }
+        }
+
+        if ($q !== '') {
+            $rows = array_values(array_filter($rows, static function (array $r) use ($q): bool {
+                return mb_stripos($r['content'], $q) !== false
+                    || mb_stripos($r['nickname'], $q) !== false
+                    || mb_stripos($r['storyTitle'], $q) !== false;
+            }));
+        }
+        usort($rows, static fn(array $a, array $b): int => $b['createdAt'] <=> $a['createdAt']);
+
+        $total    = count($rows);
+        $page     = max(1, (int)($in['page'] ?? 1));
+        $pageSize = min(100, max(1, (int)($in['pageSize'] ?? 20)));
+        respond([
+            'ok'       => true,
+            'total'    => $total,
+            'page'     => $page,
+            'pageSize' => $pageSize,
+            'hasMore'  => ($page * $pageSize) < $total,
+            'items'    => array_slice($rows, ($page - 1) * $pageSize, $pageSize),
+        ]);
+    }
+
+    /* ---- 管理页：导出数据（直接下载 JSON 文件） ---- */
+    case 'admin_export': {
+        if ($method !== 'POST') { fail('请使用 POST', 405); }
+        $in = body_json();
+        admin_auth($in);
+
+        $what = (string)($in['what'] ?? 'stories');
+        if ($what === 'feedback') {
+            $path = FEEDBACK_FILE;
+            $name = 'feedback-' . date('Ymd-His') . '.json';
+        } else {
+            $path = DATA_FILE;
+            $name = 'stories-' . date('Ymd-His') . '.json';
+        }
+        if (!is_file($path)) { fail('该数据文件还不存在', 404); }
+
+        header('Content-Type: application/json; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $name . '"');
+        header('Content-Length: ' . (string)filesize($path));
+        readfile($path);
+        exit;
+    }
+
+    /* ---- 管理页：修改管理密码 ---- */
+    case 'admin_change_key': {
+        if ($method !== 'POST') { fail('请使用 POST', 405); }
+        $in = body_json();
+        admin_auth($in);   // 先验旧密码
+
+        $newKey = trim((string)($in['newKey'] ?? ''));
+        if (mb_strlen($newKey) < 8)  { fail('新密码至少 8 位'); }
+        if (mb_strlen($newKey) > 64) { fail('新密码最多 64 位'); }
+        if (!atomic_write(ADMIN_KEY_FILE, $newKey)) {
+            fail('密码写入失败，请检查 data/ 目录权限', 500);
+        }
+        @chmod(ADMIN_KEY_FILE, 0600);
+        respond(['ok' => true, 'message' => '管理密码已更新']);
     }
 
     /* ---- 管理页：查看/删除反馈 ---- */

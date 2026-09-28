@@ -717,13 +717,14 @@ function handleApi(req, res, url, body) {
       return json(res, { ok: true, message: '故事已删除' });
     }
 
-    /* ---- 管理页：故事管理（查看/删除任意故事，支持标签筛选、最新在前） ---- */
+    /* ---- 管理页：故事管理（查看/编辑/删除，支持标签筛选、关键词搜索、排序、分页） ---- */
     case 'admin_stories': {
       if (method !== 'POST') return fail(res, '请使用 POST', 405);
       if (!adminAuth(req, res, body)) return;
+      const op = String(body.op || 'list');
 
-      const db = dbLoad();
-      if ((body.op || 'list') === 'delete') {
+      if (op === 'delete') {
+        const db = dbLoad();
         const id = body.id | 0;
         const before = db.stories.length;
         db.stories = db.stories.filter(s => s.id !== id);
@@ -731,10 +732,55 @@ function handleApi(req, res, url, body) {
         dbSave(db);
       }
 
+      // 编辑：只改标题 / 正文 / 标签；点赞、评论、浏览、删除凭证一律原样保留
+      if (op === 'update') {
+        const db = dbLoad();
+        const id = body.id | 0;
+        const title = String(body.title || '').trim();
+        const content = String(body.content || '').trim();
+        const tagsIn = body.tags;
+
+        if (!title) return fail(res, '标题不能为空');
+        if (Array.from(title).length > 60) return fail(res, '标题最多 60 个字');
+        if (!content) return fail(res, '正文不能为空');
+
+        const target = db.stories.find(s => s.id === id);
+        if (!target) return fail(res, '故事不存在或已被删除', 404);
+
+        const mode = target.mode === 'html' ? 'html' : 'text';
+        const max = mode === 'html' ? 50000 : 20000;
+        if (Array.from(content).length > max) return fail(res, `内容太长啦，最多 ${max} 个字符`);
+
+        target.title = title;
+        target.content = mode === 'html' ? sanitizeHtml(content) : content;
+        if (Array.isArray(tagsIn)) {
+          let tags = [...new Set(tagsIn.filter(t => VALID_TAGS.includes(t)))].slice(0, 4);
+          if (!tags.length) tags = ['daily'];
+          target.tags = tags;
+        }
+        dbSave(db);
+        return json(res, { ok: true, message: '已保存' });
+      }
+
+      const db = dbLoad();
       const tag = String(body.tag || 'all');
-      const all = db.stories
-        .filter(s => tag === 'all' || (Array.isArray(s.tags) && s.tags.includes(tag)))
-        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));   // 最新在前
+      const q = String(body.q || '').trim();
+      const sort = String(body.sort || 'new');
+
+      let all = db.stories.filter(s => {
+        if (tag !== 'all' && !(Array.isArray(s.tags) && s.tags.includes(tag))) return false;
+        if (q) {
+          const hay = `${s.title || ''} ${s.content || ''} ${(s.author && s.author.nickname) || ''}`;
+          if (!hay.toLowerCase().includes(q.toLowerCase())) return false;
+        }
+        return true;
+      });
+
+      if (sort === 'likes')         all = all.slice().sort((a, b) => b.likes - a.likes);
+      else if (sort === 'views')    all = all.slice().sort((a, b) => b.views - a.views);
+      else if (sort === 'comments') all = all.slice().sort((a, b) => commentsCount(b) - commentsCount(a));
+      else if (sort === 'hot')      all = all.slice().sort((a, b) => hotScore(b) - hotScore(a));
+      else                          all = all.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
       // 分页：默认每页 20 条、最多 100（与 api.php 一致）
       const total = all.length;
@@ -749,8 +795,127 @@ function handleApi(req, res, url, body) {
         views: s.views,
         commentsCount: commentsCount(s),
         createdAt: s.createdAt,
+        mode: s.mode || 'text',
+        excerpt: makeExcerpt(s.content || '', s.mode || 'text'),
       }));
       return json(res, { ok: true, total, page, pageSize, hasMore: page * pageSize < total, items });
+    }
+
+    /* ---- 管理页：评论管理（全站评论时间线 / 删除一级评论或单条回复） ---- */
+    case 'admin_comments': {
+      if (method !== 'POST') return fail(res, '请使用 POST', 405);
+      if (!adminAuth(req, res, body)) return;
+
+      if ((body.op || 'list') === 'delete') {
+        const storyId = body.storyId | 0;
+        const commentId = String(body.commentId || '').trim();
+        if (!commentId) return fail(res, '缺少 commentId');
+
+        const db = dbLoad();
+        const story = db.stories.find(s => s.id === storyId);
+        if (!story) return fail(res, '故事不存在或已被删除', 404);
+        story.comments = story.comments || [];
+
+        // ① 命中一级评论 → 连同它的所有回复一起删
+        const ci = story.comments.findIndex(c => String(c.id) === commentId);
+        if (ci !== -1) {
+          story.comments.splice(ci, 1);
+          dbSave(db);
+          return json(res, { ok: true, message: '评论已删除' });
+        }
+        // ② 命中某条回复 → 只删这一条
+        for (const c of story.comments) {
+          const reps = c.replies || [];
+          const ri = reps.findIndex(r => String(r.id) === commentId);
+          if (ri !== -1) {
+            reps.splice(ri, 1);
+            c.replies = reps;
+            dbSave(db);
+            return json(res, { ok: true, message: '评论已删除' });
+          }
+        }
+        return fail(res, '评论不存在或已被删除', 404);
+      }
+
+      // 列表：把所有故事的一级评论与回复摊平成一条按时间倒序的时间线
+      const db = dbLoad();
+      const q = String(body.q || '').trim();
+      let rows = [];
+      for (const s of db.stories) {
+        for (const c of (s.comments || [])) {
+          rows.push({
+            storyId: s.id, storyTitle: s.title,
+            id: String(c.id || ''), nickname: String(c.nickname || '匿名'),
+            content: String(c.content || ''), createdAt: Number(c.createdAt || 0),
+            isReply: false, replyTo: '', replyCount: (c.replies || []).length,
+          });
+          for (const r of (c.replies || [])) {
+            rows.push({
+              storyId: s.id, storyTitle: s.title,
+              id: String(r.id || ''), nickname: String(r.nickname || '匿名'),
+              content: String(r.content || ''), createdAt: Number(r.createdAt || 0),
+              isReply: true, replyTo: String(r.replyToNickname || ''), replyCount: 0,
+            });
+          }
+        }
+      }
+      if (q) {
+        const lq = q.toLowerCase();
+        rows = rows.filter(r =>
+          r.content.toLowerCase().includes(lq) ||
+          r.nickname.toLowerCase().includes(lq) ||
+          r.storyTitle.toLowerCase().includes(lq));
+      }
+      rows.sort((a, b) => b.createdAt - a.createdAt);
+
+      const total = rows.length;
+      const page = Math.max(1, parseInt(body.page, 10) || 1);
+      const pageSize = Math.min(100, Math.max(1, parseInt(body.pageSize, 10) || 20));
+      return json(res, {
+        ok: true, total, page, pageSize,
+        hasMore: page * pageSize < total,
+        items: rows.slice((page - 1) * pageSize, page * pageSize),
+      });
+    }
+
+    /* ---- 管理页：导出数据（直接下载 JSON 文件） ---- */
+    case 'admin_export': {
+      if (method !== 'POST') return fail(res, '请使用 POST', 405);
+      if (!adminAuth(req, res, body)) return;
+
+      const what = String(body.what || 'stories');
+      const file = what === 'feedback' ? FEEDBACK_FILE : DATA_FILE;
+      if (!fs.existsSync(file)) return fail(res, '该数据文件还不存在', 404);
+
+      const d = new Date();
+      const p = n => String(n).padStart(2, '0');
+      const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+      const name = (what === 'feedback' ? 'feedback-' : 'stories-') + stamp + '.json';
+
+      const buf = fs.readFileSync(file);
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="' + name + '"',
+        'Content-Length': buf.length,
+      });
+      res.end(buf);
+      return;
+    }
+
+    /* ---- 管理页：修改管理密码 ---- */
+    case 'admin_change_key': {
+      if (method !== 'POST') return fail(res, '请使用 POST', 405);
+      if (!adminAuth(req, res, body)) return;   // 先验旧密码
+
+      const newKey = String(body.newKey || '').trim();
+      if (Array.from(newKey).length < 8) return fail(res, '新密码至少 8 位');
+      if (Array.from(newKey).length > 64) return fail(res, '新密码最多 64 位');
+      try {
+        fs.writeFileSync(ADMIN_KEY_FILE, newKey, 'utf8');
+      } catch (e) {
+        return fail(res, '密码写入失败，请检查 data/ 目录权限', 500);
+      }
+      return json(res, { ok: true, message: '管理密码已更新' });
     }
 
     /* ---- 管理页：查看/删除反馈 ---- */
