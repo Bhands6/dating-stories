@@ -98,41 +98,63 @@ function normalize_created_at(array &$node, int $now): bool
     return $dirty;
 }
 
-/** 读取数据库（首次运行自动用种子数据初始化，时间戳按当前时间偏移生成） */
+/**
+ * 把数据库里的旧格式（createdAtOffset）归一化成 createdAt（递归覆盖 comments/replies），
+ * 并补齐缺失的 nextId。就地修改 $db。
+ *
+ * @return bool 是否发生了改动（调用方据此决定要不要写盘）
+ */
+function db_normalize(array &$db, int $now): bool
+{
+    if (!isset($db['stories']) || !is_array($db['stories'])) { $db['stories'] = []; }
+    $dirty = false;
+    foreach ($db['stories'] as &$s) {
+        if (normalize_created_at($s, $now)) { $dirty = true; }
+    }
+    unset($s);
+    if (!isset($db['nextId'])) { $db['nextId'] = count($db['stories']) + 1; $dirty = true; }
+    return $dirty;
+}
+
+/** 用种子数据构造一份全新的数据库（首次运行 / 数据文件为空时用） */
+function db_from_seed(int $now): array
+{
+    $seed = [];
+    if (is_file(SEED_FILE)) {
+        $seed = json_decode((string)file_get_contents(SEED_FILE), true) ?: [];
+    }
+    $stories = $seed['stories'] ?? [];
+    foreach ($stories as &$s) { normalize_created_at($s, $now); }
+    unset($s);
+    return ['nextId' => (int)($seed['nextId'] ?? (count($stories) + 1)), 'stories' => $stories];
+}
+
+/** 读取数据库（只读接口用；首次运行自动用种子数据初始化，时间戳按当前时间偏移生成） */
 function db_load(): array
 {
     if (!is_dir(DATA_DIR)) { @mkdir(DATA_DIR, 0755, true); }
     $now = time();
 
     if (!file_exists(DATA_FILE)) {
-        $seed = [];
-        if (file_exists(SEED_FILE)) {
-            $seed = json_decode((string)file_get_contents(SEED_FILE), true) ?: [];
-        }
-        $stories = $seed['stories'] ?? [];
-        foreach ($stories as &$s) { normalize_created_at($s, $now); }
-        unset($s);
-        $db = ['nextId' => (int)($seed['nextId'] ?? (count($stories) + 1)), 'stories' => $stories];
+        $db = db_from_seed($now);
         db_save($db);
         return $db;
     }
 
     $db = json_decode((string)file_get_contents(DATA_FILE), true);
     if (!is_array($db)) { fail('数据文件损坏，请联系管理员', 500); }
-    if (!isset($db['stories']) || !is_array($db['stories'])) { $db['stories'] = []; }
-    if (!isset($db['nextId'])) { $db['nextId'] = count($db['stories']) + 1; }
-
     // 归一化旧版/手动导入数据里的 createdAtOffset（转成 createdAt 并清理，仅在有修复时写回）
-    $dirty = false;
-    foreach ($db['stories'] as &$s) {
-        if (normalize_created_at($s, $now)) { $dirty = true; }
-    }
-    unset($s);
-    if ($dirty) { db_save($db); }
+    if (db_normalize($db, $now)) { db_save($db); }
     return $db;
 }
 
-/** 写数据库（带文件锁，写临时文件后原子替换） */
+/**
+ * 写数据库（带文件锁）。
+ *
+ * ⚠️ 它只保证「这一次写入」不被写坏，**并不保护「读-改-写」整个事务**。
+ *    凡是「先读出来、改完再写回」的接口，一律用 db_transaction()，
+ *    否则并发下会丢更新（见下）。
+ */
 function db_save(array $db): void
 {
     if (!is_dir(DATA_DIR)) { @mkdir(DATA_DIR, 0755, true); }
@@ -145,6 +167,61 @@ function db_save(array $db): void
     fflush($fp);
     flock($fp, LOCK_UN);
     fclose($fp);
+}
+
+/**
+ * 「读-改-写」事务：**全程持有数据文件的排他锁**，避免并发写丢更新。
+ *
+ * 为什么需要它：原先写接口都是 `db_load() → 改 → db_save()` 三段式，
+ * flock 只覆盖 db_save 内部那一次写。两个请求同时读到同一份快照、各自改完再写回，
+ * 后写的会把先写的整份覆盖掉（经典 lost update）——表现为「评论/点赞偶尔凭空消失」。
+ * PHP 每个请求是独立进程，必须靠文件锁把整个事务圈起来。
+ *
+ * 用法：
+ *   $result = db_transaction(function (array &$db) {
+ *       // 在这里修改 $db；返回值即 db_transaction 的返回值
+ *       return $whatever;
+ *   });
+ *
+ * 约定：
+ * - 回调里**不要再调用 db_save()**（同进程重复加锁会死锁）；
+ * - 回调里调用 fail() 会直接结束请求且**不写盘**，适合「校验不通过就中止」；
+ * - 只有 $db 真的变化了才写盘，读多写少的接口不会产生空写。
+ *
+ * Node 侧（server.js）不需要这个：单线程 + 全同步文件 IO，
+ * 一次请求处理中途不会被其他请求打断，天然不存在该竞态。
+ */
+function db_transaction(callable $fn)
+{
+    if (!is_dir(DATA_DIR)) { @mkdir(DATA_DIR, 0755, true); }
+    $now = time();
+
+    $fp = fopen(DATA_FILE, 'c+');
+    if (!$fp) { fail('无法打开数据文件', 500); }
+    if (!flock($fp, LOCK_EX)) { fclose($fp); fail('数据文件繁忙，请稍后重试', 503); }
+
+    rewind($fp);
+    $db = json_decode((string)stream_get_contents($fp) ?: '', true);
+    if (!is_array($db)) { $db = db_from_seed($now); }   // 文件为空/损坏 → 按首次运行初始化
+    db_normalize($db, $now);
+
+    $before = json_encode($db, JSON_UNESCAPED_UNICODE);
+    $result = $fn($db);                                  // ← 回调在持锁状态下修改 $db
+    $after  = json_encode($db, JSON_UNESCAPED_UNICODE);
+
+    if ($after !== $before) {
+        $payload = json_encode($db, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        if ($payload !== false) {
+            ftruncate($fp, 0);
+            rewind($fp);
+            fwrite($fp, $payload);
+            fflush($fp);
+        }
+    }
+    flock($fp, LOCK_UN);
+    fclose($fp);
+
+    return $result;
 }
 
 /**
@@ -407,6 +484,31 @@ function admin_guard_save(array $data): void
     @file_put_contents(ADMIN_GUARD_FILE, json_encode($data, JSON_UNESCAPED_UNICODE), LOCK_EX);
 }
 
+/**
+ * 清理 admin_guard.json 里的陈旧记录。
+ *
+ * 原实现只在「登录失败」时顺手清理，于是「失败过一两次、之后再也不来」的 IP 会一直堆在文件里
+ * （文件只增不减）。现在每次调用 admin_auth 都跑一遍：锁定期已过、且最后一次尝试距今
+ * 超过一个锁定时长的记录，视为「不会再来」，直接清掉。
+ *
+ * @return bool 是否有记录被清理（调用方据此决定要不要写盘）
+ */
+function admin_guard_gc(array &$guard, int $now): bool
+{
+    $changed = false;
+    foreach ($guard as $ip => $rec) {
+        if (!is_array($rec)) { unset($guard[$ip]); $changed = true; continue; }
+        $until = (int)($rec['until'] ?? 0);
+        $last  = (int)($rec['last'] ?? 0);
+        // 仍在锁定期内 → 保留；刚失败过（还没锁定）→ 保留，等它自然过期
+        if ($until <= $now && ($now - $last) > ADMIN_LOCK_SECONDS) {
+            unset($guard[$ip]);
+            $changed = true;
+        }
+    }
+    return $changed;
+}
+
 /** 校验管理密码；未通过或处于锁定期直接终止响应 */
 function admin_auth(array $in): void
 {
@@ -419,21 +521,18 @@ function admin_auth(array $in): void
     $ip = client_ip();
     $now = time();
     $guard = admin_guard_load();
+    $cleaned = admin_guard_gc($guard, $now);   // 每次进来都清理陈旧记录，不再只靠失败分支
     $rec = $guard[$ip] ?? null;
 
     // 锁定期内直接拒绝，不再比对密码（防止在锁定窗口里继续试）
     if (is_array($rec) && (int)($rec['until'] ?? 0) > $now) {
+        if ($cleaned) { admin_guard_save($guard); }
         $left = (int)ceil(((int)$rec['until'] - $now) / 60);
         fail('密码错误次数过多，请 ' . $left . ' 分钟后再试', 429);
     }
 
     if (!hash_equals($key, (string)($in['key'] ?? ''))) {
-        // 累计失败次数，达阈值开始锁定；顺手清理过期记录防止文件无限增长
-        foreach ($guard as $k => $v) {
-            if ((int)($v['until'] ?? 0) <= $now && ($now - (int)($v['last'] ?? 0)) > ADMIN_LOCK_SECONDS) {
-                unset($guard[$k]);
-            }
-        }
+        // 累计失败次数，达阈值开始锁定（陈旧记录已在上面的 gc 里清掉）
         $n = (int)(is_array($rec) ? ($rec['n'] ?? 0) : 0) + 1;
         $guard[$ip] = [
             'n'     => $n,
@@ -445,8 +544,9 @@ function admin_auth(array $in): void
         fail($left > 0 ? '管理密码错误（还可尝试 ' . $left . ' 次）' : '密码错误次数过多，请 15 分钟后再试', $left > 0 ? 403 : 429);
     }
 
-    // 登录成功：清空该 IP 的失败记录
+    // 登录成功：清空该 IP 的失败记录；若刚清理过其他陈旧记录，也一并落盘
     if (isset($guard[$ip])) { unset($guard[$ip]); admin_guard_save($guard); }
+    elseif ($cleaned) { admin_guard_save($guard); }
 }
 
 /* ================= 内容写入限流（防脚本刷屏） ================= */
@@ -556,26 +656,27 @@ switch ($route) {
             // 校验通过后才计数：正常用户填错重试不会被罚，只有真正落库的提交才消耗额度
             rate_guard('stories');
 
-            $db = db_load();
-            $story = [
-                'id'           => (int)$db['nextId']++,
-                'title'        => $title,
-                'content'      => $mode === 'html' ? sanitize_html($content) : $content,
-                'mode'         => $mode,
-                'tags'         => $tags,
-                'author'       => ['nickname' => $nickname, 'info' => '缘分旅人 · 匿名分享'],
-                'likes'        => 0,
-                'views'        => 0,
-                'comments'     => [],
-                'createdAt'    => time(),
-            ];
-            // 生成发布者删除凭证（仅本次响应返回，存储在发布者浏览器里）
-            $editKey = substr(bin2hex(random_bytes(5)), 0, 8);
-            $story['editKey'] = $editKey;
-            array_unshift($db['stories'], $story);
-            db_save($db);
-            $full = story_full($story);
-            $full['editKey'] = $editKey;
+            // 事务内完成「分配 id → 插入 → 写盘」：并发发布不会拿到重复 id，也不会互相覆盖
+            $created = db_transaction(static function (array &$db) use ($title, $content, $mode, $nickname, $tags): array {
+                $story = [
+                    'id'           => (int)$db['nextId']++,
+                    'title'        => $title,
+                    'content'      => $mode === 'html' ? sanitize_html($content) : $content,
+                    'mode'         => $mode,
+                    'tags'         => $tags,
+                    'author'       => ['nickname' => $nickname, 'info' => '缘分旅人 · 匿名分享'],
+                    'likes'        => 0,
+                    'views'        => 0,
+                    'comments'     => [],
+                    'createdAt'    => time(),
+                ];
+                // 生成发布者删除凭证（仅本次响应返回，存储在发布者浏览器里）
+                $story['editKey'] = substr(bin2hex(random_bytes(5)), 0, 8);
+                array_unshift($db['stories'], $story);
+                return $story;
+            });
+            $full = story_full($created);
+            $full['editKey'] = $created['editKey'];
             respond(['ok' => true, 'story' => $full]);
         }
 
@@ -640,19 +741,20 @@ switch ($route) {
 
     /* ---- 故事详情（浏览量按 IP 24h 去重计数） ---- */
     case 'story': {
-        $db = db_load();
-        foreach ($db['stories'] as $i => $s) {
-            if ((int)$s['id'] === $id) {
-                // 前端会话内重复打开(count=0)或同 IP 24h 内重复访问，都不重复计数
-                if (($_GET['count'] ?? '1') !== '0' && should_count_view(client_ip(), $id)) {
-                    $db['stories'][$i]['views'] = (int)$s['views'] + 1;
-                    db_save($db);
+        // 前端会话内重复打开(count=0)或同 IP 24h 内重复访问，都不重复计数
+        $count = ($_GET['count'] ?? '1') !== '0' && should_count_view(client_ip(), $id);
+
+        $found = db_transaction(static function (array &$db) use ($id, $count): ?array {
+            foreach ($db['stories'] as $i => $s) {
+                if ((int)$s['id'] === $id) {
+                    if ($count) { $db['stories'][$i]['views'] = (int)$s['views'] + 1; }
+                    return $db['stories'][$i];
                 }
-                $full = story_full($db['stories'][$i]);
-                respond(['ok' => true, 'story' => $full]);
             }
-        }
-        fail('故事不存在或已被删除', 404);
+            return null;
+        });
+        if ($found === null) { fail('故事不存在或已被删除', 404); }
+        respond(['ok' => true, 'story' => story_full($found)]);
     }
 
     /* ---- 点赞（like / unlike） ---- */
@@ -660,26 +762,21 @@ switch ($route) {
         if ($method !== 'POST') { fail('请使用 POST', 405); }
         $in = body_json();
         $undo = !empty($in['undo']);
-        $db = db_load();
-        foreach ($db['stories'] as $i => $s) {
-            if ((int)$s['id'] === (int)($in['id'] ?? 0)) {
-                $db['stories'][$i]['likes'] = max(0, (int)$s['likes'] + ($undo ? -1 : 1));
-                db_save($db);
-                respond(['ok' => true, 'likes' => (int)$db['stories'][$i]['likes']]);
+        $likes = db_transaction(static function (array &$db) use ($in, $undo): ?int {
+            foreach ($db['stories'] as $i => $s) {
+                if ((int)$s['id'] === (int)($in['id'] ?? 0)) {
+                    $db['stories'][$i]['likes'] = max(0, (int)$s['likes'] + ($undo ? -1 : 1));
+                    return (int)$db['stories'][$i]['likes'];
+                }
             }
-        }
-        fail('故事不存在或已被删除', 404);
+            return null;
+        });
+        if ($likes === null) { fail('故事不存在或已被删除', 404); }
+        respond(['ok' => true, 'likes' => $likes]);
     }
 
     /* ---- 评论 ---- */
     case 'comments': {
-        $db = db_load();
-        $idx = null;
-        foreach ($db['stories'] as $i => $s) {
-            if ((int)$s['id'] === $id) { $idx = $i; break; }
-        }
-        if ($idx === null) { fail('故事不存在或已被删除', 404); }
-
         if ($method === 'POST') {
             $in = body_json();
             $content = trim((string)($in['content'] ?? ''));
@@ -696,22 +793,38 @@ switch ($route) {
                 'content'   => $content,
                 'createdAt' => time(),
             ];
-            if ($replyTo !== '') {
-                /* 两级楼中楼：replyTo 为目标评论或回复的 id，
-                   回复统一挂在其所属一级评论的 replies 下，并记录被回复人昵称 */
-                $comments = array_values($db['stories'][$idx]['comments'] ?? []);
-                if (!comment_reply_attach($comments, $replyTo, $entry)) {
-                    fail('要回复的评论不存在或已被删除', 404);
+            // 事务内「定位故事 → 挂评论 → 写盘」：并发评论不会互相覆盖
+            $result = db_transaction(static function (array &$db) use ($id, $entry, $replyTo): array {
+                foreach ($db['stories'] as $i => $s) {
+                    if ((int)$s['id'] !== $id) { continue; }
+                    if ($replyTo !== '') {
+                        /* 两级楼中楼：replyTo 为目标评论或回复的 id，
+                           回复统一挂在其所属一级评论的 replies 下，并记录被回复人昵称 */
+                        $comments = array_values($db['stories'][$i]['comments'] ?? []);
+                        if (!comment_reply_attach($comments, $replyTo, $entry)) {
+                            return ['error' => '要回复的评论不存在或已被删除', 'code' => 404];
+                        }
+                        $db['stories'][$i]['comments'] = $comments;
+                    } else {
+                        $db['stories'][$i]['comments'][] = $entry;
+                    }
+                    // $entry 已被 comment_reply_attach 回填 replyToNickname，随结果带回
+                    return ['count' => comments_count($db['stories'][$i]), 'entry' => $entry];
                 }
-                $db['stories'][$idx]['comments'] = $comments;
-            } else {
-                $db['stories'][$idx]['comments'][] = $entry;
-            }
-            db_save($db);
-            respond(['ok' => true, 'commentsCount' => comments_count($db['stories'][$idx]), 'comment' => $entry]);
+                return ['error' => '故事不存在或已被删除', 'code' => 404];
+            });
+            if (isset($result['error'])) { fail($result['error'], (int)$result['code']); }
+            respond(['ok' => true, 'commentsCount' => $result['count'], 'comment' => $result['entry']]);
         }
 
-        respond(['ok' => true, 'comments' => array_map('comment_out', array_values($db['stories'][$idx]['comments'] ?? []))]);
+        // GET：只读
+        $db = db_load();
+        foreach ($db['stories'] as $s) {
+            if ((int)$s['id'] === $id) {
+                respond(['ok' => true, 'comments' => array_map('comment_out', array_values($s['comments'] ?? []))]);
+            }
+        }
+        fail('故事不存在或已被删除', 404);
     }
 
     /* ---- 标签云计数 ---- */
@@ -767,18 +880,21 @@ switch ($route) {
         $in = body_json();
         $id = (int)($in['id'] ?? 0);
         $editKey = trim((string)($in['editKey'] ?? ''));
-        $db = db_load();
-        foreach ($db['stories'] as $i => $s) {
-            if ((int)$s['id'] === $id) {
+        // 事务内校验凭证并删除：并发下不会误删别的故事
+        $status = db_transaction(static function (array &$db) use ($id, $editKey): string {
+            foreach ($db['stories'] as $i => $s) {
+                if ((int)$s['id'] !== $id) { continue; }
                 if (empty($s['editKey']) || !hash_equals((string)$s['editKey'], $editKey)) {
-                    fail('删除凭证不正确，无法删除这篇故事');
+                    return 'bad_key';
                 }
                 array_splice($db['stories'], $i, 1);
-                db_save($db);
-                respond(['ok' => true, 'message' => '故事已删除']);
+                return 'deleted';
             }
-        }
-        fail('故事不存在或已被删除', 404);
+            return 'not_found';
+        });
+        if ($status === 'bad_key') { fail('删除凭证不正确，无法删除这篇故事'); }
+        if ($status === 'not_found') { fail('故事不存在或已被删除', 404); }
+        respond(['ok' => true, 'message' => '故事已删除']);
     }
 
     /* ---- 管理页：故事管理（查看/删除任意故事，支持标签筛选、最新在前） ---- */
@@ -790,18 +906,26 @@ switch ($route) {
         $db = db_load();
         if (($in['op'] ?? 'list') === 'delete') {
             $id = (int)($in['id'] ?? 0);
-            $before = count($db['stories']);
-            $db['stories'] = array_values(array_filter($db['stories'], static fn(array $s): bool => (int)$s['id'] !== $id));
-            if (count($db['stories']) === $before) { fail('未找到该故事，可能已被删除'); }
-            db_save($db);
+            $removed = db_transaction(static function (array &$db) use ($id): bool {
+                $before = count($db['stories']);
+                $db['stories'] = array_values(array_filter($db['stories'], static fn(array $s): bool => (int)$s['id'] !== $id));
+                return count($db['stories']) !== $before;
+            });
+            if (!$removed) { fail('未找到该故事，可能已被删除'); }
         }
 
+        $db = db_load();
         $tag = (string)($in['tag'] ?? 'all');
         $items = array_values(array_filter($db['stories'], static function (array $s) use ($tag): bool {
             if ($tag !== 'all' && (!isset($s['tags']) || !in_array($tag, (array)$s['tags'], true))) { return false; }
             return true;
         }));
         usort($items, static fn(array $a, array $b): int => ((int)($b['createdAt'] ?? 0)) <=> ((int)($a['createdAt'] ?? 0)));
+
+        // 分页：默认每页 20 条、最多 100（原先一次性返回全部，故事多了响应会越来越大）
+        $total    = count($items);
+        $page     = max(1, (int)($in['page'] ?? 1));
+        $pageSize = min(100, max(1, (int)($in['pageSize'] ?? 20)));
         $items = array_map(static fn(array $s): array => [
             'id'            => (int)$s['id'],
             'title'         => (string)$s['title'],
@@ -811,8 +935,16 @@ switch ($route) {
             'views'         => (int)$s['views'],
             'commentsCount' => comments_count($s),
             'createdAt'     => (int)($s['createdAt'] ?? 0),
-        ], $items);
-        respond(['ok' => true, 'total' => count($items), 'items' => $items]);
+        ], array_slice($items, ($page - 1) * $pageSize, $pageSize));
+
+        respond([
+            'ok'       => true,
+            'total'    => $total,
+            'page'     => $page,
+            'pageSize' => $pageSize,
+            'hasMore'  => ($page * $pageSize) < $total,
+            'items'    => $items,
+        ]);
     }
 
     /* ---- 管理页：查看/删除反馈 ---- */
@@ -836,8 +968,20 @@ switch ($route) {
             @file_put_contents(FEEDBACK_FILE, json_encode($db, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), LOCK_EX);
         }
 
-        $items = array_reverse($db['items']);
-        respond(['ok' => true, 'total' => count($items), 'items' => $items]);
+        // 分页：默认每页 20 条、最多 100（反馈按时间倒序，原先一次性返回全部）
+        $items    = array_reverse($db['items']);
+        $total    = count($items);
+        $page     = max(1, (int)($in['page'] ?? 1));
+        $pageSize = min(100, max(1, (int)($in['pageSize'] ?? 20)));
+        $items    = array_slice($items, ($page - 1) * $pageSize, $pageSize);
+        respond([
+            'ok'       => true,
+            'total'    => $total,
+            'page'     => $page,
+            'pageSize' => $pageSize,
+            'hasMore'  => ($page * $pageSize) < $total,
+            'items'    => $items,
+        ]);
     }
 
     /* ---- 站点统计 ---- */

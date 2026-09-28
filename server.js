@@ -67,6 +67,28 @@ function adminGuardSave(data) {
   } catch (e) { /* 记录不可写时不影响主流程 */ }
 }
 
+/**
+ * 清理 admin_guard.json 里的陈旧记录（与 api.php 的 admin_guard_gc() 行为一致）。
+ *
+ * 原实现只在「登录失败」时顺手清理，于是「失败过一两次、之后再也不来」的 IP 会一直堆在文件里
+ * （文件只增不减）。现在每次 adminAuth 都跑一遍：锁定期已过、且最后一次尝试距今超过一个
+ * 锁定时长的记录，视为「不会再来」，直接清掉。
+ *
+ * @returns {boolean} 是否有记录被清理（调用方据此决定要不要写盘）
+ */
+function adminGuardGc(guard, now) {
+  let changed = false;
+  for (const ip of Object.keys(guard)) {
+    const rec = guard[ip];
+    if (!rec || typeof rec !== 'object' || Array.isArray(rec)) { delete guard[ip]; changed = true; continue; }
+    const until = Number(rec.until || 0);
+    const last = Number(rec.last || 0);
+    // 仍在锁定期内 → 保留；刚失败过（还没锁定）→ 保留，等它自然过期
+    if (until <= now && (now - last) > ADMIN_LOCK_SECONDS) { delete guard[ip]; changed = true; }
+  }
+  return changed;
+}
+
 /** 校验管理密码；未通过或处于锁定期直接响应并返回 false */
 function adminAuth(req, res, body) {
   const key = adminKey();
@@ -78,20 +100,18 @@ function adminAuth(req, res, body) {
   const ip = clientIp(req);
   const now = Math.floor(Date.now() / 1000);
   const guard = adminGuardLoad();
+  const cleaned = adminGuardGc(guard, now);   // 每次进来都清理陈旧记录，不再只靠失败分支
   const rec = guard[ip];
 
   // 锁定期内直接拒绝，不再比对密码（防止在锁定窗口里继续试）
   if (rec && Number(rec.until || 0) > now) {
+    if (cleaned) adminGuardSave(guard);
     fail(res, '密码错误次数过多，请 ' + Math.ceil((Number(rec.until) - now) / 60) + ' 分钟后再试', 429);
     return false;
   }
 
   if (!safeEqual(key, body.key || '')) {
-    // 累计失败次数，达阈值开始锁定；顺手清理过期记录防止文件无限增长
-    for (const k of Object.keys(guard)) {
-      const v = guard[k] || {};
-      if (Number(v.until || 0) <= now && (now - Number(v.last || 0)) > ADMIN_LOCK_SECONDS) delete guard[k];
-    }
+    // 累计失败次数，达阈值开始锁定（陈旧记录已在上面的 gc 里清掉）
     const n = Number((rec && rec.n) || 0) + 1;
     guard[ip] = { n, last: now, until: n >= ADMIN_MAX_FAILS ? now + ADMIN_LOCK_SECONDS : 0 };
     adminGuardSave(guard);
@@ -100,8 +120,9 @@ function adminAuth(req, res, body) {
     return false;
   }
 
-  // 登录成功：清空该 IP 的失败记录
+  // 登录成功：清空该 IP 的失败记录；若刚清理过其他陈旧记录，也一并落盘
   if (guard[ip]) { delete guard[ip]; adminGuardSave(guard); }
+  else if (cleaned) adminGuardSave(guard);
   return true;
 }
 
@@ -252,7 +273,13 @@ function dbLoad() {
   return db;
 }
 
-/** 写数据库（同步 + 临时文件原子替换） */
+/**
+ * 写数据库（同步 + 临时文件原子替换）。
+ *
+ * 说明：Node 侧**不需要** PHP 那种「读-改-写」文件事务——单线程 + 全同步文件 IO，
+ * 一次请求从 dbLoad() 到 dbSave() 之间不会被其他请求打断，天然不存在 lost update。
+ * （api.php 每个请求是独立进程，所以那边必须用 db_transaction() 显式加锁。）
+ */
 function dbSave(db) {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   const tmp = DATA_FILE + '.tmp';
@@ -692,20 +719,25 @@ function handleApi(req, res, url, body) {
       }
 
       const tag = String(body.tag || 'all');
-      const items = db.stories
+      const all = db.stories
         .filter(s => tag === 'all' || (Array.isArray(s.tags) && s.tags.includes(tag)))
-        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))   // 最新在前
-        .map(s => ({
-          id: s.id,
-          title: s.title,
-          author: (s.author && s.author.nickname) || '匿名',
-          tags: s.tags || [],
-          likes: s.likes,
-          views: s.views,
-          commentsCount: commentsCount(s),
-          createdAt: s.createdAt,
-        }));
-      return json(res, { ok: true, total: items.length, items });
+        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));   // 最新在前
+
+      // 分页：默认每页 20 条、最多 100（与 api.php 一致）
+      const total = all.length;
+      const page = Math.max(1, parseInt(body.page, 10) || 1);
+      const pageSize = Math.min(100, Math.max(1, parseInt(body.pageSize, 10) || 20));
+      const items = all.slice((page - 1) * pageSize, page * pageSize).map(s => ({
+        id: s.id,
+        title: s.title,
+        author: (s.author && s.author.nickname) || '匿名',
+        tags: s.tags || [],
+        likes: s.likes,
+        views: s.views,
+        commentsCount: commentsCount(s),
+        createdAt: s.createdAt,
+      }));
+      return json(res, { ok: true, total, page, pageSize, hasMore: page * pageSize < total, items });
     }
 
     /* ---- 管理页：查看/删除反馈 ---- */
@@ -727,7 +759,13 @@ function handleApi(req, res, url, body) {
         fs.writeFileSync(FEEDBACK_FILE, JSON.stringify(db, null, 2), 'utf8');
       }
 
-      return json(res, { ok: true, total: db.items.length, items: db.items.slice().reverse() });
+      // 分页：默认每页 20 条、最多 100（反馈按时间倒序，与 api.php 一致）
+      const all = db.items.slice().reverse();
+      const total = all.length;
+      const page = Math.max(1, parseInt(body.page, 10) || 1);
+      const pageSize = Math.min(100, Math.max(1, parseInt(body.pageSize, 10) || 20));
+      const items = all.slice((page - 1) * pageSize, page * pageSize);
+      return json(res, { ok: true, total, page, pageSize, hasMore: page * pageSize < total, items });
     }
 
     /* ---- 站点统计 ---- */

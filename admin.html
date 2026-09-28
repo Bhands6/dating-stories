@@ -140,6 +140,18 @@
         .view-close:hover { background: var(--primary); color: white; }
         .view-frame { flex: 1; width: 100%; border: none; background: white; }
         .fb-list { display: flex; flex-direction: column; gap: 14px; }
+        /* ===== 分页 ===== */
+        .pager {
+            display: flex; align-items: center; justify-content: center; gap: 14px;
+            margin-top: 22px; font-size: 13px; color: var(--text-lighter);
+        }
+        .pager button {
+            padding: 8px 18px; border: 1.5px solid var(--border); border-radius: 20px;
+            background: white; color: var(--text-light); font-size: 13px; font-weight: 600;
+            cursor: pointer; transition: all 0.25s ease;
+        }
+        .pager button:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+        .pager button:disabled { opacity: 0.4; cursor: not-allowed; }
         .fb-item {
             border: 1.5px solid var(--border); border-radius: 14px; padding: 18px 20px;
             transition: all 0.25s ease; background: #fdfbfc;
@@ -240,9 +252,11 @@
                 <div id="fb-list" class="fb-list">
                     <div class="loading-tip">加载中…</div>
                 </div>
+                <div class="pager" id="fb-pager"></div>
                 <div id="story-list" class="fb-list" style="display:none;">
                     <div class="loading-tip">加载中…</div>
                 </div>
+                <div class="pager" id="story-pager" style="display:none;"></div>
             </div>
         </div>
     </div>
@@ -305,6 +319,34 @@
     let currentTab = 'fb'; // 'fb' = 反馈箱 | 'story' = 故事管理
     let storyTag = 'all';  // 故事管理的标签筛选
 
+    // 分页状态：两个列表各自独立（切 tab 不互相影响页码）
+    const PAGER = {
+        fb:    { page: 1, pageSize: 20, total: 0 },
+        story: { page: 1, pageSize: 20, total: 0 },
+    };
+
+    /** 渲染分页条；只有一页时整条隐藏 */
+    function renderPager(which) {
+        const st = PAGER[which];
+        const el = $('#' + which + '-pager');
+        if (!el) return;
+        const pages = Math.max(1, Math.ceil(st.total / st.pageSize));
+        if (st.total <= st.pageSize) { el.innerHTML = ''; el.style.display = 'none'; return; }
+        el.style.display = 'flex';
+        el.innerHTML =
+            `<button data-go="prev"${st.page <= 1 ? ' disabled' : ''}>← 上一页</button>` +
+            `<span>第 ${st.page} / ${pages} 页</span>` +
+            `<button data-go="next"${st.page >= pages ? ' disabled' : ''}>下一页 →</button>`;
+        el.querySelectorAll('button[data-go]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const next = btn.dataset.go === 'prev' ? st.page - 1 : st.page + 1;
+                if (next < 1 || next > pages || next === st.page) return;
+                st.page = next;
+                loadList();
+            });
+        });
+    }
+
     const TAG_NAMES = {
         sweet: '甜蜜脱单', funny: '搞笑经历', touching: '感人故事', complain: '心酸吐槽',
         daily: '日常记录', yidi: '异地相亲', chujian: '初次见面', liaotian: '聊天记录',
@@ -320,6 +362,7 @@
             btn.addEventListener('click', () => {
                 if (storyTag === btn.dataset.tag) return;
                 storyTag = btn.dataset.tag;
+                PAGER.story.page = 1;   // 换分类回到第一页
                 renderStoryTagFilter();
                 loadList();
             });
@@ -332,8 +375,9 @@
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     }
 
-    function renderFeedback(items) {
-        $('#list-title').innerHTML = '📬 收到的反馈 <span class="total" id="list-total">· 共 ' + items.length + ' 条</span>';
+    function renderFeedback(items, total) {
+        const n = (total === undefined ? items.length : total);
+        $('#list-title').innerHTML = '📬 收到的反馈 <span class="total" id="list-total">· 共 ' + n + ' 条</span>';
         const list = $('#fb-list');
         if (!items.length) {
             list.innerHTML = '<div class="empty-tip">📭 暂时还没有反馈，去分享给朋友们吧～</div>';
@@ -388,8 +432,9 @@
     $('#view-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeView(); });
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeView(); });
 
-    function renderStories(items) {
-        $('#list-title').innerHTML = '📚 全部故事 <span class="total" id="list-total">· 共 ' + items.length + ' 篇' + (storyTag !== 'all' ? '（' + (TAG_NAMES[storyTag] || storyTag) + '）' : '') + '</span>';
+    function renderStories(items, total) {
+        const n = (total === undefined ? items.length : total);
+        $('#list-title').innerHTML = '📚 全部故事 <span class="total" id="list-total">· 共 ' + n + ' 篇' + (storyTag !== 'all' ? '（' + (TAG_NAMES[storyTag] || storyTag) + '）' : '') + '</span>';
         const list = $('#story-list');
         if (!items.length) {
             list.innerHTML = '<div class="empty-tip">📭 该分类下暂时没有故事</div>';
@@ -435,18 +480,23 @@
 
     async function loadList() {
         const containers = { fb: $('#fb-list'), story: $('#story-list') };
-        Object.values(containers).forEach(el => { if (el) el.innerHTML = '<div class="loading-tip">加载中…</div>'; });
+        const which = currentTab;
+        const st = PAGER[which];
+        containers[which].innerHTML = '<div class="loading-tip">加载中…</div>';
         try {
-            if (currentTab === 'fb') {
-                const d = await api({ key: getKey(), op: 'list' }, 'admin_feedback');
-                renderFeedback(d.items || []);
-            } else {
-                const d = await api({ key: getKey(), op: 'list', tag: storyTag }, 'admin_stories');
-                renderStories(d.items || []);
-            }
+            const payload = { key: getKey(), op: 'list', page: st.page, pageSize: st.pageSize };
+            if (which === 'story') payload.tag = storyTag;
+            const d = await api(payload, which === 'fb' ? 'admin_feedback' : 'admin_stories');
+            const items = d.items || [];
+            st.total = Number(d.total || 0);
+            // 删掉当前页最后一条后本页会变空 → 自动回退一页再取
+            if (!items.length && st.page > 1) { st.page -= 1; return loadList(); }
+            if (which === 'fb') renderFeedback(items, st.total);
+            else renderStories(items, st.total);
+            renderPager(which);
         } catch (e) {
             if (e.message.includes('密码')) { clearKey(); showLogin(); }
-            if (containers[currentTab]) containers[currentTab].innerHTML = '<div class="empty-tip">😢 ' + e.message + '</div>';
+            if (containers[which]) containers[which].innerHTML = '<div class="empty-tip">😢 ' + e.message + '</div>';
         }
     }
 
@@ -457,6 +507,9 @@
         $('#fb-list').style.display = tab === 'fb' ? '' : 'none';
         $('#story-list').style.display = tab === 'story' ? '' : 'none';
         $('#story-tag-filter').style.display = tab === 'story' ? 'flex' : 'none';
+        // 分页条先全部收起，loadList() 里按当前列表重新渲染
+        $('#fb-pager').style.display = 'none';
+        $('#story-pager').style.display = 'none';
         loadList();
     }
 
