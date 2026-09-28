@@ -83,16 +83,19 @@
         }
         .admin-tab:hover { border-color: var(--primary-light); color: var(--primary); }
         .admin-tab.active { background: var(--gradient); color: white; border-color: transparent; box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3); }
-        .list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-        .list-header h2 { font-size: 18px; font-weight: 700; }
-        .list-header .total { font-size: 13px; color: var(--text-lighter); }
-        .list-actions { display: flex; gap: 10px; }
+        .list-header { display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; margin-bottom: 20px; }
+        .list-header h2 { font-size: 18px; font-weight: 700; white-space: nowrap; }
+        .list-header .total { font-size: 13px; color: var(--text-lighter); white-space: nowrap; }
+        .list-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
         .mini-btn {
-            padding: 8px 18px; border: 1.5px solid var(--border); border-radius: 20px;
+            padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 20px;
             background: white; color: var(--text-light); font-size: 13px; font-weight: 600;
-            cursor: pointer; transition: all 0.25s ease;
+            cursor: pointer; transition: all 0.25s ease; white-space: nowrap;
         }
         .mini-btn:hover { border-color: var(--primary-light); color: var(--primary); }
+        /* 「退出」在视觉上与前几个操作分开（次要 / 离开类操作） */
+        .list-actions .mini-btn.logout { margin-left: 4px; }
+        .list-actions .mini-btn.logout:hover { border-color: #f2c4c4; color: #d96060; }
 
         /* ===== 标签筛选条 ===== */
         .story-tag-filter { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
@@ -337,6 +340,13 @@
             .toast { max-width: none; }
             .back-top { right: 16px; bottom: 16px; }
         }
+
+        /* 手机：标题与操作按钮分两行、统一左对齐（靠右会让换行后的按钮看着散） */
+        @media (max-width: 560px) {
+            .list-header { flex-direction: column; align-items: stretch; gap: 12px; }
+            .list-actions { justify-content: flex-start; margin-left: 0; }
+            .ov-panel { gap: 8px; padding: 12px; }
+        }
     </style>
 </head>
 <body>
@@ -392,7 +402,7 @@
                         <button class="mini-btn" id="refresh-btn">🔄 刷新</button>
                         <button class="mini-btn" id="export-btn">⬇️ 导出数据</button>
                         <button class="mini-btn" id="passwd-btn">🔑 改密码</button>
-                        <button class="mini-btn" id="logout-btn">退出</button>
+                        <button class="mini-btn logout" id="logout-btn">🚪 退出</button>
                     </div>
                 </div>
                 <div class="admin-toolbar" id="admin-toolbar" style="display:none;">
