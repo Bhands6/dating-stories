@@ -798,16 +798,17 @@
 
         /* 真实故事角标：右上角、置顶角标下方一行 */
         .real-badge {
-            position: absolute; top: 0; right: 0;
+            position: absolute; top: 10px; right: 10px;
             display: inline-flex; align-items: center;
             font-size: 11px; font-weight: 700; color: #fff;
             background: linear-gradient(135deg, #34c98f 0%, #1ea672 100%);
-            padding: 4px 10px;
-            border-radius: 0 0 0 12px;
+            padding: 3px 9px;
+            border-radius: 999px;   /* 全圆角胶囊 */
+            box-shadow: 0 2px 8px rgba(30, 166, 114, 0.35);
             white-space: nowrap; pointer-events: none;
         }
         /* 同时置顶 + 真实时，真实角标下移一行避免重叠 */
-        .pinned-ribbon ~ .real-badge { top: 30px; }
+        .pinned-ribbon ~ .real-badge { top: 38px; }
         .story-meta {
             display: flex;
             align-items: center;
