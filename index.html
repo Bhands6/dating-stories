@@ -1711,6 +1711,116 @@
             background: #fdf0f2;
         }
 
+        /* 删除自己的评论：仅持有删除凭证（本人浏览器）时渲染 */
+        .cmt-del-btn {
+            border: none;
+            background: none;
+            padding: 3px 10px;
+            font-size: 12px;
+            color: #c9a0a0;
+            cursor: pointer;
+            border-radius: 10px;
+            font-family: inherit;
+            transition: all 0.2s ease;
+        }
+
+        .cmt-del-btn:hover {
+            color: #d96060;
+            background: #fdf0f2;
+        }
+
+        .cmt-del-btn:disabled {
+            opacity: 0.45;
+            cursor: default;
+        }
+
+        /* 删除确认弹窗：盖在故事详情弹窗之上（z-index 更高），替代原生 confirm() */
+        .confirm-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(45, 45, 58, 0.45);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            z-index: 2100;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 16px;
+        }
+
+        .confirm-overlay.open {
+            display: flex;
+        }
+
+        .confirm-box {
+            background: var(--card-bg);
+            border-radius: 20px;
+            max-width: 340px;
+            width: 100%;
+            padding: 22px 20px 18px;
+            text-align: center;
+            box-shadow: 0 24px 64px rgba(45, 45, 58, 0.25);
+            animation: modalIn 0.28s cubic-bezier(0.34, 1.4, 0.64, 1);
+        }
+
+        .confirm-icon {
+            font-size: 30px;
+            line-height: 1;
+        }
+
+        .confirm-title {
+            margin: 12px 0 6px;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .confirm-desc {
+            font-size: 13px;
+            color: var(--text-light);
+            line-height: 1.6;
+        }
+
+        .confirm-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 18px;
+        }
+
+        .confirm-actions button {
+            flex: 1;
+            border: none;
+            padding: 10px 0;
+            border-radius: 12px;
+            font-size: 14px;
+            font-family: inherit;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .confirm-cancel {
+            background: #f4f4f6;
+            color: var(--text);
+        }
+
+        .confirm-cancel:hover {
+            background: #ebebef;
+        }
+
+        .confirm-ok {
+            background: #e05a6a;
+            color: #fff;
+        }
+
+        .confirm-ok:hover {
+            background: #c74a59;
+        }
+
+        .confirm-ok:disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
         .comment-replies {
             margin-top: 12px;
             padding-left: 12px;
@@ -2230,6 +2340,18 @@
     </div>
 
     <!-- Toast -->
+    <!-- 删除确认弹窗（评论/回复删除、故事删除共用） -->
+    <div class="confirm-overlay" id="confirm-overlay">
+        <div class="confirm-box" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-desc">
+            <div class="confirm-icon" id="confirm-icon">🗑</div>
+            <div class="confirm-title" id="confirm-title">确定删除？</div>
+            <div class="confirm-desc" id="confirm-desc">删除后无法恢复。</div>
+            <div class="confirm-actions">
+                <button type="button" class="confirm-cancel" id="confirm-cancel">再想想</button>
+                <button type="button" class="confirm-ok" id="confirm-ok">删除</button>
+            </div>
+        </div>
+    </div>
     <div class="toast-container" id="toast-container"></div>
 
     <!-- Back to Top -->
@@ -2281,6 +2403,32 @@
     }
 
     /* ==================== API ==================== */
+    /* ==================== 确认弹窗 ==================== */
+    /* 站内确认弹窗：替代原生 confirm()，与站点视觉统一。返回 Promise<boolean> */
+    let confirmResolve = null;
+    function askConfirm(opts) {
+        const o = Object.assign({ icon: '🗑', title: '确定删除？', desc: '删除后无法恢复。', ok: '删除' }, opts || {});
+        $('#confirm-icon').textContent = o.icon;
+        $('#confirm-title').textContent = o.title;
+        $('#confirm-desc').textContent = o.desc;
+        $('#confirm-ok').textContent = o.ok;
+        $('#confirm-overlay').classList.add('open');
+        return new Promise(resolve => { confirmResolve = resolve; });
+    }
+
+    function closeConfirm(result) {
+        const ov = $('#confirm-overlay');
+        if (!ov.classList.contains('open')) return;
+        ov.classList.remove('open');
+        const r = confirmResolve;
+        confirmResolve = null;
+        if (r) r(!!result);
+    }
+
+    $('#confirm-ok').addEventListener('click', () => closeConfirm(true));
+    $('#confirm-cancel').addEventListener('click', () => closeConfirm(false));
+    $('#confirm-overlay').addEventListener('click', e => { if (e.target.id === 'confirm-overlay') closeConfirm(false); });
+
     async function api(route, params, body) {
         const qs = params ? '&' + new URLSearchParams(params).toString() : '';
         const opt = body !== undefined
@@ -2357,7 +2505,7 @@
             <div class="story-footer">
                 <div class="story-stats">
                     <div class="story-stat like-btn ${liked ? 'liked' : ''}" data-likes="${Number(story.likes) || 0}" title="点赞">❤️ <span class="like-count">${fmtNum(story.likes)}</span></div>
-                    <div class="story-stat">💬 ${fmtNum(story.commentsCount)}</div>
+                    <div class="story-stat comments-stat">💬 <span class="comments-count">${fmtNum(story.commentsCount)}</span></div>
                     <div class="story-stat views-stat">👁️ ${fmtNum(story.views)}</div>
                 </div>
                 <a href="javascript:void(0)" class="read-more">阅读全文 →</a>
@@ -2504,6 +2652,13 @@
         if (el) el.textContent = '👁️ ' + fmtNum(views);
     }
 
+    /** 发评论/删评论后把卡片上的评论数刷成最新值（弹窗内的计数会变，背后的卡片不会） */
+    function updateCardComments(id, count) {
+        if (count === undefined || count === null) return;
+        const el = document.querySelector('#stories-grid .story-card[data-id="' + id + '"] .comments-count');
+        if (el) el.textContent = fmtNum(count);
+    }
+
     async function openStory(id) {
         openModal();
         modalBody.innerHTML = '<div class="loading-tip">正在打开故事…</div>';
@@ -2576,7 +2731,8 @@
         const delMine = modalBody.querySelector('#del-mine');
         if (delMine) {
             delMine.addEventListener('click', async () => {
-                if (!confirm('确定删除这篇故事吗？删除后无法恢复。')) return;
+                const ok = await askConfirm({ title: '删除这篇故事？', desc: '删除后无法恢复，故事和它的全部评论都会消失。' });
+                if (!ok) return;
                 try {
                     await api('delete_story', null, { id: s.id, editKey: myKeys[s.id] });
                     delete myKeys[s.id];
@@ -2607,8 +2763,25 @@
     const expandedReplies = new Set();   // 手动展开过的回复区（一级评论 id）
     const collapsedReplies = new Set();  // 手动收起过的回复区
 
+    /* 我的评论删除凭证：评论/回复成功后随响应下发，存本浏览器（与故事删除凭证 fs_my_keys 同机制）；
+       渲染评论时凭证匹配才显示删除按钮。清 localStorage 或换浏览器即失去删除能力。 */
+    let myCmtKeys = {};
+    try { myCmtKeys = JSON.parse(localStorage.getItem('fs_my_cmt_keys') || '{}'); } catch (e) { myCmtKeys = {}; }
+    const CMT_KEYS_MAX = 300;   // 凭证表只增不减会一直长，封顶保留最近 300 条
+    const saveCmtKey = (id, key) => {
+        if (!id || !key) return;
+        const keys = Object.keys(myCmtKeys);
+        if (keys.length >= CMT_KEYS_MAX && !myCmtKeys[id]) delete myCmtKeys[keys[0]];
+        myCmtKeys[id] = key;
+        localStorage.setItem('fs_my_cmt_keys', JSON.stringify(myCmtKeys));
+    };
+    const dropCmtKey = (id) => { delete myCmtKeys[id]; localStorage.setItem('fs_my_cmt_keys', JSON.stringify(myCmtKeys)); };
+
     const commentReplyBtn = (replyTo, nickname, parent, isTop) =>
         `<button class="reply-btn" data-reply-to="${esc(replyTo)}" data-nick="${esc(nickname)}" data-parent="${esc(parent)}"${isTop ? ' data-top="1"' : ''}>回复</button>`;
+
+    const cmtDelBtn = (id) =>
+        myCmtKeys[id] ? `<button class="cmt-del-btn" data-del-id="${esc(id)}" title="删除这条评论">删除</button>` : '';
 
     const renderReplyNode = (r, parentId) => `
                 <div class="reply-item" data-reply-id="${esc(r.id)}">
@@ -2620,7 +2793,7 @@
                             <span class="reply-time">${timeAgo(r.createdAt)}</span>
                         </div>
                         <div class="reply-text">${nl2br(esc(r.content))}</div>
-                        <div class="comment-actions">${commentReplyBtn(r.id, r.nickname, parentId, false)}</div>
+                        <div class="comment-actions">${commentReplyBtn(r.id, r.nickname, parentId, false)}${cmtDelBtn(r.id)}</div>
                     </div>
                 </div>`;
 
@@ -2651,7 +2824,7 @@
                         <span class="comment-time">${timeAgo(c.createdAt)}</span>
                     </div>
                     <div class="comment-text">${nl2br(esc(c.content))}</div>
-                    <div class="comment-actions">${commentReplyBtn(c.id, c.nickname, c.id, true)}</div>
+                    <div class="comment-actions">${commentReplyBtn(c.id, c.nickname, c.id, true)}${cmtDelBtn(c.id)}</div>
                     <div class="reply-form-slot"></div>
                     ${repliesBlock}
                 </div>
@@ -2674,6 +2847,8 @@
             }
             const btn = e.target.closest('.reply-btn');
             if (btn) { toggleReplyForm(btn); return; }
+            const del = e.target.closest('.cmt-del-btn');
+            if (del) { deleteOwnComment(del.dataset.delId); return; }
             const send = e.target.closest('.reply-send');
             if (send) { submitReply(send.closest('.inline-reply-form')); return; }
             const cancel = e.target.closest('.reply-cancel');
@@ -2698,6 +2873,8 @@
             currentStory = d.story;
             const cnt = modalBody.querySelector('.modal-actions .story-time');
             if (cnt) cnt.textContent = '💬 ' + fmtNum(currentStory.commentsCount) + ' 条评论';
+            // 背后故事卡片上的评论数一并同步，否则关掉弹窗看到的还是旧值
+            updateCardComments(storyId, currentStory.commentsCount);
             refreshCommentListDom();
             if (highlight) {
                 const sel = highlight.replyId
@@ -2752,6 +2929,35 @@
         form.querySelector('.reply-content').focus();
     }
 
+    /* 删除自己的评论/回复：凭本地保存的删除凭证（与故事删除同机制） */
+    async function deleteOwnComment(commentId) {
+        if (!currentStory) return;
+        const key = myCmtKeys[String(commentId)];
+        if (!key) { toast('本浏览器没有这条评论的删除凭证，无法删除', 'error'); return; }
+        /* 定位目标：一级评论还是某条回复——决定文案（删一级会连带删掉它的全部回复） */
+        let isReply = false;
+        let replyCount = 0;
+        for (const c of (currentStory.comments || [])) {
+            if (String(c.id) === String(commentId)) { replyCount = (c.replies || []).length; break; }
+            if ((c.replies || []).some(r => String(r.id) === String(commentId))) { isReply = true; break; }
+        }
+        const ok = await askConfirm(isReply
+            ? { title: '删除这条回复？', desc: '删除后无法恢复。' }
+            : { title: '删除这条评论？', desc: replyCount > 0
+                ? `这条评论下的 ${replyCount} 条回复会一并删除，且无法恢复。`
+                : '删除后无法恢复。' });
+        if (!ok) return;
+        try {
+            await api('delete_comment', { id: currentStory.id }, { commentId, delKey: key });
+            dropCmtKey(commentId);
+            toast('🗑 评论已删除');
+            // 局部刷新评论列表（重拉数据，滚动位置保持不动）
+            await refreshComments(currentStory.id);
+        } catch (e) {
+            toast('删除失败：' + e.message, 'error');
+        }
+    }
+
     async function submitReply(form) {
         if (!form || !currentStory) return;
         const nickEl = form.querySelector('.reply-nick');
@@ -2764,6 +2970,7 @@
         const parent = form.dataset.parent || '';
         try {
             const d = await api('comments', { id: currentStory.id }, { nickname: nickEl.value.trim(), content, replyTo: form.dataset.replyTo });
+            saveCmtKey(d.comment && d.comment.id, d.comment && d.comment.delKey);
             toast('💕 回复成功！');
             // 展开该评论的回复区，局部刷新并高亮新回复（不跳顶）
             expandedReplies.add(String(parent));
@@ -2786,9 +2993,14 @@
         btn.innerHTML = '发送中…';
         try {
             const d = await api('comments', { id }, { nickname: nickEl.value.trim(), content });
+            saveCmtKey(d.comment && d.comment.id, d.comment && d.comment.delKey);
             toast('💕 评论成功！');
             nickEl.value = '';
             textEl.value = '';
+            // 复位按钮：评论表单在 .comment-list 之外，refreshComments 不会重建它，
+            // 不在这里复位按钮就会一直卡在「disabled + 发送中…」。
+            btn.disabled = false;
+            btn.innerHTML = '发送 💕';
             // 局部刷新并定位高亮新评论（不跳顶）
             await refreshComments(id, { commentId: d.comment && d.comment.id });
         } catch (e) {
@@ -2800,7 +3012,12 @@
 
     $('#modal-close').addEventListener('click', closeModal);
     overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+    document.addEventListener('keydown', e => {
+        if (e.key !== 'Escape') return;
+        // 确认弹窗叠在详情弹窗之上，Esc 只关它自己，别连带把故事弹窗也关了
+        if ($('#confirm-overlay').classList.contains('open')) { closeConfirm(false); return; }
+        closeModal();
+    });
 
     /* ==================== 筛选 / 分页 ==================== */
     function setFilter(f) {

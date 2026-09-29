@@ -627,6 +627,7 @@ const RATE_LIMITS = [
     'stories'  => [5,  600,  '发布'],
     'comments' => [15, 300,  '评论'],
     'feedback' => [3,  1800, '提交反馈'],
+    'delete_comment' => [20, 600, '删除评论'],
 ];
 
 /**
@@ -660,7 +661,7 @@ function rate_check(string $action, string $ip): ?int
     $data[$key] = $hits;
 
     // 清理过期/为空的键，防止文件无限增长。
-    // ⚠️ 每个键必须按**它自己那个动作**的窗口判过期：三个动作窗口不同（发布 600s / 评论 300s / 反馈 1800s），
+    // ⚠️ 每个键必须按**它自己那个动作**的窗口判过期：各动作窗口不同（发布 600s / 评论 300s / 反馈 1800s / 删评 600s），
     //    拿当前请求动作的窗口去过滤别的动作，会把仍在有效期内的记录误删 ——
     //    表现就是「发满 5 篇后随便发一条评论，发布额度就被重置」。
     foreach ($data as $k => $v) {
@@ -861,6 +862,8 @@ switch ($route) {
                 'nickname'  => $nickname,
                 'content'   => $content,
                 'createdAt' => time(),
+                // 评论者删除凭证（仅本次响应返回、存储在评论者浏览器里；GET 输出走 comment_out 自动剥离）
+                'delKey'    => substr(bin2hex(random_bytes(5)), 0, 8),
             ];
             // 事务内「定位故事 → 挂评论 → 写盘」：并发评论不会互相覆盖
             $result = db_transaction(static function (array &$db) use ($id, $entry, $replyTo): array {
@@ -894,6 +897,55 @@ switch ($route) {
             }
         }
         fail('故事不存在或已被删除', 404);
+    }
+
+    /* ---- 评论者删除自己的评论/回复（凭评论时下发的凭证） ---- */
+    case 'delete_comment': {
+        if ($method !== 'POST') { fail('请使用 POST', 405); }
+        $in = body_json();
+        $commentId = trim((string)($in['commentId'] ?? ''));
+        $delKey = trim((string)($in['delKey'] ?? ''));
+        if ($commentId === '' || $delKey === '') { fail('参数不完整'); }
+        rate_guard('delete_comment');
+        // 事务内校验凭证并删除：一级评论（连带其回复）或任一回复均可删
+        $status = db_transaction(static function (array &$db) use ($id, $commentId, $delKey): string {
+            foreach ($db['stories'] as $i => $s) {
+                if ((int)$s['id'] !== $id) { continue; }
+                $comments = array_values($s['comments'] ?? []);
+                foreach ($comments as $ci => $c) {
+                    if ((string)($c['id'] ?? '') === $commentId) {
+                        if (empty($c['delKey']) || !hash_equals((string)$c['delKey'], $delKey)) {
+                            return 'bad_key';
+                        }
+                        array_splice($comments, $ci, 1);   // 一级评论删除，其回复随之移除
+                        $db['stories'][$i]['comments'] = $comments;
+                        return 'deleted';
+                    }
+                    foreach (($c['replies'] ?? []) as $ri => $r) {
+                        if ((string)($r['id'] ?? '') === $commentId) {
+                            if (empty($r['delKey']) || !hash_equals((string)$r['delKey'], $delKey)) {
+                                return 'bad_key';
+                            }
+                            $reps = $c['replies'];
+                            array_splice($reps, $ri, 1);
+                            $comments[$ci]['replies'] = array_values($reps);
+                            $db['stories'][$i]['comments'] = $comments;
+                            return 'deleted';
+                        }
+                    }
+                }
+                return 'not_found';
+            }
+            return 'not_found';
+        });
+        if ($status === 'bad_key') { fail('删除凭证不正确，无法删除这条评论'); }
+        if ($status === 'not_found') { fail('评论不存在或已被删除', 404); }
+        // 返回删除后的最新评论数
+        $count = 0;
+        foreach (db_load()['stories'] as $s) {
+            if ((int)$s['id'] === $id) { $count = comments_count($s); break; }
+        }
+        respond(['ok' => true, 'commentsCount' => $count, 'message' => '评论已删除']);
     }
 
     /* ---- 标签云计数 ---- */

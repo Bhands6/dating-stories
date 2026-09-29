@@ -137,6 +137,7 @@ const RATE_LIMITS = {
   stories:  { max: 5,  window: 600,  label: '发布' },
   comments: { max: 15, window: 300,  label: '评论' },
   feedback: { max: 3,  window: 1800, label: '提交反馈' },
+  delete_comment: { max: 20, window: 600, label: '删除评论' },
 };
 
 /** 滑动窗口计数。放行返回 null；超限返回还需等待的分钟数 */
@@ -161,7 +162,7 @@ function rateCheck(action, ip) {
   data[key] = hits;
 
   // 清理过期/为空的键，防止文件无限增长。
-  // ⚠️ 每个键必须按**它自己那个动作**的窗口判过期：三个动作窗口不同（发布 600s / 评论 300s / 反馈 1800s），
+  // ⚠️ 每个键必须按**它自己那个动作**的窗口判过期：各动作窗口不同（发布 600s / 评论 300s / 反馈 1800s / 删评 600s），
   //    拿当前请求动作的窗口去过滤别的动作，会把仍在有效期内的记录误删 ——
   //    表现就是「发满 5 篇后随便发一条评论，发布额度就被重置」。
   for (const k of Object.keys(data)) {
@@ -681,17 +682,17 @@ function handleApi(req, res, url, body) {
           id: 'c' + Date.now() + Math.floor(Math.random() * 9000 + 1000),
           nickname, content,
           createdAt: Math.floor(Date.now() / 1000),
+          // 评论者删除凭证（仅本次响应返回、存储在评论者浏览器里；GET 输出走 commentOut 自动剥离）
+          delKey: Math.random().toString(36).slice(2, 10),
         };
         if (replyTo) {
           /* 两级楼中楼：replyTo 为目标评论或回复的 id，
-             回复统一挂在其所属一级评论的 replies 下，并记录被回复人昵称 */
-          const comments = (s.comments || []).map(commentOut);
-          if (!commentReplyAttach(comments, replyTo, entry)) {
+             回复统一挂在其所属一级评论的 replies 下，并记录被回复人昵称。
+             注意：直接在原始数据上挂载，不要 map(commentOut) 重建——否则存量评论里的 delKey 会被剥掉 */
+          if (!commentReplyAttach(s.comments, replyTo, entry)) {
             return fail(res, '要回复的评论不存在或已被删除', 404);
           }
-          s.comments = comments;
         } else {
-          s.comments = s.comments || [];
           s.comments.push(entry);
         }
         dbSave(db);
@@ -699,6 +700,44 @@ function handleApi(req, res, url, body) {
       }
 
       return json(res, { ok: true, comments: (s.comments || []).map(commentOut) });
+    }
+
+    /* ---- 评论者删除自己的评论/回复（凭评论时下发的凭证） ---- */
+    case 'delete_comment': {
+      if (method !== 'POST') return fail(res, '请使用 POST', 405);
+      const db = dbLoad();
+      const s = db.stories.find(x => x.id === id);
+      if (!s) return fail(res, '评论不存在或已被删除', 404);
+      s.comments = s.comments || [];
+      const commentId = String(body.commentId || '').trim();
+      const delKey = String(body.delKey || '').trim();
+      if (!commentId || !delKey) return fail(res, '参数不完整');
+      if (!rateGuard(req, res, 'delete_comment')) return;
+      let status = 'not_found';
+      outer:
+      for (const c of s.comments) {
+        if (String(c.id ?? '') === commentId) {
+          if (!c.delKey || delKey !== String(c.delKey)) { status = 'bad_key'; break; }
+          const pos = s.comments.indexOf(c);
+          s.comments.splice(pos, 1);   // 一级评论删除，其回复随之移除
+          status = 'deleted';
+          break;
+        }
+        const reps = c.replies || [];
+        for (let ri = 0; ri < reps.length; ri++) {
+          if (String(reps[ri].id ?? '') === commentId) {
+            if (!reps[ri].delKey || delKey !== String(reps[ri].delKey)) { status = 'bad_key'; break outer; }
+            reps.splice(ri, 1);
+            c.replies = reps;
+            status = 'deleted';
+            break outer;
+          }
+        }
+      }
+      if (status === 'bad_key') return fail(res, '删除凭证不正确，无法删除这条评论');
+      if (status === 'not_found') return fail(res, '评论不存在或已被删除', 404);
+      dbSave(db);
+      return json(res, { ok: true, commentsCount: commentsCount(s), message: '评论已删除' });
     }
 
     /* ---- 标签云计数 ---- */
