@@ -786,11 +786,14 @@
         }
 
         .pinned-ribbon {
+            position: absolute; top: 0; right: 0;
             display: inline-flex; align-items: center; gap: 4px;
             font-size: 11px; font-weight: 600; color: #fff;
             background: var(--gradient);
-            padding: 3px 10px; border-radius: 10px;
-            margin-bottom: 10px; white-space: nowrap;
+            padding: 5px 12px;
+            /* 贴卡片右上角：上/右两角与卡片直角重合，左下角收边配合卡片 16px 圆角 */
+            border-radius: 0 0 0 14px;
+            white-space: nowrap; pointer-events: none;
         }
         .story-meta {
             display: flex;
