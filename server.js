@@ -718,7 +718,7 @@ function handleApi(req, res, url, body) {
       outer:
       for (const c of s.comments) {
         if (String(c.id ?? '') === commentId) {
-          if (!c.delKey || delKey !== String(c.delKey)) { status = 'bad_key'; break; }
+          if (!c.delKey || !safeEqual(delKey, c.delKey)) { status = 'bad_key'; break; }
           const pos = s.comments.indexOf(c);
           s.comments.splice(pos, 1);   // 一级评论删除，其回复随之移除
           status = 'deleted';
@@ -727,7 +727,7 @@ function handleApi(req, res, url, body) {
         const reps = c.replies || [];
         for (let ri = 0; ri < reps.length; ri++) {
           if (String(reps[ri].id ?? '') === commentId) {
-            if (!reps[ri].delKey || delKey !== String(reps[ri].delKey)) { status = 'bad_key'; break outer; }
+            if (!reps[ri].delKey || !safeEqual(delKey, reps[ri].delKey)) { status = 'bad_key'; break outer; }
             reps.splice(ri, 1);
             c.replies = reps;
             status = 'deleted';
@@ -787,7 +787,7 @@ function handleApi(req, res, url, body) {
       // 限流插在这里（故事存在之后）：错误凭证的爆破尝试会消耗额度，
       // 但拿不存在的 id 乱扫不会（对齐「校验不通过不消耗额度」的约定）
       if (!rateGuard(req, res, 'delete_story')) return;
-      if (!s.editKey || String(body.editKey || '').trim() !== String(s.editKey)) {
+      if (!s.editKey || !safeEqual(String(body.editKey || '').trim(), s.editKey)) {
         return fail(res, '删除凭证不正确，无法删除这篇故事');
       }
       db.stories.splice(idx, 1);

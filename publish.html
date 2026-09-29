@@ -606,9 +606,9 @@
                         <input type="file" id="html-file" accept=".html,.htm,text/html" style="display:none;">
                     </div>
                 </div>
-                <input type="text" placeholder="你的昵称（选填，不填将随机生成）" id="story-nickname" maxlength="20">
-                <input type="text" placeholder="给你的故事起个标题吧..." id="story-title" maxlength="60">
-                <textarea id="story-content" placeholder="在这里写下你的相亲故事...&#10;&#10;比如：&#10;是怎么认识的？&#10;见面聊了什么？&#10;有没有什么有趣的瞬间？&#10;结局如何？"></textarea>
+        <input type="text" placeholder="你的昵称（选填，不填将随机生成）" aria-label="你的昵称（选填，不填将随机生成）" autocomplete="nickname" id="story-nickname" maxlength="20">
+        <input type="text" placeholder="给你的故事起个标题吧..." aria-label="给你的故事起个标题吧" id="story-title" maxlength="60">
+        <textarea id="story-content" aria-label="在这里写下你的相亲故事" placeholder="在这里写下你的相亲故事...&#10;&#10;比如：&#10;是怎么认识的？&#10;见面聊了什么？&#10;有没有什么有趣的瞬间？&#10;结局如何？"></textarea>
                 <div class="composer-footer">
                     <div class="composer-options">
                         <button class="option-btn active" data-tag="daily" onclick="selectTag(this)">📝 日常</button>

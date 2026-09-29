@@ -817,7 +817,7 @@
         }
 
         .story-author-info {
-            font-size: 11px;
+            font-size: 12px;   /* 原 11px：手机上偏小不易读 */
             color: var(--text-lighter);
         }
 
@@ -826,11 +826,10 @@
             color: var(--text-lighter);
         }
 
-        .story-tag {
             display: inline-block;
             padding: 4px 12px;
             border-radius: 20px;
-            font-size: 11px;
+            font-size: 12px;   /* 原 11px */
             font-weight: 600;
             margin-bottom: 12px;
         }
@@ -2751,8 +2750,8 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
                 <h3>💬 评论</h3>
                 <div class="comment-list">${renderCommentListHtml() || '<div class="loading-tip" style="padding:12px 0;">还没有评论，来说第一句吧～</div>'}</div>
                 <div class="comment-form">
-                    <input type="text" id="comment-nickname" placeholder="昵称（选填，不填将随机生成）" maxlength="20">
-                    <textarea id="comment-content" placeholder="写下你的鼓励或共鸣…" maxlength="500"></textarea>
+                <input type="text" id="comment-nickname" placeholder="昵称（选填，不填将随机生成）" aria-label="昵称（选填，不填将随机生成）" autocomplete="nickname" maxlength="20">
+                <textarea id="comment-content" placeholder="写下你的鼓励或共鸣…" aria-label="写下你的鼓励或共鸣" maxlength="500"></textarea>
                     <button class="comment-submit" id="comment-submit">发送 💕</button>
                     <div style="clear:both;"></div>
                 </div>
@@ -2954,8 +2953,8 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         form.dataset.replyTo = replyTo;
         form.dataset.parent = String(parent);
         form.innerHTML = `
-            <input type="text" class="reply-nick" placeholder="昵称（选填，不填将随机生成）" maxlength="20">
-            <textarea class="reply-content" rows="2" maxlength="500" placeholder="${isTop ? '写下你的鼓励或共鸣…' : '回复 @' + esc(nick) + ' …'}"></textarea>
+            <input type="text" class="reply-nick" placeholder="昵称（选填，不填将随机生成）" aria-label="昵称（选填，不填将随机生成）" autocomplete="nickname" maxlength="20">
+            <textarea class="reply-content" rows="2" maxlength="500" aria-label="${isTop ? '写下你的鼓励或共鸣' : '回复内容'}" placeholder="${isTop ? '写下你的鼓励或共鸣…' : '回复 @' + esc(nick) + ' …'}"></textarea>
             <div class="reply-form-actions">
                 <button type="button" class="reply-cancel">收起</button>
                 <button type="button" class="reply-send">发送 💕</button>
