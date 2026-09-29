@@ -493,6 +493,7 @@ function story_card(array $s): array
         'views'         => (int)$s['views'],
         'commentsCount' => comments_count($s),
         'pinned'        => !empty($s['pinned']),
+        'realCount'     => (int)($s['realCount'] ?? 0),
         'createdAt'     => (int)($s['createdAt'] ?? time()),
     ];
 }
@@ -629,6 +630,7 @@ const RATE_LIMITS = [
     'comments' => [15, 300,  '评论'],
     'feedback' => [3,  1800, '提交反馈'],
     'delete_comment' => [20, 600, '删除评论'],
+    'real'           => [30, 600, '标记真实故事'],
     'delete_story'   => [10, 600, '删除故事'],
 ];
 
@@ -851,6 +853,31 @@ switch ($route) {
         });
         if ($likes === null) { fail('故事不存在或已被删除', 404); }
         respond(['ok' => true, 'likes' => $likes]);
+    }
+
+    /* ---- 真实故事标记（与点赞同同机制：可撤销 + 写接口限流） ---- */
+    case 'real': {
+        if ($method !== 'POST') { fail('请使用 POST', 405); }
+        $in = body_json();
+        $undo = !empty($in['undo']);
+        $rid = (int)($in['id'] ?? 0);
+        $exists = false;
+        foreach (db_load()['stories'] as $s) {
+            if ((int)$s['id'] === $rid) { $exists = true; break; }
+        }
+        if (!$exists) { fail('故事不存在或已被删除', 404); }
+        rate_guard('real');
+        $real = db_transaction(static function (array &$db) use ($rid, $undo): ?int {
+            foreach ($db['stories'] as $i => $s) {
+                if ((int)$s['id'] === $rid) {
+                    $db['stories'][$i]['realCount'] = max(0, (int)($s['realCount'] ?? 0) + ($undo ? -1 : 1));
+                    return (int)$db['stories'][$i]['realCount'];
+                }
+            }
+            return null;
+        });
+        if ($real === null) { fail('故事不存在或已被删除', 404); }
+        respond(['ok' => true, 'realCount' => $real]);
     }
 
     /* ---- 评论 ---- */

@@ -795,6 +795,19 @@
             border-radius: 0 0 0 14px;
             white-space: nowrap; pointer-events: none;
         }
+
+        /* 真实故事角标：右上角、置顶角标下方一行 */
+        .real-badge {
+            position: absolute; top: 0; right: 0;
+            display: inline-flex; align-items: center;
+            font-size: 11px; font-weight: 700; color: #fff;
+            background: linear-gradient(135deg, #34c98f 0%, #1ea672 100%);
+            padding: 4px 10px;
+            border-radius: 0 0 0 12px;
+            white-space: nowrap; pointer-events: none;
+        }
+        /* 同时置顶 + 真实时，真实角标下移一行避免重叠 */
+        .pinned-ribbon ~ .real-badge { top: 30px; }
         .story-meta {
             display: flex;
             align-items: center;
@@ -1571,6 +1584,12 @@
             color: white;
             background: var(--gradient);
             box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3);
+        }
+        .modal-action-btn.real {
+            border-color: #1ea672;
+            color: white;
+            background: linear-gradient(135deg, #34c98f 0%, #1ea672 100%);
+            box-shadow: 0 4px 15px rgba(30, 166, 114, 0.3);
         }
 
         /* ===== Comments ===== */
@@ -2537,6 +2556,12 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
     catch (e) { likedSet = new Set(); }
     const saveLiked = () => localStorage.setItem('fs_liked_ids', JSON.stringify([...likedSet]));
 
+    // 「真实故事」标记：与点赞同同机制——本机已标记的存 localStorage，可撤销
+    let realSet;
+    try { realSet = new Set(JSON.parse(localStorage.getItem('fs_real_ids') || '[]')); }
+    catch (e) { realSet = new Set(); }
+    const saveReal = () => localStorage.setItem('fs_real_ids', JSON.stringify([...realSet]));
+
     const TAG_META = {
         sweet:    { label: '💕 甜蜜脱单', cls: 'tag-success' },
         funny:    { label: '😂 搞笑经历', cls: 'tag-funny' },
@@ -2570,6 +2595,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         if (story.pinned) card.classList.add('pinned');
         card.innerHTML = `
             ${story.pinned ? '<div class="pinned-ribbon">📌 置顶</div>' : ''}
+            ${Number(story.realCount) > 0 ? `<div class="real-badge">真 +${Number(story.realCount)}</div>` : ''}
             <div class="story-meta">
                 <div class="story-author">
                     <div class="story-avatar ${av}">${authorChar}</div>
@@ -2693,6 +2719,54 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             currentStory.likes = likes;
             const btn = modalBody.querySelector('.modal-actions .like-btn');
             if (btn) apply(btn);
+        }
+    }
+
+    /** 把「真实故事」标记数同步到弹窗按钮 + 列表卡片角标 */
+    function syncRealUI(id, realCount, marked) {
+        const applyBtn = btn => {
+            btn.classList.toggle('real', marked);
+            btn.dataset.real = String(realCount);
+            const c = btn.querySelector('.real-count');
+            if (c) c.textContent = fmtNum(realCount);
+        };
+        const applyBadge = card => {
+            let badge = card.querySelector('.real-badge');
+            if (realCount > 0) {
+                if (!badge) {
+                    badge = document.createElement('div');
+                    badge.className = 'real-badge';
+                    card.appendChild(badge);
+                }
+                badge.textContent = '真 +' + realCount;
+                card.classList.add('has-real');
+            } else if (badge) {
+                badge.remove();
+                card.classList.remove('has-real');
+            }
+        };
+        document.querySelectorAll('#stories-grid .story-card[data-id="' + id + '"]').forEach(applyBadge);
+        if (currentStory && Number(currentStory.id) === Number(id)) {
+            currentStory.realCount = realCount;
+            const btn = modalBody.querySelector('.modal-actions .real-btn');
+            if (btn) applyBtn(btn);
+        }
+    }
+
+    async function toggleReal(id, btn) {
+        const undo = btn.classList.contains('real');
+        const cur = Number(btn.dataset.real) || 0;
+        syncRealUI(id, undo ? Math.max(0, cur - 1) : cur + 1, !undo);   // 乐观更新
+        try {
+            const d = await api('real', null, { id, undo });
+            const n = Number(d.realCount) || 0;
+            syncRealUI(id, n, !undo);
+            if (undo) { realSet.delete(id); toast('已取消标记'); }
+            else { realSet.add(id); toast('✅ 已标记为真实故事'); }
+            saveReal();
+        } catch (err) {
+            syncRealUI(id, cur, undo);   // 回滚
+            toast('标记失败：' + err.message, 'error');
         }
     }
 
@@ -2842,6 +2916,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
 
     function renderStoryModal(s) {
         const liked = likedSet.has(s.id);
+        const realMarked = realSet.has(s.id);
         let myKeys = {};
         try { myKeys = JSON.parse(localStorage.getItem('fs_my_keys') || '{}'); } catch (e) { myKeys = {}; }
         const isMine = !!(myKeys && myKeys[s.id]);
@@ -2872,6 +2947,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             <div class="modal-content">${contentHtml}</div>
             <div class="modal-actions">
                 <button class="modal-action-btn like-btn ${liked ? 'liked' : ''}" data-likes="${Number(s.likes) || 0}">❤️ <span class="like-count">${fmtNum(s.likes)}</span>&nbsp;点赞</button>
+                <button class="modal-action-btn real-btn ${realMarked ? 'real' : ''}" data-real="${Number(s.realCount) || 0}" title="标记为真实故事">✅ <span class="real-count">${fmtNum(s.realCount)}</span>&nbsp;真实故事</button>
                 <span class="story-time">💬 ${fmtNum(s.commentsCount)} 条评论</span>
                 ${isMine ? '<button class="modal-action-btn" id="del-mine" title="删除这篇故事" style="margin-left:auto;border-color:#f2c4c4;color:#d96060;">🗑 删除我的故事</button>' : ''}
             </div>
@@ -2889,6 +2965,12 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         modalBody.querySelector('.modal-actions .like-btn').addEventListener('click', e => {
             toggleLike(s.id, e.currentTarget, e);
         });
+        const realBtn = modalBody.querySelector('.modal-actions .real-btn');
+        if (realBtn) {
+            realBtn.addEventListener('click', e => {
+                toggleReal(s.id, realBtn);
+            });
+        }
         const delMine = modalBody.querySelector('#del-mine');
         if (delMine) {
             delMine.addEventListener('click', async () => {

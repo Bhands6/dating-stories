@@ -138,6 +138,7 @@ const RATE_LIMITS = {
   comments: { max: 15, window: 300,  label: '评论' },
   feedback: { max: 3,  window: 1800, label: '提交反馈' },
   delete_comment: { max: 20, window: 600, label: '删除评论' },
+  real: { max: 30, window: 600, label: '标记真实故事' },
   delete_story: { max: 10, window: 600, label: '删除故事' },
 };
 
@@ -525,6 +526,7 @@ function storyCard(s) {
     views: s.views,
     commentsCount: commentsCount(s),
     pinned: !!s.pinned,
+    realCount: Number(s.realCount) || 0,
     createdAt: s.createdAt,
   };
 }
@@ -670,6 +672,18 @@ function handleApi(req, res, url, body) {
       s.likes = Math.max(0, s.likes + (body.undo ? -1 : 1));
       dbSave(db);
       return json(res, { ok: true, likes: s.likes });
+    }
+
+    /* ---- 真实故事标记（与点赞同同机制：可撤销 + 写接口限流） ---- */
+    case 'real': {
+      if (method !== 'POST') return fail(res, '请使用 POST', 405);
+      const db = dbLoad();
+      const s = db.stories.find(x => x.id === (body.id | 0));
+      if (!s) return fail(res, '故事不存在或已被删除', 404);
+      if (!rateGuard(req, res, 'real')) return;
+      s.realCount = Math.max(0, (Number(s.realCount) || 0) + (body.undo ? -1 : 1));
+      dbSave(db);
+      return json(res, { ok: true, realCount: s.realCount });
     }
 
     /* ---- 评论 ---- */
