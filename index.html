@@ -2452,7 +2452,7 @@
 
     /* ==================== 状态 ==================== */
     // 故事广场默认按「最新」展示（「热门精选」有独立的侧边栏区块，不需要这里也默认热门）
-    const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: false };
+const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: false, lastLoadedAt: 0 };
     let likedSet;
     try { likedSet = new Set(JSON.parse(localStorage.getItem('fs_liked_ids') || '[]')); }
     catch (e) { likedSet = new Set(); }
@@ -2521,33 +2521,66 @@
     }
 
     /* ==================== 列表加载 ==================== */
-    async function loadStories(reset) {
+    /* 切回前台时，若距上次加载超过这个阈值就静默重拉一次 */
+    const SILENT_REFRESH_MS = 3 * 60 * 1000;   // 3 分钟
+
+    /**
+     * @param reset   true=从第一页重拉，false=加载下一页（追加）
+     * @param silent  true=静默重拉（切回前台用）：不闪 loading、失败保留原内容、
+     *                并保留已翻到的页数（一次取回当前展示量，而不是打回第 1 页）
+     */
+    async function loadStories(reset, silent) {
         if (state.loading) return;
         state.loading = true;
+        const prevPage = state.page;              // 静默重拉时用来保留已翻的页数
         const grid = $('#stories-grid');
+        let page, limit;
         if (reset) {
-            state.page = 1;
-            grid.innerHTML = '<div class="loading-tip"> loading 中…</div>';
+            page = 1;
+            // 静默重拉一次拿回当前已展示的量（API 单次 limit 上限 20），避免把正在翻页的人打回顶部
+            limit = silent ? Math.min(20, Math.max(state.perPage, prevPage * state.perPage)) : state.perPage;
+            if (!silent) grid.innerHTML = '<div class="loading-tip"> loading 中…</div>';
+        } else {
+            page = state.page;
+            limit = state.perPage;
         }
+        state.lastLoadedAt = Date.now();         // 无论成败都记，避免快速切回反复触发
         try {
-            const d = await api('stories', { page: state.page, filter: state.filter, limit: state.perPage });
+            const d = await api('stories', { page, filter: state.filter, limit });
             if (reset) grid.innerHTML = '';
             if (reset && d.total === 0) {
                 $('#empty-state').style.display = 'block';
                 $('#load-more').style.display = 'none';
             } else {
                 $('#empty-state').style.display = 'none';
-                d.stories.forEach((s, i) => grid.appendChild(renderCard(s, (state.page - 1) * state.perPage + i)));
+                const base = (page - 1) * state.perPage;
+                d.stories.forEach((s, i) => grid.appendChild(renderCard(s, base + i)));
                 state.hasMore = d.hasMore;
+                // 静默重拉按实际取回量校正已展示页数，让「加载更多」能接着往后翻
+                if (reset) state.page = Math.max(1, Math.ceil(d.stories.length / state.perPage));
                 $('#load-more').style.display = d.hasMore ? 'block' : 'none';
                 grid.querySelectorAll('.animate-on-scroll:not(.visible)').forEach(el => observer.observe(el));
             }
         } catch (e) {
-            if (reset) grid.innerHTML = `<div class="loading-tip">😢 加载失败：${esc(e.message)}</div>`;
-            else toast('加载更多失败：' + e.message, 'error');
+            if (reset && silent) {
+                // 静默失败保持原样，别把正在看的内容换成错误页
+            } else if (reset) {
+                grid.innerHTML = `<div class="loading-tip">😢 加载失败：${esc(e.message)}</div>`;
+            } else {
+                toast('加载更多失败：' + e.message, 'error');
+            }
         }
         state.loading = false;
     }
+
+    /** 切回前台：距上次加载超过阈值就静默重拉列表 + 热门 + 统计（避免错过新故事） */
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'visible') return;
+        if (state.loading || Date.now() - state.lastLoadedAt < SILENT_REFRESH_MS) return;
+        loadStories(true, true);
+        loadHot();
+        loadStats();
+    });
 
     /* ==================== 点赞 ==================== */
 
@@ -2875,6 +2908,8 @@
             if (cnt) cnt.textContent = '💬 ' + fmtNum(currentStory.commentsCount) + ' 条评论';
             // 背后故事卡片上的评论数一并同步，否则关掉弹窗看到的还是旧值
             updateCardComments(storyId, currentStory.commentsCount);
+            // 侧边栏「热门精选」里的「N 评论」同样会变旧，順手刷一下
+            loadHot();
             refreshCommentListDom();
             if (highlight) {
                 const sel = highlight.replyId

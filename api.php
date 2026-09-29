@@ -628,6 +628,7 @@ const RATE_LIMITS = [
     'comments' => [15, 300,  '评论'],
     'feedback' => [3,  1800, '提交反馈'],
     'delete_comment' => [20, 600, '删除评论'],
+    'delete_story'   => [10, 600, '删除故事'],
 ];
 
 /**
@@ -661,7 +662,7 @@ function rate_check(string $action, string $ip): ?int
     $data[$key] = $hits;
 
     // 清理过期/为空的键，防止文件无限增长。
-    // ⚠️ 每个键必须按**它自己那个动作**的窗口判过期：各动作窗口不同（发布 600s / 评论 300s / 反馈 1800s / 删评 600s），
+    // ⚠️ 每个键必须按**它自己那个动作**的窗口判过期：各动作窗口不同（发布 600s / 评论 300s / 反馈 1800s / 删评·删故事 600s），
     //    拿当前请求动作的窗口去过滤别的动作，会把仍在有效期内的记录误删 ——
     //    表现就是「发满 5 篇后随便发一条评论，发布额度就被重置」。
     foreach ($data as $k => $v) {
@@ -1006,6 +1007,14 @@ switch ($route) {
         $in = body_json();
         $id = (int)($in['id'] ?? 0);
         $editKey = trim((string)($in['editKey'] ?? ''));
+        // 限流：先确认故事存在（不存在直接 404，不消耗额度），
+        // 错误凭证的爆破尝试才计数 —— 与 server.js 语义一致
+        $exists = false;
+        foreach (db_load()['stories'] as $s) {
+            if ((int)$s['id'] === $id) { $exists = true; break; }
+        }
+        if (!$exists) { fail('故事不存在或已被删除', 404); }
+        rate_guard('delete_story');
         // 事务内校验凭证并删除：并发下不会误删别的故事
         $status = db_transaction(static function (array &$db) use ($id, $editKey): string {
             foreach ($db['stories'] as $i => $s) {

@@ -138,6 +138,7 @@ const RATE_LIMITS = {
   comments: { max: 15, window: 300,  label: '评论' },
   feedback: { max: 3,  window: 1800, label: '提交反馈' },
   delete_comment: { max: 20, window: 600, label: '删除评论' },
+  delete_story: { max: 10, window: 600, label: '删除故事' },
 };
 
 /** 滑动窗口计数。放行返回 null；超限返回还需等待的分钟数 */
@@ -162,7 +163,7 @@ function rateCheck(action, ip) {
   data[key] = hits;
 
   // 清理过期/为空的键，防止文件无限增长。
-  // ⚠️ 每个键必须按**它自己那个动作**的窗口判过期：各动作窗口不同（发布 600s / 评论 300s / 反馈 1800s / 删评 600s），
+  // ⚠️ 每个键必须按**它自己那个动作**的窗口判过期：各动作窗口不同（发布 600s / 评论 300s / 反馈 1800s / 删评·删故事 600s），
   //    拿当前请求动作的窗口去过滤别的动作，会把仍在有效期内的记录误删 ——
   //    表现就是「发满 5 篇后随便发一条评论，发布额度就被重置」。
   for (const k of Object.keys(data)) {
@@ -783,6 +784,9 @@ function handleApi(req, res, url, body) {
       const idx = db.stories.findIndex(x => x.id === (body.id | 0));
       if (idx === -1) return fail(res, '故事不存在或已被删除', 404);
       const s = db.stories[idx];
+      // 限流插在这里（故事存在之后）：错误凭证的爆破尝试会消耗额度，
+      // 但拿不存在的 id 乱扫不会（对齐「校验不通过不消耗额度」的约定）
+      if (!rateGuard(req, res, 'delete_story')) return;
       if (!s.editKey || String(body.editKey || '').trim() !== String(s.editKey)) {
         return fail(res, '删除凭证不正确，无法删除这篇故事');
       }
