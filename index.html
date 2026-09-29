@@ -2599,7 +2599,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         if (story.pinned) card.classList.add('pinned');
         card.innerHTML = `
             ${story.pinned ? '<div class="pinned-ribbon">📌 置顶</div>' : ''}
-            ${Number(story.realCount) > 0 ? `<div class="real-badge">真 +${Number(story.realCount)}</div>` : ''}
+            ${Number(story.realCount) > 0 ? `<div class="real-badge">真 +${fmtNum(story.realCount)}</div>` : ''}
             <div class="story-meta">
                 <div class="story-author">
                     <div class="story-avatar ${av}">${authorChar}</div>
@@ -2742,7 +2742,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
                     badge.className = 'real-badge';
                     card.appendChild(badge);
                 }
-                badge.textContent = '真 +' + realCount;
+                badge.textContent = '真 +' + fmtNum(realCount);   // 与点赞/浏览一致地缩写（1.5k / 2.5w）
                 card.classList.add('has-real');
             } else if (badge) {
                 badge.remove();
