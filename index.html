@@ -2559,7 +2559,7 @@
     /* ==================== 状态 ==================== */
     // 故事广场默认按「最新」展示（「热门精选」有独立的侧边栏区块，不需要这里也默认热门）
 const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: false, lastLoadedAt: 0,
-    newestSeenId: 0, lastNewCheck: 0 };   // newestSeenId=已见最大故事id；lastNewCheck=上次查新的时间戳
+    newestSeenId: 0, lastNewCheck: 0, reloadQueued: false };   // newestSeenId=已见最大故事id；lastNewCheck=上次查新的时间戳；reloadQueued=在途加载期间有切换被挡，结束后补跑
     let likedSet;
     try { likedSet = new Set(JSON.parse(localStorage.getItem('fs_liked_ids') || '[]')); }
     catch (e) { likedSet = new Set(); }
@@ -2570,6 +2570,14 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
     try { realSet = new Set(JSON.parse(localStorage.getItem('fs_real_ids') || '[]')); }
     catch (e) { realSet = new Set(); }
     const saveReal = () => localStorage.setItem('fs_real_ids', JSON.stringify([...realSet]));
+
+    // localStorage 同源多窗口共享：别的窗口点赞/鉴定（或取消）只会写它的 localStorage，
+    // 本窗口内存里的 Set 还是页面加载时的快照。渲染前必须重读一遍，
+    // 否则切筛选/开弹窗会拿旧状态，直到刷新页面才对上。
+    function syncLocalSets() {
+        try { likedSet = new Set(JSON.parse(localStorage.getItem('fs_liked_ids') || '[]')); } catch (e) { /* 读失败沿用内存值 */ }
+        try { realSet = new Set(JSON.parse(localStorage.getItem('fs_real_ids') || '[]')); } catch (e) { /* 读失败沿用内存值 */ }
+    }
 
     const TAG_META = {
         sweet:    { label: '💕 甜蜜脱单', cls: 'tag-success' },
@@ -2646,7 +2654,13 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
      *                并保留已翻到的页数（一次取回当前展示量，而不是打回第 1 页）
      */
     async function loadStories(reset, silent) {
-        if (state.loading) return;
+        if (state.loading) {
+            // 在途请求用的可能是旧筛选：结束后按当前状态补跑，别把这次切换吞掉
+            if (reset) state.reloadQueued = true;
+            return;
+        }
+        state.reloadQueued = false;
+        syncLocalSets();   // 多窗口可能改过 localStorage，渲染前重读点赞/鉴定状态
         state.loading = true;
         const prevPage = state.page;              // 静默重拉时用来保留已翻的页数
         const grid = $('#stories-grid');
@@ -2657,7 +2671,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             limit = silent ? Math.min(20, Math.max(state.perPage, prevPage * state.perPage)) : state.perPage;
             if (!silent) grid.innerHTML = '<div class="loading-tip"> loading 中…</div>';
         } else {
-            page = state.page;
+            page = state.page + 1;   // 先试拉下一页，成功才提交页码（失败重试同页、连点不跳页）
             limit = state.perPage;
         }
         state.lastLoadedAt = Date.now();         // 无论成败都记，避免快速切回反复触发
@@ -2669,11 +2683,17 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
                 $('#load-more').style.display = 'none';
             } else {
                 $('#empty-state').style.display = 'none';
-                const base = (page - 1) * state.perPage;
-                d.stories.forEach((s, i) => grid.appendChild(renderCard(s, base + i)));
+                // 「加载更多」按已在列表的 id 去重：静默重拉受单次 20 条上限截断时，
+                // 页码校正与真实翻页会有一页重叠，原样追加会出现重复卡片
+                const seen = new Set([...grid.querySelectorAll('.story-card')].map(el => Number(el.dataset.id)));
+                const fresh = d.stories.filter(s => !seen.has(Number(s.id)));
+                const base = reset ? (page - 1) * state.perPage : grid.querySelectorAll('.story-card').length;
+                fresh.forEach((s, i) => grid.appendChild(renderCard(s, base + i)));
+                if (!reset) state.page = page;   // 成功才提交页码
                 state.hasMore = d.hasMore;
-                // 静默重拉按实际取回量校正已展示页数，让「加载更多」能接着往后翻
-                if (reset) state.page = Math.max(1, Math.ceil(d.stories.length / state.perPage));
+                // 校正到「已完整展示的页数」：被 20 条上限截断的不足一页部分，
+                // 由上面的去重兜住，下次「加载更多」重叠部分不会重复出现
+                if (reset) state.page = Math.max(1, Math.floor(d.stories.length / state.perPage));
                 // 维护「已见最大故事 id」基准，供关闭弹窗后检测新故事
                 for (const s of d.stories) {
                     const sid = Number(s.id) || 0;
@@ -2694,6 +2714,11 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             }
         }
         state.loading = false;
+        // 在途期间有筛选切换/重拉被挡：用当前状态补跑一次
+        if (state.reloadQueued) {
+            state.reloadQueued = false;
+            loadStories(true);
+        }
     }
 
     /** 切回前台：距上次加载超过阈值就静默重拉列表 + 热门 + 统计（避免错过新故事） */
@@ -2732,14 +2757,22 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
     }
 
     /** 把「真实故事」标记数同步到弹窗按钮 + 列表卡片角标 */
+    /** 鉴定按钮文案：已鉴定显示总人数；未鉴定但别人已鉴定时也要显示人数，否则与卡片角标对不上 */
+    function realBtnHtml(count, marked) {
+        const tick = '<span class="real-tick">✔</span>';
+        const n = Number(count) || 0;
+        if (marked) return `${tick} <span class="real-count">${fmtNum(n)}</span>&nbsp;人鉴定为真实`;
+        if (n > 0) return `${tick} 已有 <span class="real-count">${fmtNum(n)}</span>&nbsp;人鉴定为真实`;
+        return `${tick} 鉴定是否为真实故事`;
+    }
+
+    /** 把「真实故事」标记数同步到弹窗按钮 + 列表卡片角标 */
     function syncRealUI(id, realCount, marked) {
         const applyBtn = btn => {
             btn.classList.toggle('real', marked);
             btn.dataset.real = String(realCount);
             // 未选中/选中两套文案，整段重写（结构不同，不能只改计数 span）
-            btn.innerHTML = marked
-            ? `<span class="real-tick">✔</span> <span class="real-count">${fmtNum(realCount)}</span>&nbsp;人鉴定为真实`
-            : '<span class="real-tick">✔</span> 鉴定是否为真实故事';
+            btn.innerHTML = realBtnHtml(realCount, marked);
             btn.title = marked ? '取消「真实故事」鉴定' : '鉴定这篇是否为真实故事';
         };
         const applyBadge = card => {
@@ -2819,6 +2852,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
     /* ==================== 详情弹窗 ==================== */
     const overlay = $('#modal-overlay');
     const modalBody = $('#modal-body');
+    let openStorySeq = 0;   // 弹窗打开序号：慢网下连开两篇/关闭后响应才到时，旧响应靠它作废
 
     function openModal() {
         overlay.classList.add('open');
@@ -2864,6 +2898,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
     }
 
     function closeModal() {
+        openStorySeq++;   // 作废在途的打开/评论刷新响应，别让它们写进下次打开的弹窗
         overlay.classList.remove('open');
         document.body.style.overflow = '';
         // 若地址栏带有一次性弹窗参数（发布后跳转的 ?story=N），关闭时清除，
@@ -2907,6 +2942,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
     }
 
     async function openStory(id) {
+        const seq = ++openStorySeq;
         openModal();
         modalBody.innerHTML = '<div class="loading-tip">正在打开故事…</div>';
         try {
@@ -2919,14 +2955,17 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
                 try { sessionStorage.setItem('fs_viewed', JSON.stringify(viewed)); } catch (e) { /* 忽略 */ }
             }
             const d = await api('story', { id, count: shouldCount ? 1 : 0, vid: visitorId() });
+            if (seq !== openStorySeq) return;   // 期间又开了别的篇或弹窗已关，旧响应作废
             renderStoryModal(d.story);
             updateCardViews(id, d.story && d.story.views);
         } catch (e) {
+            if (seq !== openStorySeq) return;
             modalBody.innerHTML = `<div class="loading-tip">😢 ${esc(e.message)}</div>`;
         }
     }
 
     function renderStoryModal(s) {
+        syncLocalSets();   // 弹窗按钮的已赞/已鉴定状态以 localStorage 当前值为准
         const liked = likedSet.has(s.id);
         const realMarked = realSet.has(s.id);
         let myKeys = {};
@@ -2959,7 +2998,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             <div class="modal-content">${contentHtml}</div>
             <div class="modal-actions">
                 <button class="modal-action-btn like-btn ${liked ? 'liked' : ''}" data-likes="${Number(s.likes) || 0}">❤️ <span class="like-count">${fmtNum(s.likes)}</span>&nbsp;点赞</button>
-        <button class="modal-action-btn real-btn ${realMarked ? 'real' : ''}" data-real="${Number(s.realCount) || 0}" title="${realMarked ? '取消「真实故事」鉴定' : '鉴定这篇是否为真实故事'}">${realMarked ? `<span class="real-tick">✔</span> <span class="real-count">${fmtNum(s.realCount)}</span>&nbsp;人鉴定为真实` : '<span class="real-tick">✔</span> 鉴定是否为真实故事'}</button>
+        <button class="modal-action-btn real-btn ${realMarked ? 'real' : ''}" data-real="${Number(s.realCount) || 0}" title="${realMarked ? '取消「真实故事」鉴定' : '鉴定这篇是否为真实故事'}">${realBtnHtml(s.realCount, realMarked)}</button>
                 <span class="story-time">💬 ${fmtNum(s.commentsCount)} 条评论</span>
                 ${isMine ? '<button class="modal-action-btn" id="del-mine" title="删除这篇故事" style="margin-left:auto;border-color:#f2c4c4;color:#d96060;">🗑 删除我的故事</button>' : ''}
             </div>
@@ -3125,13 +3164,18 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
     async function refreshComments(storyId, highlight) {
         try {
             const d = await api('story', { id: storyId, count: 0 });
-            currentStory = d.story;
-            const cnt = modalBody.querySelector('.modal-actions .story-time');
-            if (cnt) cnt.textContent = '💬 ' + fmtNum(currentStory.commentsCount) + ' 条评论';
-            // 背后故事卡片上的评论数一并同步，否则关掉弹窗看到的还是旧值
-            updateCardComments(storyId, currentStory.commentsCount);
+            const s = d.story;
+            // 背后故事卡片上的评论数一并同步，否则关掉弹窗看到的还是旧值（弹窗状态无关，先刷）
+            updateCardComments(storyId, s.commentsCount);
             // 侧边栏「热门精选」里的「N 评论」同样会变旧，順手刷一下
             loadHot();
+            // 弹窗已关、或已换成别的故事：响应作废。旧故事的数据不能写进 currentStory
+            // /新弹窗，失败兜底也不能把关掉的弹窗重新弹开
+            if (!overlay.classList.contains('open') || !currentStory
+                || Number(currentStory.id) !== Number(storyId)) return;
+            currentStory = s;
+            const cnt = modalBody.querySelector('.modal-actions .story-time');
+            if (cnt) cnt.textContent = '💬 ' + fmtNum(s.commentsCount) + ' 条评论';
             refreshCommentListDom();
             if (highlight) {
                 const sel = highlight.replyId
@@ -3145,7 +3189,11 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
                 }
             }
         } catch (e) {
-            await openStory(storyId); // 局部刷新失败兜底：整弹窗重载
+            // 局部刷新失败兜底：整弹窗重载——但只在这篇故事还开着时
+            if (overlay.classList.contains('open') && currentStory
+                && Number(currentStory.id) === Number(storyId)) {
+                await openStory(storyId);
+            }
         }
     }
 
@@ -3310,8 +3358,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
 
     $('#load-more-btn').addEventListener('click', () => {
         if (!state.hasMore) return;
-        state.page += 1;
-        loadStories(false);
+        loadStories(false);   // 页码在 loadStories 成功后才提交：失败重试同页、连点不跳页
     });
 
     /* ==================== 侧边栏热门 & 统计 ==================== */
