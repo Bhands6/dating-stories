@@ -460,7 +460,12 @@
                 <div class="edit-tags" id="edit-tags"></div>
                 <label class="edit-label">正文</label>
                 <textarea class="edit-textarea" id="edit-content" placeholder="故事正文"></textarea>
-                <p class="edit-hint">保存后点赞、评论、浏览数都不会变。HTML 排版故事会重新走一次净化。</p>
+                <label class="edit-label">点赞数 / 浏览数（可修改）</label>
+                <div style="display:flex;gap:10px;">
+                    <input class="edit-input" id="edit-likes" type="number" min="0" max="99999999" step="1" placeholder="点赞数" aria-label="点赞数">
+                    <input class="edit-input" id="edit-views" type="number" min="0" max="99999999" step="1" placeholder="浏览数" aria-label="浏览数">
+                </div>
+                <p class="edit-hint">评论不支持编辑。HTML 排版故事保存时会重新走一次净化。</p>
             </div>
             <div class="edit-foot">
                 <button class="mini-btn" id="edit-cancel">取消</button>
@@ -905,6 +910,8 @@
             editingTags = (s.tags || []).slice();
             $('#edit-title').value = s.title || '';
             $('#edit-content').value = s.content || '';
+            $('#edit-likes').value = Number(s.likes || 0);
+            $('#edit-views').value = Number(s.views || 0);
             renderEditTags();
             $('#edit-overlay').classList.add('open');
         } catch (e) {
@@ -941,10 +948,12 @@
         const content = $('#edit-content').value.trim();
         if (!title) { toast('标题不能为空', 'error'); return; }
         if (!content) { toast('正文不能为空', 'error'); return; }
+        const likes = $('#edit-likes').value;
+        const views = $('#edit-views').value;
         const btn = $('#edit-save');
         btn.disabled = true;
         try {
-            await api({ key: getKey(), op: 'update', id: editingId, title, content, tags: editingTags }, 'admin_stories');
+            await api({ key: getKey(), op: 'update', id: editingId, title, content, tags: editingTags, likes, views }, 'admin_stories');
             toast('💾 已保存');
             closeEdit();
             loadList();

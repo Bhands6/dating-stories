@@ -1071,12 +1071,22 @@ switch ($route) {
             $title   = trim((string)($in['title'] ?? ''));
             $content = trim((string)($in['content'] ?? ''));
             $tagsIn  = $in['tags'] ?? null;
+            // 点赞数 / 浏览数：可选，仅在传入时更新（只改标题不影响计数）
+            $newCounts = [];
+            foreach (['likes' => '点赞数', 'views' => '浏览数'] as $k => $label) {
+                if (!isset($in[$k]) || $in[$k] === '' || $in[$k] === null) { continue; }
+                $n = filter_var($in[$k], FILTER_VALIDATE_INT);
+                if ($n === false || $n < 0 || $n > 99999999) {
+                    fail($label . '必须是 0~99999999 的整数');
+                }
+                $newCounts[$k] = $n;
+            }
 
             if ($title === '') { fail('标题不能为空'); }
             if (mb_strlen($title) > 60) { fail('标题最多 60 个字'); }
             if ($content === '') { fail('正文不能为空'); }
 
-            $status = db_transaction(static function (array &$db) use ($id, $title, $content, $tagsIn): string {
+            $status = db_transaction(static function (array &$db) use ($id, $title, $content, $tagsIn, $newCounts): string {
                 foreach ($db['stories'] as $i => $s) {
                     if ((int)$s['id'] !== $id) { continue; }
                     $mode = ($s['mode'] ?? 'text') === 'html' ? 'html' : 'text';
@@ -1091,6 +1101,7 @@ switch ($route) {
                         if (empty($tags)) { $tags = ['daily']; }
                         $db['stories'][$i]['tags'] = $tags;
                     }
+                    foreach ($newCounts as $k => $v) { $db['stories'][$i][$k] = $v; }
                     return 'ok';
                 }
                 return 'not_found';

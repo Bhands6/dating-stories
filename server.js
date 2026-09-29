@@ -827,6 +827,17 @@ function handleApi(req, res, url, body) {
         const title = String(body.title || '').trim();
         const content = String(body.content || '').trim();
         const tagsIn = body.tags;
+          // 点赞数 / 浏览数：可选，仅在传入时更新（只改标题不影响计数）
+          const newCounts = {};
+          for (const [k, label] of [['likes', '点赞数'], ['views', '浏览数']]) {
+            const v = body[k];
+            if (v === undefined || v === null || v === '') continue;
+            const n = Number(v);
+            if (!Number.isInteger(n) || n < 0 || n > 99999999) {
+              return fail(res, label + '必须是 0~99999999 的整数');
+            }
+            newCounts[k] = n;
+          }
 
         if (!title) return fail(res, '标题不能为空');
         if (Array.from(title).length > 60) return fail(res, '标题最多 60 个字');
@@ -846,6 +857,7 @@ function handleApi(req, res, url, body) {
           if (!tags.length) tags = ['daily'];
           target.tags = tags;
         }
+        for (const k in newCounts) target[k] = newCounts[k];
         dbSave(db);
         return json(res, { ok: true, message: '已保存' });
       }
