@@ -753,6 +753,7 @@
                     await api({ key: getKey(), op: 'delete', id: Number(btn.dataset.id) }, 'admin_stories');
                     toast('🗑 故事已删除');
                     loadList();
+                    loadOverview();   // 删除会改动总赞/总浏览/评论数，概览跟着刷
                 } catch (err) {
                     toast(err.message, 'error');
                 }
@@ -878,6 +879,7 @@
                         await api({ key: getKey(), op: 'delete', storyId: Number(b.dataset.story), commentId: b.dataset.cid }, 'admin_comments');
                         toast('🗑 评论已删除');
                         await loadList();                    // 刷新列表（评论数变了），卡片会重建
+                        loadOverview();                      // 评论数变了，概览跟着刷
                         const np = document.getElementById('cm-panel-' + storyId);
                         if (np) {                            // 重建后自动重新展开
                             np.style.display = '';
@@ -957,6 +959,7 @@
             toast('💾 已保存');
             closeEdit();
             loadList();
+            loadOverview();      // 可能改了点赞/浏览数，概览跟着刷
         } catch (e) {
             toast(e.message, 'error');
         }
