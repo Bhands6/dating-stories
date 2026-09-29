@@ -1595,6 +1595,10 @@
             background: linear-gradient(135deg, #f7b733 0%, #e58e26 100%);
             box-shadow: 0 4px 15px rgba(229, 142, 38, 0.3);
         }
+        /* 鉴定按钮的对勾：用文本字形 ✔（而非彩色 emoji ✅），才能跟随主题色 */
+        .modal-action-btn .real-tick { color: var(--primary); font-size: 15px; }
+        /* 已鉴定（金底）时对勾转白，保证对比度 */
+        .modal-action-btn.real .real-tick { color: #fff; }
 
         /* ===== Comments ===== */
         .comments-section {
@@ -2733,8 +2737,8 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             btn.dataset.real = String(realCount);
             // 未选中/选中两套文案，整段重写（结构不同，不能只改计数 span）
             btn.innerHTML = marked
-                ? `✅ <span class="real-count">${fmtNum(realCount)}</span>&nbsp;人鉴定为真实`
-                : '✅ 鉴定是否为真实故事';
+            ? `<span class="real-tick">✔</span> <span class="real-count">${fmtNum(realCount)}</span>&nbsp;人鉴定为真实`
+            : '<span class="real-tick">✔</span> 鉴定是否为真实故事';
             btn.title = marked ? '取消「真实故事」鉴定' : '鉴定这篇是否为真实故事';
         };
         const applyBadge = card => {
@@ -2954,7 +2958,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             <div class="modal-content">${contentHtml}</div>
             <div class="modal-actions">
                 <button class="modal-action-btn like-btn ${liked ? 'liked' : ''}" data-likes="${Number(s.likes) || 0}">❤️ <span class="like-count">${fmtNum(s.likes)}</span>&nbsp;点赞</button>
-        <button class="modal-action-btn real-btn ${realMarked ? 'real' : ''}" data-real="${Number(s.realCount) || 0}" title="${realMarked ? '取消「真实故事」鉴定' : '鉴定这篇是否为真实故事'}">${realMarked ? `✅ <span class="real-count">${fmtNum(s.realCount)}</span>&nbsp;人鉴定为真实` : '✅ 鉴定是否为真实故事'}</button>
+        <button class="modal-action-btn real-btn ${realMarked ? 'real' : ''}" data-real="${Number(s.realCount) || 0}" title="${realMarked ? '取消「真实故事」鉴定' : '鉴定这篇是否为真实故事'}">${realMarked ? `<span class="real-tick">✔</span> <span class="real-count">${fmtNum(s.realCount)}</span>&nbsp;人鉴定为真实` : '<span class="real-tick">✔</span> 鉴定是否为真实故事'}</button>
                 <span class="story-time">💬 ${fmtNum(s.commentsCount)} 条评论</span>
                 ${isMine ? '<button class="modal-action-btn" id="del-mine" title="删除这篇故事" style="margin-left:auto;border-color:#f2c4c4;color:#d96060;">🗑 删除我的故事</button>' : ''}
             </div>
