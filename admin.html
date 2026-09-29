@@ -312,6 +312,7 @@
         .fb-time { font-size: 12px; color: var(--text-lighter); }
         .fb-contact { font-size: 12px; color: var(--primary); background: rgba(232, 85, 109, 0.06); padding: 3px 10px; border-radius: 12px; margin-left: auto; }
         .fb-contact.empty { color: var(--text-lighter); background: transparent; }
+    .fb-contact .fb-real { color: #b8791f; font-weight: 600; }
         .fb-content { font-size: 14px; color: var(--text-light); line-height: 1.9; word-break: break-word; white-space: pre-wrap; }
         .fb-del {
             margin-top: 10px; padding: 5px 14px; border: 1px solid #f2c4c4; border-radius: 15px;
@@ -466,10 +467,11 @@
                 <div class="edit-tags" id="edit-tags"></div>
                 <label class="edit-label">正文</label>
                 <textarea class="edit-textarea" id="edit-content" placeholder="故事正文"></textarea>
-                <label class="edit-label">点赞数 / 浏览数（可修改）</label>
-                <div style="display:flex;gap:10px;">
-                    <input class="edit-input" id="edit-likes" type="number" min="0" max="99999999" step="1" placeholder="点赞数" aria-label="点赞数">
-                    <input class="edit-input" id="edit-views" type="number" min="0" max="99999999" step="1" placeholder="浏览数" aria-label="浏览数">
+                <label class="edit-label">点赞数 / 浏览数 / 真实鉴定数（可修改）</label>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <input class="edit-input" id="edit-likes" type="number" min="0" max="99999999" step="1" placeholder="点赞数" aria-label="点赞数" style="flex:1 1 0;min-width:0;width:auto;margin-bottom:18px;">
+                    <input class="edit-input" id="edit-views" type="number" min="0" max="99999999" step="1" placeholder="浏览数" aria-label="浏览数" style="flex:1 1 0;min-width:0;width:auto;margin-bottom:18px;">
+                    <input class="edit-input" id="edit-real" type="number" min="0" max="99999999" step="1" placeholder="真实鉴定数" aria-label="真实鉴定数" style="flex:1 1 0;min-width:0;width:auto;margin-bottom:18px;">
                 </div>
                 <p class="edit-hint">评论不支持编辑。HTML 排版故事保存时会重新走一次净化。</p>
             </div>
@@ -716,7 +718,7 @@
                     <span class="fb-name">${it.title}</span>
                     ${it.pinned ? '<span class="fb-pinned-badge">📌 置顶</span>' : ''}
                     <span class="fb-time">${fmtTime(it.createdAt)}</span>
-                    <span class="fb-contact">👁️ ${it.views} · ❤️ ${it.likes} · 💬 ${it.commentsCount}</span>
+                    <span class="fb-contact">👁️ ${it.views} · ❤️ ${it.likes} · 💬 ${it.commentsCount}${Number(it.realCount) > 0 ? ` · <span class="fb-real" title="真实鉴定数">✔ ${fmtNum(it.realCount)}</span>` : ''}</span>
                 </div>
                 <div class="fb-tags">${tagBadges}</div>
                 <div class="fb-content">✍️ ${it.author}</div>
@@ -940,6 +942,7 @@
             $('#edit-content').value = s.content || '';
             $('#edit-likes').value = Number(s.likes || 0);
             $('#edit-views').value = Number(s.views || 0);
+        $('#edit-real').value = Number(s.realCount || 0);
             renderEditTags();
             $('#edit-overlay').classList.add('open');
         } catch (e) {
@@ -978,10 +981,11 @@
         if (!content) { toast('正文不能为空', 'error'); return; }
         const likes = $('#edit-likes').value;
         const views = $('#edit-views').value;
+        const real = $('#edit-real').value;
         const btn = $('#edit-save');
         btn.disabled = true;
         try {
-            await api({ key: getKey(), op: 'update', id: editingId, title, content, tags: editingTags, likes, views }, 'admin_stories');
+            await api({ key: getKey(), op: 'update', id: editingId, title, content, tags: editingTags, likes, views, realCount: real }, 'admin_stories');
             toast('💾 已保存');
             closeEdit();
             loadList();

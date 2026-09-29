@@ -1105,9 +1105,9 @@ switch ($route) {
             $title   = trim((string)($in['title'] ?? ''));
             $content = trim((string)($in['content'] ?? ''));
             $tagsIn  = $in['tags'] ?? null;
-            // 点赞数 / 浏览数：可选，仅在传入时更新（只改标题不影响计数）
+            // 点赞数 / 浏览数 / 真实鉴定数：可选，仅在传入时更新（只改标题不影响计数）
             $newCounts = [];
-            foreach (['likes' => '点赞数', 'views' => '浏览数'] as $k => $label) {
+            foreach (['likes' => '点赞数', 'views' => '浏览数', 'realCount' => '真实鉴定数'] as $k => $label) {
                 if (!isset($in[$k]) || $in[$k] === '' || $in[$k] === null) { continue; }
                 $n = filter_var($in[$k], FILTER_VALIDATE_INT);
                 if ($n === false || $n < 0 || $n > 99999999) {
@@ -1215,6 +1215,7 @@ switch ($route) {
             'mode'          => (string)($s['mode'] ?? 'text'),
             'excerpt'       => make_excerpt((string)($s['content'] ?? ''), (string)($s['mode'] ?? 'text')),
             'pinned'        => !empty($s['pinned']),
+            'realCount'     => (int)($s['realCount'] ?? 0),
         ], array_slice($items, ($page - 1) * $pageSize, $pageSize));
 
         respond([

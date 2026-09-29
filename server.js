@@ -850,9 +850,9 @@ function handleApi(req, res, url, body) {
         const title = String(body.title || '').trim();
         const content = String(body.content || '').trim();
         const tagsIn = body.tags;
-          // 点赞数 / 浏览数：可选，仅在传入时更新（只改标题不影响计数）
+          // 点赞数 / 浏览数 / 真实鉴定数：可选，仅在传入时更新（只改标题不影响计数）
           const newCounts = {};
-          for (const [k, label] of [['likes', '点赞数'], ['views', '浏览数']]) {
+          for (const [k, label] of [['likes', '点赞数'], ['views', '浏览数'], ['realCount', '真实鉴定数']]) {
             const v = body[k];
             if (v === undefined || v === null || v === '') continue;
             const n = Number(v);
@@ -933,6 +933,7 @@ function handleApi(req, res, url, body) {
         mode: s.mode || 'text',
         excerpt: makeExcerpt(s.content || '', s.mode || 'text'),
         pinned: !!s.pinned,
+        realCount: Number(s.realCount) || 0,
       }));
       return json(res, { ok: true, total, page, pageSize, hasMore: page * pageSize < total, items });
     }
