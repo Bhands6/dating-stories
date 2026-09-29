@@ -2034,6 +2034,63 @@
         }
 
         /* ===== Toast ===== */
+        /* 有新故事提示条：关闭阅读弹窗后若有新发布，浮在导航栏下方（不抢列表位置） */
+        .new-stories-tip {
+            position: fixed;
+            top: 84px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-12px);
+            z-index: 900;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--gradient);
+            color: #fff;
+            padding: 9px 16px;
+            border-radius: 999px;
+            box-shadow: 0 8px 24px rgba(232, 85, 109, 0.35);
+            font-size: 13px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.28s ease, transform 0.28s ease;
+            white-space: nowrap;
+        }
+
+        .new-stories-tip.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+            pointer-events: auto;
+        }
+
+        .new-stories-tip button {
+            border: none;
+            background: rgba(255, 255, 255, 0.22);
+            color: #fff;
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            padding: 4px 12px;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            white-space: nowrap;
+        }
+
+        .new-stories-tip button:hover {
+            background: rgba(255, 255, 255, 0.35);
+        }
+
+        .new-stories-tip .tip-close {
+            background: none;
+            padding: 2px 4px;
+            font-size: 15px;
+            opacity: 0.85;
+        }
+
+        .new-stories-tip .tip-close:hover {
+            background: none;
+            opacity: 1;
+        }
         .toast-container {
             position: fixed;
             top: 90px;
@@ -2351,6 +2408,12 @@
             </div>
         </div>
     </div>
+    <!-- 有新故事提示条（关闭阅读弹窗后检测到新发布时出现） -->
+    <div class="new-stories-tip" id="new-stories-tip" role="status">
+        <span id="new-stories-text"></span>
+        <button type="button" id="new-stories-btn">立即查看</button>
+        <button type="button" class="tip-close" id="new-stories-close" title="知道了" aria-label="关闭提示">✕</button>
+    </div>
     <div class="toast-container" id="toast-container"></div>
 
     <!-- Back to Top -->
@@ -2451,7 +2514,8 @@
 
     /* ==================== 状态 ==================== */
     // 故事广场默认按「最新」展示（「热门精选」有独立的侧边栏区块，不需要这里也默认热门）
-const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: false, lastLoadedAt: 0 };
+const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: false, lastLoadedAt: 0,
+    newestSeenId: 0, lastNewCheck: 0 };   // newestSeenId=已见最大故事id；lastNewCheck=上次查新的时间戳
     let likedSet;
     try { likedSet = new Set(JSON.parse(localStorage.getItem('fs_liked_ids') || '[]')); }
     catch (e) { likedSet = new Set(); }
@@ -2557,6 +2621,13 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
                 state.hasMore = d.hasMore;
                 // 静默重拉按实际取回量校正已展示页数，让「加载更多」能接着往后翻
                 if (reset) state.page = Math.max(1, Math.ceil(d.stories.length / state.perPage));
+                // 维护「已见最大故事 id」基准，供关闭弹窗后检测新故事
+                for (const s of d.stories) {
+                    const sid = Number(s.id) || 0;
+                    if (sid > state.newestSeenId) state.newestSeenId = sid;
+                }
+                // 列表已刷新，新故事已并入，收起提示条
+                if (reset) hideNewStoriesTip();
                 $('#load-more').style.display = d.hasMore ? 'block' : 'none';
                 grid.querySelectorAll('.animate-on-scroll:not(.visible)').forEach(el => observer.observe(el));
             }
@@ -2650,6 +2721,44 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         document.body.style.overflow = 'hidden';
     }
 
+    /* ==================== 有新故事提示 ==================== */
+    let newStoriesTimer = null;
+
+    function hideNewStoriesTip() {
+        const tip = $('#new-stories-tip');
+        if (tip) tip.classList.remove('show');
+    }
+
+    function showNewStoriesTip(n) {
+        const txt = $('#new-stories-text');
+        const tip = $('#new-stories-tip');
+        if (!txt || !tip) return;
+        txt.textContent = '📖 有 ' + n + ' 条新故事';
+        tip.classList.add('show');
+        clearTimeout(newStoriesTimer);
+        newStoriesTimer = setTimeout(hideNewStoriesTip, 30000);   // 30s 后自动淡出，不长期遮挡
+    }
+
+    /**
+     * 关闭故事弹窗后检查是否有新发布的故事。
+     * 只在「最新」筛选下检查——只有按时间排序时新故事才会插到列表最前；
+     * 热门/标签筛选下新故事位置不确定，提示没有意义。
+     * 基准是 newestSeenId（当前已见最大故事 id），任何列表刷新都会更新它，
+     * 所以只会提示「刷新之后新出现」的那些，不会重复提示已看过的。
+     */
+    async function checkNewStories() {
+        if (state.filter !== 'new') return;
+        if (!state.newestSeenId) return;                       // 列表还没加载完
+        if (Date.now() - state.lastNewCheck < 30000) return;   // 30s 节流，避免频繁开关弹窗反复请求
+        state.lastNewCheck = Date.now();
+        try {
+            const d = await api('stories', { page: 1, limit: state.perPage, filter: 'new' });
+            if (!d || !Array.isArray(d.stories)) return;
+            const fresh = d.stories.filter(s => s.id > state.newestSeenId);
+            if (fresh.length) showNewStoriesTip(fresh.length);
+        } catch (e) { /* 查新失败不打扰用户 */ }
+    }
+
     function closeModal() {
         overlay.classList.remove('open');
         document.body.style.overflow = '';
@@ -2660,6 +2769,8 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             u.searchParams.delete('story');
             history.replaceState(null, '', u.pathname + u.search + u.hash);
         }
+        // 关闭阅读后看看期间有没有人发了新故事（只在「最新」筛选下有意义）
+        checkNewStories();
     }
 
     /**
@@ -3225,6 +3336,14 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         backTop.classList.toggle('show', window.scrollY > 400);
     }, { passive: true });
     backTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+    // 有新故事提示条：点「立即查看」刷新当前筛选，点 ✕ 忽略
+    $('#new-stories-btn').addEventListener('click', () => {
+        hideNewStoriesTip();
+        loadStories(true);   // 主动刷新回顶部，看到新故事
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+    $('#new-stories-close').addEventListener('click', hideNewStoriesTip);
 
     /* ==================== 启动 ==================== */
     // 静态滚动入场动画（特性卡 / 关于卡等）
