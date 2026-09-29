@@ -524,6 +524,7 @@ function storyCard(s) {
     likes: s.likes,
     views: s.views,
     commentsCount: commentsCount(s),
+    pinned: !!s.pinned,
     createdAt: s.createdAt,
   };
 }
@@ -606,6 +607,14 @@ function handleApi(req, res, url, body) {
         arr.sort((a, b) => b.createdAt - a.createdAt);
       } else {
         return fail(res, '未知的筛选类型');
+      }
+      // 置顶优先：先按原规则排好，再把置顶的稳定提到最前（置顶内部保持原排序）
+      if (arr.length > 1) {
+        const pinnedArr = arr.filter(s => s.pinned);
+        if (pinnedArr.length) {
+          const rest = arr.filter(s => !s.pinned);
+          arr = pinnedArr.concat(rest);
+        }
       }
 
       const total = arr.length;
@@ -862,6 +871,18 @@ function handleApi(req, res, url, body) {
         return json(res, { ok: true, message: '已保存' });
       }
 
+      // 置顶/取消置顶（独立开关，不必打开编辑弹窗）
+      if (op === 'pin') {
+        const db = dbLoad();
+        const target = db.stories.find(s => s.id === (body.id | 0));
+        if (!target) return fail(res, '故事不存在或已被删除', 404);
+        const pinned = !!body.pinned;
+        if (pinned) target.pinned = true;
+        else delete target.pinned;
+        dbSave(db);
+        return json(res, { ok: true, message: pinned ? '已置顶' : '已取消置顶' });
+      }
+
       const db = dbLoad();
       const tag = String(body.tag || 'all');
       const q = String(body.q || '').trim();
@@ -897,6 +918,7 @@ function handleApi(req, res, url, body) {
         createdAt: s.createdAt,
         mode: s.mode || 'text',
         excerpt: makeExcerpt(s.content || '', s.mode || 'text'),
+        pinned: !!s.pinned,
       }));
       return json(res, { ok: true, total, page, pageSize, hasMore: page * pageSize < total, items });
     }

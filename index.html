@@ -779,6 +779,19 @@
             opacity: 1;
         }
 
+        /* 置顶故事：角标 + 卡片淡粉底 */
+        .story-card.pinned {
+            background: linear-gradient(180deg, #fff8fa 0%, var(--card-bg) 60%);
+            border-color: #ffd0dc;
+        }
+
+        .pinned-ribbon {
+            display: inline-flex; align-items: center; gap: 4px;
+            font-size: 11px; font-weight: 600; color: #fff;
+            background: var(--gradient);
+            padding: 3px 10px; border-radius: 10px;
+            margin-bottom: 10px; white-space: nowrap;
+        }
         .story-meta {
             display: flex;
             align-items: center;
@@ -2551,7 +2564,9 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         const av = 'avatar-' + ((idx % 6) + 1);
         const authorChar = esc((story.author.nickname || '匿').trim().charAt(0) || '匿');
         const liked = likedSet.has(story.id);
+        if (story.pinned) card.classList.add('pinned');
         card.innerHTML = `
+            ${story.pinned ? '<div class="pinned-ribbon">📌 置顶</div>' : ''}
             <div class="story-meta">
                 <div class="story-author">
                     <div class="story-avatar ${av}">${authorChar}</div>

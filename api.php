@@ -492,6 +492,7 @@ function story_card(array $s): array
         'likes'         => (int)$s['likes'],
         'views'         => (int)$s['views'],
         'commentsCount' => comments_count($s),
+        'pinned'        => !empty($s['pinned']),
         'createdAt'     => (int)($s['createdAt'] ?? time()),
     ];
 }
@@ -766,6 +767,12 @@ switch ($route) {
             usort($arr, fn($a, $b) => $b['createdAt'] <=> $a['createdAt']);
         } else {
             fail('未知的筛选类型');
+        }
+        // 置顶优先：先按原规则排好，再把置顶的稳定提到最前（置顶内部保持原排序）
+        if (count($arr) > 1) {
+            $pinnedArr = array_values(array_filter($arr, fn($s) => !empty($s['pinned'])));
+            $rest = array_values(array_filter($arr, fn($s) => empty($s['pinned'])));
+            $arr = array_merge($pinnedArr, $rest);
         }
 
         $total = count($arr);
@@ -1114,6 +1121,23 @@ switch ($route) {
             respond(['ok' => true, 'message' => '已保存']);
         }
 
+        // 置顶/取消置顶（独立开关，不必打开编辑弹窗）
+        if ($op === 'pin') {
+            $id = (int)($in['id'] ?? 0);
+            $pinned = !empty($in['pinned']);
+            $status = db_transaction(static function (array &$db) use ($id, $pinned): string {
+                foreach ($db['stories'] as $i => $s) {
+                    if ((int)$s['id'] !== $id) { continue; }
+                    if ($pinned) { $db['stories'][$i]['pinned'] = true; }
+                    else { unset($db['stories'][$i]['pinned']); }
+                    return 'ok';
+                }
+                return 'not_found';
+            });
+            if ($status === 'not_found') { fail('故事不存在或已被删除', 404); }
+            respond(['ok' => true, 'message' => $pinned ? '已置顶' : '已取消置顶']);
+        }
+
         // 列表
         $db   = db_load();
         $tag  = (string)($in['tag'] ?? 'all');
@@ -1163,6 +1187,7 @@ switch ($route) {
             'createdAt'     => (int)($s['createdAt'] ?? 0),
             'mode'          => (string)($s['mode'] ?? 'text'),
             'excerpt'       => make_excerpt((string)($s['content'] ?? ''), (string)($s['mode'] ?? 'text')),
+            'pinned'        => !empty($s['pinned']),
         ], array_slice($items, ($page - 1) * $pageSize, $pageSize));
 
         respond([

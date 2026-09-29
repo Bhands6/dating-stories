@@ -172,12 +172,18 @@
 
         /* ===== 故事卡片的操作按钮 ===== */
         .fb-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-        .fb-edit, .fb-cm {
+    .fb-edit, .fb-cm, .fb-pin {
             margin-top: 10px; padding: 5px 14px; border: 1px solid var(--border); border-radius: 15px;
             background: white; color: var(--text-light); font-size: 12px; cursor: pointer;
             transition: all 0.25s ease; font-family: inherit;
         }
-        .fb-edit:hover, .fb-cm:hover { background: #fff5f7; border-color: var(--primary-light); color: var(--primary); }
+    .fb-edit:hover, .fb-cm:hover, .fb-pin:hover { background: #fff5f7; border-color: var(--primary-light); color: var(--primary); }
+    .fb-pin.on { background: var(--gradient); color: white; border-color: transparent; }
+    .fb-pinned-badge {
+        font-size: 11px; color: var(--primary); background: #fff0f3;
+        padding: 2px 8px; border-radius: 10px; white-space: nowrap; font-weight: 600;
+    }
+    #list-wrap .fb-item .fb-pin { cursor: pointer; }
         .fb-cm.on { background: var(--gradient); color: white; border-color: transparent; }
 
         /* ===== 故事卡片内联评论面板 ===== */
@@ -708,6 +714,7 @@
                 <div class="fb-head">
                     <div class="fb-ava">${(it.title || '故').charAt(0)}</div>
                     <span class="fb-name">${it.title}</span>
+                    ${it.pinned ? '<span class="fb-pinned-badge">📌 置顶</span>' : ''}
                     <span class="fb-time">${fmtTime(it.createdAt)}</span>
                     <span class="fb-contact">👁️ ${it.views} · ❤️ ${it.likes} · 💬 ${it.commentsCount}</span>
                 </div>
@@ -715,6 +722,7 @@
                 <div class="fb-content">✍️ ${it.author}</div>
                 <div class="fb-actions">
                     <label class="fb-check"><input type="checkbox" class="story-check" data-id="${it.id}"></label>
+                    <button class="fb-pin${it.pinned ? ' on' : ''}" data-id="${it.id}">📌 ${it.pinned ? '已置顶' : '置顶'}</button>
                     <button class="fb-edit" data-id="${it.id}">✏️ 编辑</button>
                     <button class="fb-cm" data-id="${it.id}">💬 评论${it.commentsCount ? ' (' + it.commentsCount + ')' : ''}</button>
                     <button class="fb-del" data-id="${it.id}">🗑 删除故事</button>
@@ -725,13 +733,31 @@
         // 点击卡片 → 查看故事（编辑 / 删除按钮除外）
         list.querySelectorAll('.fb-item').forEach(el => {
             el.addEventListener('click', e => {
-                if (e.target.closest('.fb-del') || e.target.closest('.fb-edit')
+            if (e.target.closest('.fb-del') || e.target.closest('.fb-edit') || e.target.closest('.fb-pin')
                     || e.target.closest('.fb-cm') || e.target.closest('.cm-panel')) return;
                 openView(Number(el.dataset.id), el.dataset.title);
             });
         });
         list.querySelectorAll('.story-check').forEach(b => {
             b.addEventListener('change', e => { e.stopPropagation(); updateBatchBar(); });
+        });
+        // 置顶/取消置顶：独立开关，不必打开编辑弹窗
+        list.querySelectorAll('.fb-pin').forEach(btn => {
+            btn.addEventListener('click', async e => {
+                e.stopPropagation();
+                const id = Number(btn.dataset.id);
+                const willPin = !btn.classList.contains('on');
+                btn.disabled = true;
+                try {
+                    const d = await api({ key: getKey(), op: 'pin', id, pinned: willPin }, 'admin_stories');
+                    toast(d.message || (willPin ? '已置顶' : '已取消置顶'));
+                    loadList();
+                    loadOverview();
+                } catch (err) {
+                    toast('操作失败：' + err.message, 'error');
+                    btn.disabled = false;
+                }
+            });
         });
         list.querySelectorAll('.fb-edit').forEach(btn => {
             btn.addEventListener('click', e => {
