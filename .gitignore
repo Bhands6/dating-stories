@@ -35,3 +35,6 @@ Thumbs.db
 
 部署脚本
 一键部署.bat
+
+# 本地测试用数据快照（不进仓库）
+data/staletest/
