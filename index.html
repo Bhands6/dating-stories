@@ -809,7 +809,9 @@
             white-space: nowrap; pointer-events: none;
         }
         /* 同时置顶 + 真实时，真实角标下移一行避免重叠 */
-        .pinned-ribbon ~ .real-badge { top: 38px; }
+        /* 同时置顶 + 真实时，真实角标移到置顶绶带左侧同行（组带宽 64px + 8px 间距 = right:72px，
+           top:2px 与 29px 高的绶带垂直居中） */
+        .pinned-ribbon ~ .real-badge { top: 2px; right: 72px; }
         .story-meta {
             display: flex;
             align-items: center;
