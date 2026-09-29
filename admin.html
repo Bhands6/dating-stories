@@ -641,6 +641,11 @@
         return String(n);
     }
 
+    /** HTML 转义：反馈/故事/评论都是访客输入，拼进 innerHTML 前必须过这里（防存储型 XSS） */
+    function esc(s) {
+        return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
     function renderFeedback(items, total) {
         const n = (total === undefined ? items.length : total);
         $('#list-title').innerHTML = '📬 收到的反馈 <span class="total" id="list-total">· 共 ' + n + ' 条</span>';
@@ -653,11 +658,11 @@
             <div class="fb-item${it.read ? '' : ' unread'}">
                 <div class="fb-head">
                     ${it.read ? '' : '<span class="fb-unread-dot"></span>'}
-                    <div class="fb-ava">${(it.nickname || '匿').charAt(0)}</div>
-                    <span class="fb-name">${it.nickname}</span>
+                    <div class="fb-ava">${esc((it.nickname || '匿').charAt(0))}</div>
+                    <span class="fb-name">${esc(it.nickname)}</span>
                     <span class="fb-time">${fmtTime(it.createdAt)}</span>
                     ${it.contact
-                        ? `<span class="fb-contact">联系方式：${it.contact}</span>`
+                        ? `<span class="fb-contact">联系方式：${esc(it.contact)}</span>`
                         : `<span class="fb-contact empty">未留联系方式</span>`}
                 </div>
                 <div class="fb-content"></div>
@@ -709,19 +714,19 @@
             return;
         }
         list.innerHTML = items.map(it => {
-            const tagBadges = (it.tags || []).map(t => `<span class="fb-tag">${TAG_NAMES[t] || t}</span>`).join('')
+            const tagBadges = (it.tags || []).map(t => `<span class="fb-tag">${esc(TAG_NAMES[t] || t)}</span>`).join('')
                 || '<span class="fb-tag empty">无标签</span>';
             return `
-            <div class="fb-item" data-id="${it.id}" data-title="${it.title.replace(/"/g, '&quot;')}">
+            <div class="fb-item" data-id="${it.id}" data-title="${esc(it.title)}">
                 <div class="fb-head">
-                    <div class="fb-ava">${(it.title || '故').charAt(0)}</div>
-                    <span class="fb-name">${it.title}</span>
+                    <div class="fb-ava">${esc((it.title || '故').charAt(0))}</div>
+                    <span class="fb-name">${esc(it.title)}</span>
                     ${it.pinned ? '<span class="fb-pinned-badge">📌 置顶</span>' : ''}
                     <span class="fb-time">${fmtTime(it.createdAt)}</span>
                     <span class="fb-contact">👁️ ${it.views} · ❤️ ${it.likes} · 💬 ${it.commentsCount}${Number(it.realCount) > 0 ? ` · <span class="fb-real" title="真实鉴定数">✔ ${fmtNum(it.realCount)}</span>` : ''}</span>
                 </div>
                 <div class="fb-tags">${tagBadges}</div>
-                <div class="fb-content">✍️ ${it.author}</div>
+                <div class="fb-content">✍️ ${esc(it.author)}</div>
                 <div class="fb-actions">
                     <label class="fb-check"><input type="checkbox" class="story-check" data-id="${it.id}"></label>
                     <button class="fb-pin${it.pinned ? ' on' : ''}" data-id="${it.id}">📌 ${it.pinned ? '已置顶' : '置顶'}</button>
@@ -883,11 +888,11 @@
                 `<div class="cm-panel-head">共 ${items.length} 条</div>` +
                 items.map(it => `
                     <div class="cm-line${it.isReply ? ' is-reply' : ''}">
-                        <div class="cm-line-ava">${(it.nickname || '匿').charAt(0)}</div>
+                        <div class="cm-line-ava">${esc((it.nickname || '匿').charAt(0))}</div>
                         <div class="cm-line-body">
                             <div class="cm-line-meta">
-                                <b>${it.nickname}</b>
-                                ${it.isReply ? `<span class="cm-line-to">↩ ${it.replyTo || '某人'}</span>` : ''}
+                                <b>${esc(it.nickname)}</b>
+                                ${it.isReply ? `<span class="cm-line-to">↩ ${esc(it.replyTo || '某人')}</span>` : ''}
                                 <span class="cm-line-time">${fmtTime(it.createdAt)}</span>
                             </div>
                             <div class="cm-line-text"></div>
@@ -921,7 +926,7 @@
                 });
             });
         } catch (e) {
-            panel.innerHTML = '<div class="cm-empty">😢 ' + e.message + '</div>';
+            panel.innerHTML = '<div class="cm-empty">😢 ' + esc(e.message) + '</div>';
         }
     }
 
@@ -1066,7 +1071,7 @@
             renderPager(which);
         } catch (e) {
             if (e.message.includes('密码')) { clearKey(); showLogin(); }
-            if (containers[which]) containers[which].innerHTML = '<div class="empty-tip">😢 ' + e.message + '</div>';
+            if (containers[which]) containers[which].innerHTML = '<div class="empty-tip">😢 ' + esc(e.message) + '</div>';
         }
     }
 
