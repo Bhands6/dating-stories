@@ -3340,8 +3340,10 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
     // 有新故事提示条：点「立即查看」刷新当前筛选，点 ✕ 忽略
     $('#new-stories-btn').addEventListener('click', () => {
         hideNewStoriesTip();
-        loadStories(true);   // 主动刷新回顶部，看到新故事
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        loadStories(true);   // 刷新当前筛选，新故事按时间倒序在最前
+        // 滚到故事广场区段（不是页面顶部 hero），新故事就在那里
+        const sec = $('#stories');
+        if (sec) window.scrollTo({ top: sec.offsetTop - 76, behavior: 'smooth' });
     });
     $('#new-stories-close').addEventListener('click', hideNewStoriesTip);
 
