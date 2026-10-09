@@ -34,6 +34,7 @@ Thumbs.db
 
 # AI 协作工作区（含服务器信息、隐患梳理等内部笔记，仓库是公开的，勿提交）
 .workbuddy-ai/
+.workbuddy/memory/
 
 部署脚本
 一键部署.bat
