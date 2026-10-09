@@ -871,14 +871,20 @@
     // 面板是否已展开：展开过就一直保留「未读」语义之外的独立状态
     let delPanelOpen = false;
     let delReadUpTo = 0;   // 服务端已读水位，本地存一份避免未读数闪回
+    // 两个请求都会回写 delReadUpTo，用序号丢弃过期响应：
+    // 慢的 count 请求可能后到，不能把已推进的水位往回退
+    let delReqSeq = 0;
 
     /** 只刷概览上的「访客删除」计数（不拉列表，开销小） */
     async function loadDelCount() {
+        const seq = ++delReqSeq;
         try {
             const d = await api({ key: getKey() }, 'admin_deletions');
+            if (seq < delReqSeq) return;   // 已有更新的请求在飞，丢弃本次结果
             if (Number.isInteger(d.readUpTo)) delReadUpTo = d.readUpTo;
             paintDelCount(d.unread || 0);
         } catch (e) {
+            if (seq < delReqSeq) return;
             const el = $('#ov-del-item');
             if (el) { el.classList.add('zero'); el.classList.remove('has-unread'); }
             const n = $('#ov-del');
@@ -899,15 +905,21 @@
     /** 拉取并渲染删除动态列表；markRead=true 时把未读水位推上去（打开面板即视为已看） */
     async function loadDeletions(markRead) {
         const list = $('#del-list');
+        const seq = ++delReqSeq;
         if (list) list.innerHTML = '<div class="loading-tip">加载中…</div>';
         try {
             const d = await api({ key: getKey() }, 'admin_deletions');
+            if (seq < delReqSeq) return;   // 已被更新的请求取代
             if (markRead) {
-                // 先按「全部已读」推水位，再本地归零，避免刷新后未读数闪回
+                // 推水位取「服务端返回的新 readUpTo」，不是请求前的旧值 ——
+                // 否则列表会按旧水位把每条都渲染成未读高亮，和已归零的计数自相矛盾
+                let upTo = d.readUpTo || 0;
                 if (d.unread > 0 || (d.total || 0) > delReadUpTo) {
-                    await api({ key: getKey(), op: 'read', upTo: d.readUpTo || 0 }, 'admin_deletions');
+                    const r = await api({ key: getKey(), op: 'read', upTo: upTo }, 'admin_deletions');
+                    if (seq < delReqSeq) return;
+                    if (Number.isInteger(r.readUpTo)) upTo = r.readUpTo;
                 }
-                delReadUpTo = Math.max(delReadUpTo, d.readUpTo || 0);
+                delReadUpTo = Math.max(delReadUpTo, upTo);
                 paintDelCount(0);
             } else {
                 if (Number.isInteger(d.readUpTo)) delReadUpTo = d.readUpTo;
@@ -915,7 +927,9 @@
             }
             renderDeletions(d);
         } catch (e) {
-            if (list) list.innerHTML = '<div class="empty-tip">⚠️ 删除动态加载失败：' + esc(e.message) + '</div>';
+            if (seq >= delReqSeq && list) {
+                list.innerHTML = '<div class="empty-tip">⚠️ 删除动态加载失败：' + esc(e.message) + '</div>';
+            }
         }
     }
 
@@ -926,9 +940,11 @@
         const items = Array.isArray(d.items) ? d.items : [];
         const total = d.total || 0;
         if (sub) {
-            sub.textContent = total
-                ? '共 ' + total + ' 条记录' + (d.unread ? '，其中 ' + d.unread + ' 条未看' : '')
-                : '';
+            let s2 = total ? '共 ' + total + ' 条记录' : '';
+            if (d.unread) { s2 += '，其中 ' + d.unread + ' 条未看'; }
+            // 后端最多返回 100 条，被截断时要说清楚，别让站长以为看全了
+            if (items.length < total) { s2 += '（仅显示最近 ' + items.length + ' 条）'; }
+            sub.textContent = s2;
         }
         if (!items.length) {
             list.innerHTML = '<div class="empty-tip">🍃 还没有访客删除过内容 —— 大家都很珍惜自己写下的故事</div>';

@@ -4,6 +4,7 @@
 #   admin_key.txt      管理页密码
 #   stories.json       全站数据库（含每篇故事的删除凭证 editKey）
 #   feedback.json      网友反馈（可能含联系方式）
+#   deletions.json     访客删除动态（含访客昵称与被删内容摘录）
 #
 # 应用只通过 PHP / Node 的文件系统 API 读取这些文件，HTTP 层永远不需要访问它们。
 # 没有这道拦截时，Web 服务器会把它们当普通静态资源直接返回给公网——

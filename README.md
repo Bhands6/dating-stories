@@ -127,6 +127,7 @@ docker compose up -d --build
 │   ├── admin_key.txt   # 运行时生成：管理页密码（随机 12 位，已 gitignore）
 │   ├── admin_guard.json# 运行时生成：管理登录失败限流记录
 │   ├── rate_guard.json # 运行时生成：写接口（发布/评论/反馈）限流记录
+│   ├── deletions.json  # 运行时生成：访客删除动态（谁删了故事/评论，含昵称与摘录）
 │   ├── views_log.json  # 运行时生成：防刷记录
 │   └── *.lock          # 运行时生成：互斥锁（0 字节，删掉会自动重建）
 ├── Dockerfile / docker-compose.yml
@@ -147,6 +148,7 @@ docker compose up -d --build
 | `tags` / `stats` / `hot` | 标签计数 / 统计 / 热门榜 |
 | `feedback` | 提交反馈 |
 | `admin_feedback` / `admin_stories` / `admin_comments` | 管理接口（密码为 `data/admin_key.txt` 中的值，连续错 5 次锁定 15 分钟）；`op=list` 支持 `page` / `pageSize`（默认 20、上限 100），返回 `total` / `page` / `pageSize` / `hasMore`；`admin_stories` 支持 `q` 搜索、`sort` 排序、`op=update` 编辑、`op=delete` 批量删（`ids` 数组）；`admin_feedback` 支持 `op=read` 标记已读 |
+| `admin_deletions` | 访客删除动态（`op=list` 默认 / `op=read` 推进已读水位）：记录谁删掉了自己的故事或评论，含删除前的赞/浏览/评论数；最多保留 200 条，管理页最多返回最近 100 条 |
 | `admin_stats` / `admin_export` / `admin_change_key` | 管理页数据概览 / 导出 JSON / 修改管理密码 |
 
 **写接口限流**（按 IP 滑动窗口，超限返回 `429` + 友好提示，记录在 `data/rate_guard.json`）：

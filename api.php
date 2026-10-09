@@ -120,11 +120,14 @@ function record_deletion(array $evt): void
 {
     if (!is_dir(DATA_DIR)) { @mkdir(DATA_DIR, 0755, true); }
     $lock = lock_guard(DELETIONS_FILE);
+    // 拿不到锁就直接放弃：宁可不记，也不能在无锁状态下读-改-写
+    // （可能与另一个并发记录互相覆盖，甚至把半截内容写进文件）
+    if (!$lock) { return; }
     try {
         $db = json_decode((string)@file_get_contents(DELETIONS_FILE) ?: '', true);
         if (!is_array($db)) { $db = []; }
-        if (!isset($db['nextId']) || !is_int($db['nextId'])) { $db['nextId'] = 1; }
-        if (!isset($db['readUpTo']) || !is_int($db['readUpTo'])) { $db['readUpTo'] = 0; }
+        if (!isset($db['nextId']) || !is_numeric($db['nextId'])) { $db['nextId'] = 1; }
+        if (!isset($db['readUpTo']) || !is_numeric($db['readUpTo'])) { $db['readUpTo'] = 0; }
         if (!isset($db['items']) || !is_array($db['items'])) { $db['items'] = []; }
 
         $db['items'][] = [
@@ -1472,7 +1475,7 @@ switch ($route) {
         $loaded = json_decode((string)@file_get_contents(DELETIONS_FILE) ?: '', true);
         if (is_array($loaded)) { $db = $loaded; }
         if (!isset($db['items']) || !is_array($db['items'])) { $db['items'] = []; }
-        if (!isset($db['readUpTo']) || !is_int($db['readUpTo'])) { $db['readUpTo'] = 0; }
+        if (!isset($db['readUpTo']) || !is_numeric($db['readUpTo'])) { $db['readUpTo'] = 0; }
 
         // 标记已读：把 readUpTo 推进到当前最大 id（打开过「删除动态」就算看过了）
         if (($in['op'] ?? 'list') === 'read') {
@@ -1480,7 +1483,7 @@ switch ($route) {
             $fresh = json_decode((string)@file_get_contents(DELETIONS_FILE) ?: '', true);
             if (is_array($fresh)) { $db = $fresh; }
             if (!isset($db['items']) || !is_array($db['items'])) { $db['items'] = []; }
-            if (!isset($db['readUpTo']) || !is_int($db['readUpTo'])) { $db['readUpTo'] = 0; }
+            if (!isset($db['readUpTo']) || !is_numeric($db['readUpTo'])) { $db['readUpTo'] = 0; }
 
             $maxId = 0;
             foreach ($db['items'] as $it) { $maxId = max($maxId, (int)($it['id'] ?? 0)); }
