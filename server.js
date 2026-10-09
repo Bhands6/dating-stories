@@ -21,6 +21,7 @@ const SEED_FILE = path.join(DATA_DIR, 'seed.json');
 const FEEDBACK_FILE = path.join(DATA_DIR, 'feedback.json');
 const ADMIN_KEY_FILE = path.join(DATA_DIR, 'admin_key.txt');
 const ADMIN_GUARD_FILE = path.join(DATA_DIR, 'admin_guard.json');
+const DELETIONS_FILE = path.join(DATA_DIR, 'deletions.json');   // 访客删除动态（管理页提示用）
 
 /**
  * 管理页密码（用于 admin.html 查看网友反馈）
@@ -301,6 +302,49 @@ function writeJsonAtomic(file, obj) {
   const tmp = file + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), 'utf8');
   fs.renameSync(tmp, file);
+}
+
+/* ================= 访客删除动态（管理页「删除动态」提示用） ================= */
+
+const DELETIONS_MAX = 200;   // 最多保留 200 条，防止文件无限增长
+
+/**
+ * 记录一次访客自发删除（故事 / 评论），管理页据此提示「有内容被别人删除」。
+ * 站长自己在管理页删除的不记（自己删的自己知道）。
+ * 记录失败只影响提示，不影响删除本身 —— 静默降级，调用方无需检查。
+ */
+function recordDeletion(evt) {
+  try {
+    const db = deletionsLoad();
+    if (!Array.isArray(db.items)) db.items = [];
+    if (!Number.isInteger(db.nextId)) db.nextId = 1;
+    if (!Number.isInteger(db.readUpTo)) db.readUpTo = 0;
+
+    db.items.push({
+      id: db.nextId++,
+      type: evt.type === 'comment' ? 'comment' : 'story',
+      storyId: evt.storyId | 0,
+      title: String(evt.title || '').slice(0, 60),
+      author: String(evt.author || '').slice(0, 20),
+      excerpt: String(evt.excerpt || '').slice(0, 120),
+      extra: String(evt.extra || ''),
+      likes: evt.likes | 0,
+      views: evt.views | 0,
+      comments: evt.comments | 0,
+      createdAt: Math.floor(Date.now() / 1000),
+    });
+    if (db.items.length > DELETIONS_MAX) db.items = db.items.slice(-DELETIONS_MAX);
+    writeJsonAtomic(DELETIONS_FILE, db);
+  } catch (e) { /* 日志不可写时降级：不影响删除流程 */ }
+}
+
+/** 读取删除动态（文件不存在/损坏时返回空骨架） */
+function deletionsLoad() {
+  try {
+    const j = JSON.parse(fs.readFileSync(DELETIONS_FILE, 'utf8'));
+    if (j && typeof j === 'object' && !Array.isArray(j)) return j;
+  } catch (e) {}
+  return { nextId: 1, readUpTo: 0, items: [] };
 }
 
 /** HTML 轻净化：去 script/危险属性（保留 style/结构/动画）。
@@ -738,10 +782,12 @@ function handleApi(req, res, url, body) {
       if (!commentId || !delKey) return fail(res, '参数不完整');
       if (!rateGuard(req, res, 'delete_comment')) return;
       let status = 'not_found';
+      let removed = null;   // 🔔 捕获被删内容，供「删除动态」提示
       outer:
       for (const c of s.comments) {
         if (String(c.id ?? '') === commentId) {
           if (!c.delKey || !safeEqual(delKey, c.delKey)) { status = 'bad_key'; break; }
+          removed = { nickname: c.nickname || '', content: c.content || '', replies: (c.replies || []).length, isReply: false };
           const pos = s.comments.indexOf(c);
           s.comments.splice(pos, 1);   // 一级评论删除，其回复随之移除
           status = 'deleted';
@@ -751,6 +797,7 @@ function handleApi(req, res, url, body) {
         for (let ri = 0; ri < reps.length; ri++) {
           if (String(reps[ri].id ?? '') === commentId) {
             if (!reps[ri].delKey || !safeEqual(delKey, reps[ri].delKey)) { status = 'bad_key'; break outer; }
+            removed = { nickname: reps[ri].nickname || '', content: reps[ri].content || '', replies: 0, isReply: true };
             reps.splice(ri, 1);
             c.replies = reps;
             status = 'deleted';
@@ -761,6 +808,16 @@ function handleApi(req, res, url, body) {
       if (status === 'bad_key') return fail(res, '删除凭证不正确，无法删除这条评论');
       if (status === 'not_found') return fail(res, '评论不存在或已被删除', 404);
       dbSave(db);
+      // 🔔 记录访客自发删除（管理页「删除动态」提示用）；记录失败不影响删除本身
+      if (removed) {
+        recordDeletion({
+          type: 'comment', storyId: s.id,
+          title: s.title || '', author: removed.nickname,
+          excerpt: removed.content,
+          extra: removed.isReply ? '一条回复' : ('一级评论' + (removed.replies ? `（连带 ${removed.replies} 条回复）` : '')),
+          likes: s.likes || 0, views: s.views || 0, comments: commentsCount(s),
+        });
+      }
       return json(res, { ok: true, commentsCount: commentsCount(s), message: '评论已删除' });
     }
 
@@ -815,6 +872,14 @@ function handleApi(req, res, url, body) {
       }
       db.stories.splice(idx, 1);
       dbSave(db);
+      // 🔔 记录访客自发删除（管理页「删除动态」提示用）；记录失败不影响删除本身
+      recordDeletion({
+        type: 'story', storyId: s.id,
+        title: s.title || '', author: (s.author && s.author.nickname) || '',
+        excerpt: makeExcerpt(s.content || '', s.mode || 'text'),
+        extra: '发布者自行删除',
+        likes: s.likes || 0, views: s.views || 0, comments: commentsCount(s),
+      });
       return json(res, { ok: true, message: '故事已删除' });
     }
 
@@ -1098,6 +1163,41 @@ function handleApi(req, res, url, body) {
       return json(res, { ok: true, total, page, pageSize, hasMore: page * pageSize < total, items });
     }
 
+    /* ---- 管理页：删除动态（访客自发删除的故事/评论记录） ---- */
+    case 'admin_deletions': {
+      if (method !== 'POST') return fail(res, '请使用 POST', 405);
+      if (!adminAuth(req, res, body)) return;
+
+      const del = deletionsLoad();
+      if (!Array.isArray(del.items)) del.items = [];
+      if (!Number.isInteger(del.readUpTo)) del.readUpTo = 0;
+
+      // 标记已读：把 readUpTo 推进到当前最大 id（打开过「删除动态」就算看过了）
+      if ((body.op || 'list') === 'read') {
+        let maxId = del.items.reduce((m, it) => Math.max(m, it.id | 0), 0);
+        if (body.upTo !== undefined) maxId = Math.max(maxId, body.upTo | 0);
+        if (maxId > del.readUpTo) {
+          del.readUpTo = maxId;
+          try { writeJsonAtomic(DELETIONS_FILE, del); } catch (e) {}
+        }
+        return json(res, { ok: true, readUpTo: del.readUpTo });
+      }
+
+      const items = del.items.slice().reverse();   // 最新在前
+      let unread = 0, unreadStory = 0, unreadComment = 0;
+      for (const it of items) {
+        if ((it.id | 0) > del.readUpTo) {
+          unread++;
+          if (it.type === 'comment') unreadComment++; else unreadStory++;
+        }
+      }
+      return json(res, {
+        ok: true, total: del.items.length, unread, unreadStory, unreadComment,
+        readUpTo: del.readUpTo,
+        items: items.slice(0, 100),
+      });
+    }
+
     /* ---- 管理页：数据概览（故事/赞/浏览/评论总数 + 今日新增 + 未读反馈） ---- */
     case 'admin_stats': {
       if (method !== 'POST') return fail(res, '请使用 POST', 405);
@@ -1130,6 +1230,15 @@ function handleApi(req, res, url, body) {
         if ((it.createdAt || 0) >= todayStart) todayFb++;
       }
 
+      // 删除动态：今日被别人删除的数量 + 未读数量（只有访客自发删除才有记录）
+      const del = deletionsLoad();
+      const delItems = Array.isArray(del.items) ? del.items : [];
+      let deletionsToday = 0, deletionsUnread = 0;
+      for (const it of delItems) {
+        if ((it.createdAt || 0) >= todayStart) deletionsToday++;
+        if ((it.id | 0) > (del.readUpTo | 0)) deletionsUnread++;
+      }
+
       const d = new Date();
       const p = n => String(n).padStart(2, '0');
       return json(res, {
@@ -1138,6 +1247,7 @@ function handleApi(req, res, url, body) {
           stories: db.stories.length, likes, views, comments,
           todayStories, todayComments,
           feedback: fbTotal, feedbackUnread: fbUnread, todayFeedback: todayFb,
+          deletionsToday, deletionsUnread,
           today: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`,
         },
       });
