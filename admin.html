@@ -277,6 +277,48 @@
         .ov-item b { display: block; font-size: 18px; font-weight: 800; color: var(--text); line-height: 1.3; }
         .ov-item span { font-size: 11px; color: var(--text-lighter); }
         .ov-item.ov-today b { color: var(--primary); }
+        /* 有未读删除动态时整块可点，并给出可点 affordance */
+        .ov-item.ov-del { cursor: pointer; border-radius: 10px; transition: background 0.2s ease, opacity 0.2s ease; }
+        .ov-item.ov-del:hover { background: #fff0f3; }
+        .ov-item.ov-del b { color: #d96060; }
+        .ov-item.ov-del.zero b { color: var(--text-lighter); }
+        .ov-item.ov-del.zero { opacity: 0.45; }
+        .ov-item.ov-del.zero:hover { background: transparent; }
+        .ov-item.ov-del .ov-flag {
+            display: none; font-size: 10px; color: var(--primary);
+            font-weight: 700; letter-spacing: .3px;
+        }
+        .ov-item.ov-del.has-unread .ov-flag { display: block; }
+
+        /* ===== 访客删除动态面板 ===== */
+        .del-panel { display: none; }
+        .del-panel.open { display: block; }
+        .del-head {
+            display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+            padding: 12px 16px; margin-bottom: 12px;
+            background: #fdfbfc; border: 1.5px solid var(--border); border-radius: 14px;
+        }
+        .del-head h3 { margin: 0; font-size: 15px; font-weight: 800; color: var(--text); }
+        .del-head .del-sub { font-size: 12px; color: var(--text-lighter); margin-right: auto; }
+        .del-item {
+            padding: 12px 14px; margin-bottom: 10px;
+            background: #fff; border: 1.5px solid var(--border); border-radius: 12px;
+        }
+        .del-item.unread { border-color: #f2c4c4; background: #fffafb; }
+        .del-item-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+        .del-kind {
+            display: inline-block; padding: 2px 9px; border-radius: 11px;
+            font-size: 11px; font-weight: 700; white-space: nowrap;
+        }
+        .del-kind.story { background: #fff0f3; color: #d96060; }
+        .del-kind.comment { background: #eef4ff; color: #5a7fc0; }
+        .del-time { font-size: 12px; color: var(--text-lighter); margin-left: auto; }
+        .del-title { font-size: 13.5px; font-weight: 700; color: var(--text); line-height: 1.5; }
+        .del-excerpt {
+            font-size: 12.5px; color: var(--text-light); line-height: 1.6; margin-top: 4px;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        }
+        .del-meta { font-size: 11.5px; color: var(--text-lighter); margin-top: 6px; }
 
         /* ===== 批量操作栏 ===== */
         .batch-bar {
@@ -401,6 +443,19 @@
                     <div class="ov-item"><b id="ov-comments">–</b><span>评论</span></div>
                     <div class="ov-item ov-today"><b id="ov-today">–</b><span>今日新增</span></div>
                     <div class="ov-item" id="ov-fb-item"><b id="ov-fb">–</b><span>未读反馈</span></div>
+                    <div class="ov-item ov-del zero" id="ov-del-item" title="点击查看访客删掉了什么">
+                        <b id="ov-del">–</b><span>访客删除</span><i class="ov-flag">点击查看</i>
+                    </div>
+                </div>
+                <!-- 访客删除动态：访客自己删掉的故事/评论，站长这边能看到留痕 -->
+                <div class="del-panel" id="del-panel">
+                    <div class="del-head">
+                        <h3>🗑️ 访客删除动态</h3>
+                        <span class="del-sub" id="del-sub"></span>
+                        <button class="mini-btn" id="del-refresh">🔄 刷新</button>
+                        <button class="mini-btn" id="del-close">✕ 收起</button>
+                    </div>
+                    <div id="del-list"><div class="loading-tip">加载中…</div></div>
                 </div>
                 <div class="list-header">
                     <h2 id="list-title">📬 收到的反馈 <span class="total" id="list-total"></span></h2>
@@ -809,7 +864,114 @@
             const fbItem = $('#ov-fb-item');
             if (fbItem) fbItem.style.opacity = s.feedbackUnread ? '1' : '0.45';
         } catch (e) { /* 概览加载失败不打扰用户 */ }
+        loadDelCount();   // 删除动态未读数单独一个接口，失败不影响上面这排统计
     }
+
+    /* ============ 访客删除动态（概览计数 + 面板） ============ */
+    // 面板是否已展开：展开过就一直保留「未读」语义之外的独立状态
+    let delPanelOpen = false;
+    let delReadUpTo = 0;   // 服务端已读水位，本地存一份避免未读数闪回
+
+    /** 只刷概览上的「访客删除」计数（不拉列表，开销小） */
+    async function loadDelCount() {
+        try {
+            const d = await api({ key: getKey() }, 'admin_deletions');
+            if (Number.isInteger(d.readUpTo)) delReadUpTo = d.readUpTo;
+            paintDelCount(d.unread || 0);
+        } catch (e) {
+            const el = $('#ov-del-item');
+            if (el) { el.classList.add('zero'); el.classList.remove('has-unread'); }
+            const n = $('#ov-del');
+            if (n) n.textContent = '–';
+        }
+    }
+
+    function paintDelCount(unread) {
+        const n = unread > 0 ? unread : 0;
+        const num = $('#ov-del');
+        const item = $('#ov-del-item');
+        if (num) num.textContent = n;
+        if (!item) return;
+        item.classList.toggle('has-unread', n > 0);
+        item.classList.toggle('zero', n === 0);
+    }
+
+    /** 拉取并渲染删除动态列表；markRead=true 时把未读水位推上去（打开面板即视为已看） */
+    async function loadDeletions(markRead) {
+        const list = $('#del-list');
+        if (list) list.innerHTML = '<div class="loading-tip">加载中…</div>';
+        try {
+            const d = await api({ key: getKey() }, 'admin_deletions');
+            if (markRead) {
+                // 先按「全部已读」推水位，再本地归零，避免刷新后未读数闪回
+                if (d.unread > 0 || (d.total || 0) > delReadUpTo) {
+                    await api({ key: getKey(), op: 'read', upTo: d.readUpTo || 0 }, 'admin_deletions');
+                }
+                delReadUpTo = Math.max(delReadUpTo, d.readUpTo || 0);
+                paintDelCount(0);
+            } else {
+                if (Number.isInteger(d.readUpTo)) delReadUpTo = d.readUpTo;
+                paintDelCount(d.unread || 0);
+            }
+            renderDeletions(d);
+        } catch (e) {
+            if (list) list.innerHTML = '<div class="empty-tip">⚠️ 删除动态加载失败：' + esc(e.message) + '</div>';
+        }
+    }
+
+    function renderDeletions(d) {
+        const list = $('#del-list');
+        const sub = $('#del-sub');
+        if (!list) return;
+        const items = Array.isArray(d.items) ? d.items : [];
+        const total = d.total || 0;
+        if (sub) {
+            sub.textContent = total
+                ? '共 ' + total + ' 条记录' + (d.unread ? '，其中 ' + d.unread + ' 条未看' : '')
+                : '';
+        }
+        if (!items.length) {
+            list.innerHTML = '<div class="empty-tip">🍃 还没有访客删除过内容 —— 大家都很珍惜自己写下的故事</div>';
+            return;
+        }
+        list.innerHTML = items.map(it => {
+            const isStory = it.type !== 'comment';
+            const kind = isStory
+                ? '<span class="del-kind story">删了整篇故事</span>'
+                : '<span class="del-kind comment">删了评论</span>';
+            const title = isStory
+                ? esc(it.title || '（无标题）')
+                : '于《' + esc(it.title || '（故事已不存在）') + '》中';
+            const excerpt = it.excerpt
+                ? '<div class="del-excerpt">' + esc(it.excerpt) + '</div>' : '';
+            const who = it.author ? '由 ' + esc(it.author) + ' ' : '';
+            const nums = '❤️ ' + fmtNum(it.likes || 0)
+                + ' · 👁️ ' + fmtNum(it.views || 0)
+                + ' · 💬 ' + fmtNum(it.comments || 0);
+            return `
+            <div class="del-item${(it.id | 0) > delReadUpTo ? ' unread' : ''}">
+                <div class="del-item-top">
+                    ${kind}
+                    <span class="del-time">${fmtTime(it.createdAt)}</span>
+                </div>
+                <div class="del-title">${who}${it.extra ? '<span style="font-weight:400;color:var(--text-lighter);">' + esc(it.extra) + '</span> · ' : ''}${title}</div>
+                ${excerpt}
+                <div class="del-meta">${nums}</div>
+            </div>`;
+        }).join('');
+    }
+
+    // 概览「访客删除」计数项：点击展开/收起面板
+    $('#ov-del-item').addEventListener('click', () => {
+        delPanelOpen = !delPanelOpen;
+        $('#del-panel').classList.toggle('open', delPanelOpen);
+        if (delPanelOpen) loadDeletions(true);   // 打开就算看过
+    });
+    $('#del-refresh').addEventListener('click', (e) => { e.stopPropagation(); loadDeletions(false); });
+    $('#del-close').addEventListener('click', () => {
+        delPanelOpen = false;
+        $('#del-panel').classList.remove('open');
+    });
 
     /* ==================== 批量删除 ==================== */
     function updateBatchBar() {
@@ -1195,7 +1357,15 @@
     $('#login-btn').addEventListener('click', tryLogin);
     $('#admin-key').addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
     $('#refresh-btn').addEventListener('click', loadList);
-    $('#logout-btn').addEventListener('click', () => { clearKey(); showLogin(); toast('已退出管理'); });
+    $('#logout-btn').addEventListener('click', () => {
+        clearKey(); showLogin();
+        // 收起删除动态面板，避免下次登录看到上一个人的残留列表
+        delPanelOpen = false;
+        delReadUpTo = 0;
+        const p = $('#del-panel'); if (p) p.classList.remove('open');
+        const l = $('#del-list'); if (l) l.innerHTML = '';
+        toast('已退出管理');
+    });
 
     // 返回顶部
     const backTop = document.getElementById('back-top');

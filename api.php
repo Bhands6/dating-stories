@@ -982,8 +982,10 @@ switch ($route) {
         $delKey = trim((string)($in['delKey'] ?? ''));
         if ($commentId === '' || $delKey === '') { fail('参数不完整'); }
         rate_guard('delete_comment');
+        // 🔔 捕获被删内容，供「删除动态」提示用（事务内只收集，事务外才写文件）
+        $removed = null;
         // 事务内校验凭证并删除：一级评论（连带其回复）或任一回复均可删
-        $status = db_transaction(static function (array &$db) use ($id, $commentId, $delKey): string {
+        $status = db_transaction(static function (array &$db) use ($id, $commentId, $delKey, &$removed): string {
             foreach ($db['stories'] as $i => $s) {
                 if ((int)$s['id'] !== $id) { continue; }
                 $comments = array_values($s['comments'] ?? []);
@@ -992,6 +994,12 @@ switch ($route) {
                         if (empty($c['delKey']) || !hash_equals((string)$c['delKey'], $delKey)) {
                             return 'bad_key';
                         }
+                        $removed = [
+                            'nickname' => (string)($c['nickname'] ?? ''),
+                            'content'  => (string)($c['content'] ?? ''),
+                            'replies'  => count($c['replies'] ?? []),
+                            'isReply'  => false,
+                        ];
                         array_splice($comments, $ci, 1);   // 一级评论删除，其回复随之移除
                         $db['stories'][$i]['comments'] = $comments;
                         return 'deleted';
@@ -1001,6 +1009,12 @@ switch ($route) {
                             if (empty($r['delKey']) || !hash_equals((string)$r['delKey'], $delKey)) {
                                 return 'bad_key';
                             }
+                            $removed = [
+                                'nickname' => (string)($r['nickname'] ?? ''),
+                                'content'  => (string)($r['content'] ?? ''),
+                                'replies'  => 0,
+                                'isReply'  => true,
+                            ];
                             $reps = $c['replies'];
                             array_splice($reps, $ri, 1);
                             $comments[$ci]['replies'] = array_values($reps);
@@ -1017,8 +1031,25 @@ switch ($route) {
         if ($status === 'not_found') { fail('评论不存在或已被删除', 404); }
         // 返回删除后的最新评论数
         $count = 0;
+        $owner = null;
         foreach (db_load()['stories'] as $s) {
-            if ((int)$s['id'] === $id) { $count = comments_count($s); break; }
+            if ((int)$s['id'] === $id) { $count = comments_count($s); $owner = $s; break; }
+        }
+        // 🔔 记录访客自发删除（管理页「删除动态」提示用）；记录失败不影响删除本身
+        if ($removed !== null && is_array($owner)) {
+            record_deletion([
+                'type'     => 'comment',
+                'storyId'  => (int)$owner['id'],
+                'title'    => (string)($owner['title'] ?? ''),
+                'author'   => $removed['nickname'],
+                'excerpt'  => $removed['content'],
+                'extra'    => $removed['isReply']
+                    ? '一条回复'
+                    : '一级评论' . ($removed['replies'] ? "（连带 {$removed['replies']} 条回复）" : ''),
+                'likes'    => (int)($owner['likes'] ?? 0),
+                'views'    => (int)($owner['views'] ?? 0),
+                'comments' => $count,
+            ]);
         }
         respond(['ok' => true, 'commentsCount' => $count, 'message' => '评论已删除']);
     }
@@ -1089,13 +1120,16 @@ switch ($route) {
         }
         if (!$exists) { fail('故事不存在或已被删除', 404); }
         rate_guard('delete_story');
+        // 🔔 捕获被删故事快照，供「删除动态」提示用
+        $gone = null;
         // 事务内校验凭证并删除：并发下不会误删别的故事
-        $status = db_transaction(static function (array &$db) use ($id, $editKey): string {
+        $status = db_transaction(static function (array &$db) use ($id, $editKey, &$gone): string {
             foreach ($db['stories'] as $i => $s) {
                 if ((int)$s['id'] !== $id) { continue; }
                 if (empty($s['editKey']) || !hash_equals((string)$s['editKey'], $editKey)) {
                     return 'bad_key';
                 }
+                $gone = $s;
                 array_splice($db['stories'], $i, 1);
                 return 'deleted';
             }
@@ -1103,6 +1137,20 @@ switch ($route) {
         });
         if ($status === 'bad_key') { fail('删除凭证不正确，无法删除这篇故事'); }
         if ($status === 'not_found') { fail('故事不存在或已被删除', 404); }
+        // 🔔 记录访客自发删除（管理页「删除动态」提示用）；记录失败不影响删除本身
+        if (is_array($gone)) {
+            record_deletion([
+                'type'     => 'story',
+                'storyId'  => (int)$gone['id'],
+                'title'    => (string)($gone['title'] ?? ''),
+                'author'   => (string)($gone['author']['nickname'] ?? ''),
+                'excerpt'  => make_excerpt((string)($gone['content'] ?? ''), (string)($gone['mode'] ?? 'text')),
+                'extra'    => '发布者自行删除',
+                'likes'    => (int)($gone['likes'] ?? 0),
+                'views'    => (int)($gone['views'] ?? 0),
+                'comments' => comments_count($gone),
+            ]);
+        }
         respond(['ok' => true, 'message' => '故事已删除']);
     }
 
@@ -1412,6 +1460,56 @@ switch ($route) {
         }
         @chmod(ADMIN_KEY_FILE, 0600);
         respond(['ok' => true, 'message' => '管理密码已更新']);
+    }
+
+    /* ---- 管理页：访客删除动态（谁删掉了自己的故事/评论） ---- */
+    case 'admin_deletions': {
+        if ($method !== 'POST') { fail('请使用 POST', 405); }
+        $in = body_json();
+        admin_auth($in);
+
+        $db = ['nextId' => 1, 'readUpTo' => 0, 'items' => []];
+        $loaded = json_decode((string)@file_get_contents(DELETIONS_FILE) ?: '', true);
+        if (is_array($loaded)) { $db = $loaded; }
+        if (!isset($db['items']) || !is_array($db['items'])) { $db['items'] = []; }
+        if (!isset($db['readUpTo']) || !is_int($db['readUpTo'])) { $db['readUpTo'] = 0; }
+
+        // 标记已读：把 readUpTo 推进到当前最大 id（打开过「删除动态」就算看过了）
+        if (($in['op'] ?? 'list') === 'read') {
+            $lock = lock_guard(DELETIONS_FILE);
+            $fresh = json_decode((string)@file_get_contents(DELETIONS_FILE) ?: '', true);
+            if (is_array($fresh)) { $db = $fresh; }
+            if (!isset($db['items']) || !is_array($db['items'])) { $db['items'] = []; }
+            if (!isset($db['readUpTo']) || !is_int($db['readUpTo'])) { $db['readUpTo'] = 0; }
+
+            $maxId = 0;
+            foreach ($db['items'] as $it) { $maxId = max($maxId, (int)($it['id'] ?? 0)); }
+            if (isset($in['upTo'])) { $maxId = max($maxId, (int)$in['upTo']); }
+            if ($maxId > $db['readUpTo']) {
+                $db['readUpTo'] = $maxId;
+                atomic_write(DELETIONS_FILE, json_encode($db, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+            }
+            unlock_guard($lock);
+            respond(['ok' => true, 'readUpTo' => $db['readUpTo']]);
+        }
+
+        $items = array_reverse($db['items']);   // 最新在前
+        $unread = 0; $unreadStory = 0; $unreadComment = 0;
+        foreach ($items as $it) {
+            if ((int)($it['id'] ?? 0) > $db['readUpTo']) {
+                $unread++;
+                if (($it['type'] ?? '') === 'comment') { $unreadComment++; } else { $unreadStory++; }
+            }
+        }
+        respond([
+            'ok'             => true,
+            'total'          => count($db['items']),
+            'unread'         => $unread,
+            'unreadStory'    => $unreadStory,
+            'unreadComment'  => $unreadComment,
+            'readUpTo'       => (int)$db['readUpTo'],
+            'items'          => array_slice($items, 0, 100),
+        ]);
     }
 
     /* ---- 管理页：查看/删除反馈 ---- */
