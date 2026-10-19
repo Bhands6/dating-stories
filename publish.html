@@ -900,6 +900,10 @@
         if (!isHtml) { toast('请选择 .html 或 .htm 文件', 'error'); return; }
         if (file.size > 500 * 1024) { toast('文件太大啦，最多支持 500KB', 'error'); return; }
         file.text().then(text => {
+            // Windows 保存的 HTML 多为 CRLF，而 textarea 会把 CRLF 规范化为 LF。
+            // 不在这里统一，后面「是否还是原文件」的相等判断就会永远失败，
+            // source 字段发不出去 —— 表现为上传了但原文模式没生效。
+            text = text.replace(/\r\n?/g, '\n');
             if (!text.trim()) { toast('这个文件是空的', 'error'); return; }
 
             // 完整网页（<!DOCTYPE html> / <html>）整份原样保留：
@@ -1041,7 +1045,9 @@
         try {
             const payload = { title, content, mode, tags, nickname: nickEl.value.trim() };
             // 来自上传且未被编辑 → 原样提交源文件，由服务端落盘（不受 5 万字符限制）
-            if (mode === 'html' && importedSource && content === importedSource) {
+            // 比较前统一换行符，避免 CRLF/LF 差异导致误判为「编辑过」
+            const norm = s => String(s).replace(/\r\n?/g, '\n');
+            if (mode === 'html' && importedSource && norm(content) === norm(importedSource)) {
                 payload.source = importedSource;
             }
             const d = await api('stories', null, payload);
@@ -1053,7 +1059,9 @@
                     localStorage.setItem('fs_my_keys', JSON.stringify(myKeys));
                 }
             } catch (e) { /* 忽略 */ }
-            toast('💕 发布成功！正在打开你的故事…');
+            toast(d.story && d.story.sourceSaved
+                ? '💕 发布成功！原文件已原样保存'
+                : '💕 发布成功！正在打开你的故事…');
             // 跳转到首页，自动切「最新」并打开自己刚发布的故事
             setTimeout(() => {
                 location.href = 'index.html?filter=new&story=' + d.story.id + '#stories';

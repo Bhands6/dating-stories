@@ -894,7 +894,8 @@ function handleApi(req, res, url, body) {
       if (method === 'POST') {
         const title = String(body.title || '').trim();
         let content = String(body.content || '').trim();
-        const source = String(body.source || '');
+        // 统一换行：前端已规范化，这里兜底（直接调接口时可能是 CRLF）
+        const source = String(body.source || '').replace(/\r\n?/g, '\n');
         const mode = body.mode === 'html' ? 'html' : 'text';
         let nickname = String(body.nickname || '').trim();
         const tagsIn = Array.isArray(body.tags) ? body.tags : [];
@@ -945,9 +946,10 @@ function handleApi(req, res, url, body) {
         db.stories.unshift(story);
         dbSave(db);
         // 落盘原始文件：写失败不影响发布（raw 会退回净化版显示）
-        if (keepSource) uploadSourceWrite(story.id, source);
+        const sourceSaved = keepSource ? uploadSourceWrite(story.id, source) : false;
         const full = storyFull(story);
         full.editKey = editKey;
+        full.sourceSaved = sourceSaved;
         return json(res, { ok: true, story: full });
       }
 

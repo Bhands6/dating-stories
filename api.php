@@ -1107,6 +1107,8 @@ switch ($route) {
             $title = trim((string)($in['title'] ?? ''));
             $content = trim((string)($in['content'] ?? ''));
             $source = (string)($in['source'] ?? '');   // 上传的原始 .html 全文（可选）
+            // 统一换行：前端已规范化，这里兜底（直接调接口时可能是 CRLF）
+            $source = str_replace(["\r\n", "\r"], "\n", $source);
             $mode = ($in['mode'] ?? 'text') === 'html' ? 'html' : 'text';
             $nickname = trim((string)($in['nickname'] ?? ''));
             $tagsIn = (array)($in['tags'] ?? []);
@@ -1161,11 +1163,13 @@ switch ($route) {
                 return $story;
             });
             // 事务外落盘原始文件：大块 IO 不占数据锁，写失败也不影响发布（退回净化版显示）
+            $sourceSaved = false;
             if ($keepSource) {
-                upload_source_write((int)$created['id'], $source);
+                $sourceSaved = upload_source_write((int)$created['id'], $source);
             }
             $full = story_full($created);
             $full['editKey'] = $created['editKey'];
+            $full['sourceSaved'] = $sourceSaved;
             respond(['ok' => true, 'story' => $full]);
         }
 
