@@ -651,12 +651,49 @@ function uploadSourceDelete(id) {
   try { fs.unlinkSync(uploadPath(id)); } catch (e) { /* 文件不存在则忽略 */ }
 }
 
+/**
+ * 结构容错：CSS 里写了 `.hero h1 { font-family: ... }`，但 HTML 里没有 .hero 容器时，
+ * 把这条字体规则补到 h1 上。只补 font-family，不动布局属性。
+ * （AI 生成的单文件 HTML 常见 CSS 选择器与 DOM 结构对不上的问题）
+ */
+function shimOrphanFontRules(html) {
+  if (!/\.hero\b/.test(html)) return html;
+  // 不能用 \bhero\b：class="hero-rule" 也会命中，必须按 class token 精确比对
+  const hasHero = (html.match(/class\s*=\s*["']([^"']*)["']/gi) || []).some(s => {
+    const v = s.replace(/^class\s*=\s*["']|["']$/gi, '');
+    return v.split(/\s+/).includes('hero');
+  });
+  if (hasHero) return html;
+
+  const pairs = [
+    [/\.hero\s+h1\s*\{([^}]*)\}/i, 'h1'],
+    [/\.hero\s+h2\s*\{([^}]*)\}/i, 'h2'],
+    [/\.hero\s+\.hand\s*\{([^}]*)\}/i, '.hand'],
+    [/\.hero\s+\.kicker\s*\{([^}]*)\}/i, '.kicker']
+  ];
+  let extra = '';
+  for (const [re, sel] of pairs) {
+    const m = html.match(re);
+    if (!m) continue;
+    const f = m[1].match(/font-family\s*:\s*([^;}]+)/i);
+    if (!f) continue;
+    extra += sel + '{font-family:' + f[1].trim() + '}';
+  }
+  if (!extra) return html;
+
+  const pos = html.lastIndexOf('</style>');
+  if (pos === -1) return html;
+  return html.slice(0, pos) + extra + '\n' + html.slice(pos);
+}
+
 /** 输出故事的原始 HTML（沙箱隔离，供 iframe/新窗口阅读）
  *  rawSource 不为 null 时用原始文件（未净化），否则回落到净化后的 content */
 function serveRawStory(res, story, rawSource) {
   const title = String(story.title || '故事').replace(/[<>&"]/g, '');
   // 存量内容里可能残留 Google 字体地址（新发布会转成 @import），统一改写成站内代理
-  const body = rewriteGoogleFontUrls(rawSource != null ? rawSource : String(story.content || ''));
+  let body = rewriteGoogleFontUrls(rawSource != null ? rawSource : String(story.content || ''));
+  // CSS 选择器与 DOM 结构对不上时（AI 生成的 HTML 常见），把标题字体规则补到位
+  body = shimOrphanFontRules(body);
   // 垫片在前（本机字体兜底），Google CSS 在后（真字体覆盖同名定义，src 已带 local 前缀）
   const shim = '<style>\n' + FONT_SHIM_CSS + '\n</style>\n' + fontLinkTags(body);
   let html;

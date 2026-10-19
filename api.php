@@ -664,6 +664,47 @@ function upload_source_delete(int $id): void
     if (is_file($path)) { @unlink($path); }
 }
 
+/**
+ * 结构容错：CSS 里写了 `.hero h1 { font-family: ... }`，但 HTML 里没有 .hero 容器时，
+ * 把这条字体规则补到 h1 上。
+ *
+ * 成因：AI 生成的单文件 HTML 常见「CSS 选择器与 DOM 结构对不上」——
+ * 样式按 .hero 后代写，结构里却只有 .wrap，于是字体规则永远匹配不到元素，
+ * 标题默默退回系统默认字体。只补 font-family，不动 padding/text-align 等布局属性，
+ * 避免二次改变版式。仅在没有 .hero 元素时触发，正常文件不受影响。
+ */
+function shim_orphan_font_rules(string $html): string
+{
+    // 没有任何 .hero 选择器 → 与本次容错无关
+    if (!preg_match('#\.hero\b#', $html)) { return $html; }
+    // 已经存在 .hero 元素 → 规则本来就能匹配，不插手。
+    // 注意不能用 \bhero\b 判断：class="hero-rule" 也会命中。必须按 class token 精确比对
+    if (preg_match_all('#class\s*=\s*["\']([^"\']*)["\']#i', $html, $cm)) {
+        foreach ($cm[1] as $cls) {
+            if (in_array('hero', preg_split('/\s+/', trim($cls)), true)) { return $html; }
+        }
+    }
+
+    $extra = '';
+    $pairs = [
+        ['#\.hero\s+h1\s*\{([^}]*)\}#i',      'h1'],
+        ['#\.hero\s+h2\s*\{([^}]*)\}#i',      'h2'],
+        ['#\.hero\s+\.hand\s*\{([^}]*)\}#i',  '.hand'],
+        ['#\.hero\s+\.kicker\s*\{([^}]*)\}#i', '.kicker'],
+    ];
+    foreach ($pairs as $pair) {
+        if (!preg_match($pair[0], $html, $m)) { continue; }
+        if (!preg_match('#font-family\s*:\s*([^;}]+)#i', $m[1], $f)) { continue; }
+        $extra .= $pair[1] . '{font-family:' . trim($f[1]) . '}';
+    }
+    if ($extra === '') { return $html; }
+
+    // 追加到最后一个 </style> 之前：同权重靠后者胜出，确保能盖住前面的规则
+    $pos = strripos($html, '</style>');
+    if ($pos === false) { return $html; }
+    return substr($html, 0, $pos) . $extra . "\n" . substr($html, $pos);
+}
+
 /** 输出故事的原始 HTML（沙箱隔离，供 iframe/新窗口阅读）
  *  $rawSource 不为 null 时用原始文件（未净化），否则回落到净化后的 content */
 function serve_raw_story(array $story, ?string $rawSource = null): void
@@ -672,6 +713,8 @@ function serve_raw_story(array $story, ?string $rawSource = null): void
     $body = $rawSource !== null ? $rawSource : (string)($story['content'] ?? '');
     // 存量内容里可能残留 Google 字体地址（新发布会转成 @import），统一改写成站内代理
     $body = rewrite_google_font_urls($body);
+    // CSS 选择器与 DOM 结构对不上时（AI 生成的 HTML 常见），把标题字体规则补到位
+    $body = shim_orphan_font_rules($body);
     // 垫片在前（本机字体兜底），Google CSS 在后（真字体覆盖同名定义，src 已带 local 前缀）
     $shim = "<style>\n" . FONT_SHIM_CSS . "\n</style>\n" . font_link_tags($body);
 
