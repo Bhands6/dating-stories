@@ -347,6 +347,10 @@ function link_to_import(string $html): string
 
 const FONT_MAX_BYTES = 3145728;    // 单资源上限 3MB
 const FONT_CACHE_TTL = 2592000;    // 缓存 30 天
+// 代理地址的版本号：改动「CSS 改写逻辑」时把它 +1，
+// 因为浏览器会把代理 CSS 缓存 30 天，不加版本号用户会一直用旧改写结果。
+// 注意它只影响浏览器缓存 key，服务端缓存仍按原始 URL 的 sha1 命中。
+const FONT_PROXY_VER = 2;
 
 /** 站内可代理的字体：小写字体名 => Google Fonts family 参数 */
 const FONT_GOOGLE_MAP = [
@@ -394,10 +398,10 @@ function b64url_decode(string $s): string
     return $out === false ? '' : $out;
 }
 
-/** 外部字体地址 → 站内代理地址 */
+/** 外部字体地址 → 站内代理地址（带版本号，见 FONT_PROXY_VER） */
 function proxy_font_url(string $url): string
 {
-    return 'api.php?route=font&u=' . b64url_encode($url);
+    return 'api.php?route=font&u=' . b64url_encode($url) . '&v=' . FONT_PROXY_VER;
 }
 
 /** 正文里出现的、站内可代理的字体名（保持首次出现顺序） */
@@ -687,8 +691,10 @@ function shim_orphan_font_rules(string $html): string
 
     $extra = '';
     $pairs = [
-        ['#\.hero\s+h1\s*\{([^}]*)\}#i',      'h1'],
-        ['#\.hero\s+h2\s*\{([^}]*)\}#i',      'h2'],
+        // h1/h2 用 :first-of-type 限定：只影响页头那一个，
+        // 不会把正文里十几个章节标题一起改掉
+        ['#\.hero\s+h1\s*\{([^}]*)\}#i',      'h1:first-of-type'],
+        ['#\.hero\s+h2\s*\{([^}]*)\}#i',      'h2:first-of-type'],
         ['#\.hero\s+\.hand\s*\{([^}]*)\}#i',  '.hand'],
         ['#\.hero\s+\.kicker\s*\{([^}]*)\}#i', '.kicker'],
     ];

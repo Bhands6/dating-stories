@@ -906,6 +906,12 @@
             // source 字段发不出去 —— 表现为上传了但原文模式没生效。
             text = text.replace(/\r\n?/g, '\n');
             if (!text.trim()) { toast('这个文件是空的', 'error'); return; }
+            // 非 UTF-8 文件（国内常见的 GBK/ANSI 存法）按 UTF-8 读会大面积变成 \uFFFD，
+            // 直接拦下比发出去之后再让读者看乱码好
+            if (text.indexOf('\uFFFD') !== -1) {
+                toast('⚠️ 文件编码可能不是 UTF-8，中文会乱码。请用记事本「另存为」选 UTF-8 后重新上传', 'error');
+                return;
+            }
 
             // 完整网页（<!DOCTYPE html> / <html>）整份原样保留：
             // 服务端 route=raw 会把完整文档原样输出，<head> 里的 viewport、

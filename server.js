@@ -377,6 +377,9 @@ function linkToImport(html) {
 
 const FONT_MAX_BYTES = 3145728;    // 单资源上限 3MB
 const FONT_CACHE_TTL = 2592000;    // 缓存 30 天
+// 代理地址的版本号：改动「CSS 改写逻辑」时 +1，否则浏览器会继续用缓存的旧改写结果。
+// 只影响浏览器缓存 key，服务端缓存仍按原始 URL 的 sha1 命中。
+const FONT_PROXY_VER = 2;
 const FONT_CACHE_DIR = path.join(DATA_DIR, 'fontcache');
 const FONT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
@@ -411,8 +414,8 @@ const b64urlEncode = s => Buffer.from(s, 'utf8').toString('base64')
   .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const b64urlDecode = s => Buffer.from(String(s).replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
 
-/** 外部字体地址 → 站内代理地址 */
-const proxyFontUrl = u => 'api.php?route=font&u=' + b64urlEncode(u);
+/** 外部字体地址 → 站内代理地址（带版本号，见 FONT_PROXY_VER） */
+const proxyFontUrl = u => 'api.php?route=font&u=' + b64urlEncode(u) + '&v=' + FONT_PROXY_VER;
 
 /** 正文里出现的、站内可代理的字体名（保持首次出现顺序） */
 function usedGoogleFonts(html) {
@@ -666,8 +669,9 @@ function shimOrphanFontRules(html) {
   if (hasHero) return html;
 
   const pairs = [
-    [/\.hero\s+h1\s*\{([^}]*)\}/i, 'h1'],
-    [/\.hero\s+h2\s*\{([^}]*)\}/i, 'h2'],
+    // h1/h2 用 :first-of-type 限定，避免把正文里的章节标题一起改掉
+    [/\.hero\s+h1\s*\{([^}]*)\}/i, 'h1:first-of-type'],
+    [/\.hero\s+h2\s*\{([^}]*)\}/i, 'h2:first-of-type'],
     [/\.hero\s+\.hand\s*\{([^}]*)\}/i, '.hand'],
     [/\.hero\s+\.kicker\s*\{([^}]*)\}/i, '.kicker']
   ];
