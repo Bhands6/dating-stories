@@ -927,7 +927,7 @@
                 const bodyMatch = rest.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
                 content = (bodyMatch ? bodyMatch[1] : rest)
                     .replace(/<!DOCTYPE[^>]*>/gi, '')
-                    .replace(/<\/?(html|head)[^>]*>/gi, '')
+                    .replace(/<\/?(?:html|head)(?=[\s>])[^>]*>/gi, '')
                     .trim();
                 if (styles.length) {
                     content = styles.map(c => '<style>' + c.trim() + '</style>').join('\n') + '\n' + content;

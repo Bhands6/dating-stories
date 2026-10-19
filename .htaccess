@@ -1,0 +1,7 @@
+# 页面禁止强缓存：发布页内联了较多前端逻辑，浏览器缓存旧版会导致
+# 「代码已更新但行为还是旧的」这类难以察觉的问题（例如导入 HTML 时丢标签）。
+<IfModule mod_headers.c>
+    <FilesMatch "\.(html|htm)$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+</IfModule>

@@ -11,6 +11,7 @@ RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 # 注意：server.js / package.json 只是本地开发用的 Node 服务器，不进生产镜像
 COPY index.html publish.html admin.html feedback.html terms.html privacy.html disclaimer.html /var/www/html/
 COPY api.php /var/www/html/
+COPY .htaccess /var/www/html/.htaccess
 
 # 种子数据兜底：宿主机 ./data 为空时首次运行可自动初始化
 COPY data/seed.json /var/www/html/data/seed.json
