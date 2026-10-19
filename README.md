@@ -5,9 +5,9 @@
 **一个零数据库依赖的匿名相亲故事分享社区**
 —— 把每一段相亲经历，写成值得被认真讲述的故事。
 
-![PHP](https://img.shields.io/badge/PHP-7.4%2B-777bb4) ![Database](https://img.shields.io/badge/数据库-无-orange) ![Node](https://img.shields.io/badge/Node-开发服务器-green) ![Docker](https://img.shields.io/badge/Docker-支持-2496ed) ![License](https://img.shields.io/badge/用途-个人项目-pink)
+![PHP](https://img.shields.io/badge/PHP-7.4%2B-777bb4) ![Database](https://img.shields.io/badge/数据库-无-orange) ![Node](https://img.shields.io/badge/Node-开发服务器-green) ![Docker](https://img.shields.io/badge/Docker-支持-2496ed) ![Version](https://img.shields.io/badge/version-v1.6.1-pink) ![License](https://img.shields.io/badge/用途-个人项目-pink)
 
-**在线访问**：部署后 `https://bhands.me` 
+**在线访问**：[bhands.me](https://bhands.me)
 </div>
 
 ---
@@ -119,6 +119,8 @@ docker compose up -d --build
 ├── api.php             # PHP 后端（生产）
 ├── server.js           # Node 开发服务器
 ├── docker-entrypoint.sh # 容器启动钩子（data 权限修复 + 管理密码自动生成）
+├── .htaccess           # 页面禁强缓存（宝塔等 AllowOverride 环境生效；容器内靠 conf-enabled）
+├── .dockerignore       # 镜像构建排除运行时数据与密钥
 ├── .gitattributes      # 换行规则（* text=auto eol=lf 统一 LF；*.sh=LF、*.bat=CRLF 作例外）
 ├── 一键部署.bat         # Windows 一键部署脚本（仅本地保留，不进仓库）
 ├── data/               # 🔒 必须禁止 HTTP 访问（含密码与删除凭证）
@@ -130,6 +132,8 @@ docker compose up -d --build
 │   ├── admin_guard.json# 运行时生成：管理登录失败限流记录
 │   ├── rate_guard.json # 运行时生成：写接口（发布/评论/反馈）限流记录
 │   ├── deletions.json  # 运行时生成：访客删除动态（谁删了故事/评论，含昵称与摘录）
+│   ├── uploads/        # 运行时生成：上传的原始 HTML 源文件（未净化，「原文阅读」直接读它）
+│   ├── fontcache/      # 运行时生成：字体代理缓存（Google Fonts 中转产物，删掉自动重建）
 │   ├── views_log.json  # 运行时生成：防刷记录
 │   └── *.lock          # 运行时生成：互斥锁（0 字节，删掉会自动重建）
 ├── Dockerfile / docker-compose.yml
@@ -143,7 +147,8 @@ docker compose up -d --build
 | route | 说明 |
 |-------|------|
 | `stories` | 列表（筛选/分页）/ 发布（返回一次性删除凭证） |
-| `story` / `raw` | 详情（防刷计数）/ 原文沙箱渲染 |
+| `story` / `raw` | 详情（防刷计数）/ 原文沙箱渲染（**有原始文件存档时直接读原件**，未净化、不受 5 万字符限制） |
+| `font` | 字体代理：服务端抓取 Google Fonts 的 CSS/woff2 并落盘缓存，让国内浏览器也能加载网络字体（仅放行 `googleapis`/`gstatic`，不跟随重定向） |
 | `like` / `comments` | 点赞 / 评论与楼中楼回复（replyTo，发表成功随响应下发删除凭证 `delKey`） |
 | `delete_comment` | 评论者凭 `delKey` 删除自己的评论或回复（删一级连带其 `replies`；`delKey` 不出现在任何 GET 输出里） |
 | `delete_story` | 发布者凭凭证删除 |
