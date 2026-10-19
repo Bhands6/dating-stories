@@ -27,6 +27,14 @@ VOLUME ["/var/www/html/data"]
 RUN printf '<Directory /var/www/html/data>\n    Require all denied\n</Directory>\n' > /etc/apache2/conf-available/deny-data.conf \
  && a2enconf deny-data
 
+# HTML 页面禁止强缓存：发布页内联了大量前端逻辑，浏览器缓存旧版会导致
+# 「代码已更新但行为还是旧的」这类极难察觉的问题（曾导致导入 HTML 时丢 <header>）。
+# ⚠️ 容器里 Apache 是 AllowOverride None，根目录 .htaccess 不生效，必须写进 conf-enabled。
+# 根 .htaccess 仍保留，供宝塔等允许 AllowOverride 的部署方式使用。
+RUN a2enmod headers \
+ && printf '<FilesMatch "\\.(html|htm)$">\n    Header set Cache-Control "no-cache, must-revalidate"\n</FilesMatch>\n' > /etc/apache2/conf-available/no-cache.conf \
+ && a2enconf no-cache
+
 # 启动前自动修正 data 目录属主（宿主机挂载目录属主可能不是 www-data）
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
