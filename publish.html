@@ -778,6 +778,55 @@
         }
     });
 
+    /* ===== HTML 兼容层（与 api.php / server.js 的净化逻辑保持一致） ===== */
+    // 字体垫片：作者 HTML 常写 font-family:'Noto Serif SC' 却不带字体文件，
+    // 而字体 CDN 在国内基本不可达。这里用 @font-face + local() 把高频字体名
+    // 映射到本机已有的等价字体：零网络请求、必然命中、不会闪字。
+    const FONT_SHIM_CSS = [
+        "@font-face{font-family:'Noto Serif SC';src:local('Noto Serif SC'),local('Source Han Serif SC'),local('Source Han Serif CN'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('SimSun');font-display:swap}",
+        "@font-face{font-family:'Noto Sans SC';src:local('Noto Sans SC'),local('Source Han Sans SC'),local('Source Han Sans CN'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('SimHei');font-display:swap}",
+        "@font-face{font-family:'Source Han Serif SC';src:local('Source Han Serif SC'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('SimSun')}",
+        "@font-face{font-family:'Source Han Sans SC';src:local('Source Han Sans SC'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('SimHei')}",
+        "@font-face{font-family:'LXGW WenKai';src:local('LXGW WenKai'),local('霞鹜文楷'),local('KaiTi'),local('STKaiti'),local('楷体')}",
+        "@font-face{font-family:'Ma Shan Zheng';src:local('Ma Shan Zheng'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti')}",
+        "@font-face{font-family:'Zhi Mang Xing';src:local('Zhi Mang Xing'),local('STXingkai'),local('华文行楷'),local('KaiTi')}",
+        "@font-face{font-family:'Long Cang';src:local('Long Cang'),local('STXingkai'),local('华文行楷'),local('KaiTi')}",
+        "@font-face{font-family:'ZCOOL KuaiLe';src:local('ZCOOL KuaiLe'),local('YouYuan'),local('幼圆'),local('Microsoft YaHei')}",
+        "@font-face{font-family:'Inter';src:local('Inter'),local('Segoe UI'),local('Helvetica Neue'),local('Arial')}",
+        "@font-face{font-family:'Roboto';src:local('Roboto'),local('Segoe UI'),local('Arial')}",
+        "@font-face{font-family:'Playfair Display';src:local('Playfair Display'),local('Georgia'),local('Times New Roman')}",
+        "@font-face{font-family:'Merriweather';src:local('Merriweather'),local('Georgia')}",
+        "@font-face{font-family:'Lora';src:local('Lora'),local('Georgia')}"
+    ].join('\n');
+
+    // <link rel="stylesheet"> → <style>@import url("...")</style>
+    // 服务端净化会删掉 link（防 preconnect/icon 探测），字体必须提前转成 @import 才活得下来
+    function linkToImport(html) {
+        return html.replace(/<link\b[^>]*>/gi, tag => {
+            if (!/\brel\s*=\s*(["'])?[^"'>]*\bstylesheet\b/i.test(tag)) return '';
+            const h = tag.match(/\bhref\s*=\s*(["'])([^"']+)\1/i);
+            if (!h) return '';
+            const url = h[2].trim();
+            if (!/^(?:https?:)?\/\//i.test(url)) return '';
+            return '<style>@import url("' + url + '");</style>';
+        });
+    }
+
+    // 预览文档：完整网页原样保留（只插垫片），片段才包壳
+    function buildPreviewDoc(src) {
+        const shim = '<style>\n' + FONT_SHIM_CSS + '\n</style>\n';
+        if (/<(?:!doctype\s+html|html)\b/i.test(src)) {
+            const head = src.match(/<head\b[^>]*>/i);
+            if (head) {
+                const pos = head.index + head[0].length;
+                return src.slice(0, pos) + '\n' + shim + src.slice(pos);
+            }
+            return shim + src;
+        }
+        return '<!DOCTYPE html><html><head><meta charset="UTF-8">' + shim +
+            '<style>html,body{margin:0;padding:16px;}</style></head><body>' + src + '</body></html>';
+    }
+
     /* ===== 导入本地 HTML 文件 ===== */
     function handleHtmlFile(file) {
         if (!file) return;
@@ -786,30 +835,48 @@
         if (file.size > 500 * 1024) { toast('文件太大啦，最多支持 500KB', 'error'); return; }
         file.text().then(text => {
             if (!text.trim()) { toast('这个文件是空的', 'error'); return; }
-            // 先收集全文（含 <head>）里的 <style> 样式表，导入时一并保留
-            const styles = [];
-            text = text.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (m, css) => {
-                styles.push(css);
-                return '';
-            });
-            // 若是完整 HTML 文档，提取 <body> 里的正文部分
-            const bodyMatch = text.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-            let content = (bodyMatch ? bodyMatch[1] : text)
-                .replace(/<!DOCTYPE[^>]*>/gi, '')
-                .replace(/<\/?(html|head)[^>]*>/gi, '')
-                .trim();
-            // 文件里的样式表放到内容开头，发布后样式照常生效
-            if (styles.length) {
-                content = styles.map(c => '<style>' + c.trim() + '</style>').join('\n') + '\n' + content;
+
+            // 完整网页（<!DOCTYPE html> / <html>）整份原样保留：
+            // 服务端 route=raw 会把完整文档原样输出，<head> 里的 viewport、
+            // 样式表顺序、<link> 字体全都能保住。若只抽 <body>，
+            // 移动端会按 980px 布局宽度渲染，排版直接变形。
+            const isFullDoc = /<(?:!doctype\s+html|html)\b/i.test(text);
+            let content;
+            let styleCount = 0;
+
+            if (isFullDoc) {
+                content = text.trim();
+                styleCount = (content.match(/<style[^>]*>/gi) || []).length;
+            } else {
+                // 片段：收集 <style> 提到最前，保证样式先于内容生效
+                const styles = [];
+                const rest = text.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (m, css) => {
+                    styles.push(css);
+                    return '';
+                });
+                const bodyMatch = rest.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+                content = (bodyMatch ? bodyMatch[1] : rest)
+                    .replace(/<!DOCTYPE[^>]*>/gi, '')
+                    .replace(/<\/?(html|head)[^>]*>/gi, '')
+                    .trim();
+                if (styles.length) {
+                    content = styles.map(c => '<style>' + c.trim() + '</style>').join('\n') + '\n' + content;
+                    styleCount = styles.length;
+                }
             }
+
             if (!content.trim()) { toast('没在文件里找到可用的正文内容', 'error'); return; }
             const ta = document.getElementById('story-content');
             if (ta.value.trim() && !confirm('导入「' + file.name + '」会替换当前编辑器里的内容，确定继续吗？')) return;
             ta.value = content;
             switchEditor('html', true); // 导入文件场景已会操作，不弹 AI 引导
-            toast(styles.length
-                ? '📄 已导入 ' + file.name + '（含 ' + styles.length + ' 段样式表）'
-                : '📄 已导入 ' + file.name + '（文件未含样式表，如需样式请在内容里加 <style>）');
+            if (isFullDoc) {
+                toast('📄 已导入 ' + file.name + '（完整网页，已保留 <head> 与字体引用）');
+            } else {
+                toast(styleCount
+                    ? '📄 已导入 ' + file.name + '（含 ' + styleCount + ' 段样式表）'
+                    : '📄 已导入 ' + file.name + '（文件未含样式表，如需样式请在内容里加 <style>）');
+            }
         }).catch(() => toast('文件读取失败，请重试', 'error'));
     }
 
@@ -828,13 +895,16 @@
         if (!html || !/<[a-z][\s\S]*>/i.test(html)) return;
         e.preventDefault();
         // 轻量清理：去危险标签与属性，保留结构和内联样式（发布时服务端还会再净化）
-        let clean = html
+        // 两个例外：<link rel=stylesheet> 先转 @import（字体全靠它），viewport 单独保下来
+        let clean = linkToImport(html)
             .replace(/<\s*(script|iframe|object|embed|form|link|meta)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
+            .replace(/<meta\b[^>]*>/gi, m => /\bname\s*=\s*(["'])?viewport\b/i.test(m) ? '\u0002VIEWPORT\u0002' : m)
             .replace(/<\s*\/?\s*(script|iframe|object|embed|form|link|meta|input|select|textarea|button)\b[^>]*>/gi, '')
             .replace(/<!--[\s\S]*?-->/g, '')
             .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
             .replace(/(href|src)\s*=\s*("|')\s*(javascript|vbscript|data):[^"']*/gi, '$1=$2#')
             .replace(/<!--[\s\S]*?-->/g, '')
+            .replace(/\u0002VIEWPORT\u0002/g, '<meta name="viewport" content="width=device-width, initial-scale=1">')
             .trim();
         if (!clean) { toast('剪贴板里没有可用的 HTML 内容', 'error'); return; }
         // 插入到光标处（替换选中内容）
@@ -869,7 +939,7 @@
             const frame = document.createElement('iframe');
             frame.style.cssText = 'width:100%;height:60vh;border:2px solid #f0e0e5;border-radius:10px;background:white;';
             frame.setAttribute('sandbox', 'allow-scripts');
-            frame.srcdoc = '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>html,body{margin:0;padding:16px;}</style></head><body>' + textarea.value + '</body></html>';
+            frame.srcdoc = buildPreviewDoc(textarea.value);
             preview.appendChild(frame);
         } else {
             preview.style.cssText += 'padding:18px 20px;border:2px solid #f0e0e5;border-radius:10px;background:#fafafa;overflow:auto;font-size:15px;line-height:1.8;';

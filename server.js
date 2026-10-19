@@ -347,10 +347,67 @@ function deletionsLoad() {
   return { nextId: 1, readUpTo: 0, items: [] };
 }
 
+/**
+ * 把 <link rel="stylesheet"> 转成 <style>@import url("...")</style>。
+ *
+ * 净化流程会删掉 link 标签（防 preconnect / icon / preload 之类的外链探测），
+ * 但样式表本身是排版的一部分：AI 生成的 HTML 几乎都用
+ *   <link href="https://fonts.googleapis.com/css2?family=..." rel="stylesheet">
+ * 引入字体。整条丢弃后，字体只剩 font-family 声明、没有字体文件，
+ * 浏览器必然回退成系统默认宋体 —— 用户看到的就是「字体不显示」。
+ *
+ * 转成 @import 之后：link 元素依然进不了 DOM，样式表照常加载。
+ */
+function linkToImport(html) {
+  return html.replace(/<link\b[^>]*>/gi, tag => {
+    if (!/\brel\s*=\s*(["'])?[^"'>]*\bstylesheet\b/i.test(tag)) return '';
+    const h = tag.match(/\bhref\s*=\s*(["'])([^"']+)\1/i);
+    if (!h) return '';
+    const url = h[2].trim();
+    if (!/^(?:https?:)?\/\//i.test(url)) return ''; // 只放行 http(s) 与协议相对地址
+    return '<style>@import url("' + url + '");</style>';
+  });
+}
+
+/**
+ * 字体兼容垫片：随 raw 页注入到 <head> 最前面（优先级最低，作者样式可覆盖）。
+ *
+ * 作者 HTML 常写 font-family:'Noto Serif SC' 却不带字体文件；字体 CDN 在
+ * 国内基本不可达，一旦加载失败就回退成系统宋体，观感和原设计差很远。
+ * 这里用 @font-face + local() 把高频字体名映射到本机已有的等价字体：
+ * 零网络请求、必然命中、不会闪字（local 是同步的）。
+ */
+const FONT_SHIM_CSS = [
+  "@font-face{font-family:'Noto Serif SC';src:local('Noto Serif SC'),local('Source Han Serif SC'),local('Source Han Serif CN'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('SimSun');font-display:swap}",
+  "@font-face{font-family:'Noto Sans SC';src:local('Noto Sans SC'),local('Source Han Sans SC'),local('Source Han Sans CN'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('SimHei');font-display:swap}",
+  "@font-face{font-family:'Source Han Serif SC';src:local('Source Han Serif SC'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('SimSun')}",
+  "@font-face{font-family:'Source Han Sans SC';src:local('Source Han Sans SC'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('SimHei')}",
+  "@font-face{font-family:'LXGW WenKai';src:local('LXGW WenKai'),local('霞鹜文楷'),local('KaiTi'),local('STKaiti'),local('楷体')}",
+  "@font-face{font-family:'Ma Shan Zheng';src:local('Ma Shan Zheng'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti')}",
+  "@font-face{font-family:'Zhi Mang Xing';src:local('Zhi Mang Xing'),local('STXingkai'),local('华文行楷'),local('KaiTi')}",
+  "@font-face{font-family:'Long Cang';src:local('Long Cang'),local('STXingkai'),local('华文行楷'),local('KaiTi')}",
+  "@font-face{font-family:'ZCOOL KuaiLe';src:local('ZCOOL KuaiLe'),local('YouYuan'),local('幼圆'),local('Microsoft YaHei')}",
+  "@font-face{font-family:'Inter';src:local('Inter'),local('Segoe UI'),local('Helvetica Neue'),local('Arial')}",
+  "@font-face{font-family:'Roboto';src:local('Roboto'),local('Segoe UI'),local('Arial')}",
+  "@font-face{font-family:'Playfair Display';src:local('Playfair Display'),local('Georgia'),local('Times New Roman')}",
+  "@font-face{font-family:'Merriweather';src:local('Merriweather'),local('Georgia')}",
+  "@font-face{font-family:'Lora';src:local('Lora'),local('Georgia')}"
+].join('\n');
+
 /** HTML 轻净化：去 script/危险属性（保留 style/结构/动画）。
     mode=html 的内容阅读时通过沙箱 iframe（route=raw）渲染，与站点完全隔离，
-    因此无需再做 CSS 作用域隔离，样式 100% 原样。 */
+    因此无需再做 CSS 作用域隔离，样式 100% 原样。
+
+    两个例外要保住，否则排版会失真：
+      1. <link rel="stylesheet"> → 转成 @import（见 linkToImport）
+      2. <meta name="viewport">  → 移动端布局必需，且无攻击面 */
 function sanitizeHtml(html) {
+  html = linkToImport(html);
+  // viewport 先用占位符保护起来，躲过下面的 meta 黑名单，净化完再还原
+  html = html.replace(/<meta\b[^>]*>/gi, tag =>
+    /\bname\s*=\s*(["'])?viewport\b/i.test(tag) ? '\u0002VIEWPORT\u0002' : tag
+  );
+
   html = html.replace(/<\s*script\b[^>]*>[\s\S]*?<\s*\/\s*script\s*>/gi, '');
   html = html.replace(/<\s*\/?\s*script\b[^>]*>/gi, '');
   html = html.replace(/<\s*(iframe|object|embed|form|link|meta)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '');
@@ -360,7 +417,8 @@ function sanitizeHtml(html) {
   html = html.replace(/(href|src)\s*=\s*(?!["'])(javascript|vbscript):[^\s>]*/gi, '');
   html = html.replace(/(?<![-\w])behavior\s*:/gi, '');  // 老 IE 行为（不误伤 scroll-behavior）
   html = html.replace(/expression\s*\(/gi, '');          // 老 IE 的 CSS 表达式
-  return html.trim();
+
+  return html.replace(/\u0002VIEWPORT\u0002/g, '<meta name="viewport" content="width=device-width, initial-scale=1">').trim();
 }
 
 /** 详情页「滚动显现动画」驱动器（站点注入的安全脚本，随 raw 输出附带） */
@@ -391,12 +449,42 @@ const REVEAL_SCRIPT = `
 
 /** 输出故事的原始 HTML（沙箱隔离，供 iframe/新窗口阅读） */
 function serveRawStory(res, story) {
+  const title = String(story.title || '故事').replace(/[<>&"]/g, '');
   const body = String(story.content || '');
-  const html = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n' +
-    '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
-    '<title>' + String(story.title || '故事').replace(/[<>&"]/g, '') + '</title>\n' +
-    '<style>html,body{margin:0;padding:0;}</style>\n' +
-    '</head>\n<body>\n' + body + '\n' + REVEAL_SCRIPT + '\n</body>\n</html>';
+  const shim = '<style>\n' + FONT_SHIM_CSS + '\n</style>\n';
+  let html;
+
+  // 作者上传的可能是完整网页（<!DOCTYPE html> / <html>）。这种情况原样输出，
+  // 不再套一层壳 —— 否则 <head> 里的 viewport、样式表顺序、<base> 全被打乱，
+  // 移动端会按 980px 布局宽度渲染，排版直接变形。
+  if (/<(?:!doctype\s+html|html)\b/i.test(body)) {
+    html = body;
+    const head = html.match(/<head\b[^>]*>/i);
+    if (head) {
+      // 垫片插在 <head> 最前面：优先级最低，作者自己的样式表随后覆盖
+      const pos = head.index + head[0].length;
+      html = html.slice(0, pos) + '\n' + shim + html.slice(pos);
+    } else {
+      const root = html.match(/<html\b[^>]*>/i);
+      if (root) {
+        const pos = root.index + root[0].length;
+        html = html.slice(0, pos) + '\n<head>\n<meta charset="UTF-8">\n' +
+          '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
+          '<title>' + title + '</title>\n' + shim + '</head>\n' + html.slice(pos);
+      } else {
+        html = shim + html;
+      }
+    }
+    if (/<\/body>/i.test(html)) html = html.replace(/<\/body>/i, REVEAL_SCRIPT + '\n</body>');
+    else html += '\n' + REVEAL_SCRIPT;
+  } else {
+    html = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
+      '<title>' + title + '</title>\n' +
+      '<style>html,body{margin:0;padding:0;}</style>\n' + shim +
+      '</head>\n<body>\n' + body + '\n' + REVEAL_SCRIPT + '\n</body>\n</html>';
+  }
+
   res.writeHead(200, {
     'Content-Type': 'text/html; charset=utf-8',
     // 沙箱化：文档为独立源，内部脚本无法访问站点数据/存储，仅可运行自身动画

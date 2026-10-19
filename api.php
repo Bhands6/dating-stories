@@ -300,12 +300,80 @@ function db_transaction(callable $fn)
 }
 
 /**
+ * 把 <link rel="stylesheet"> 转成 <style>@import url("...")</style>。
+ *
+ * 净化流程会删掉 link 标签（防 preconnect / icon / preload 之类的外链探测），
+ * 但样式表本身是排版的一部分：AI 生成的 HTML 几乎都用
+ *   <link href="https://fonts.googleapis.com/css2?family=..." rel="stylesheet">
+ * 引入字体。整条丢弃后，字体只剩 font-family 声明、没有字体文件，
+ * 浏览器必然回退成系统默认宋体 —— 用户看到的就是「字体不显示」。
+ *
+ * 转成 @import 之后：link 元素依然进不了 DOM，样式表照常加载。
+ * 只放行 http(s) 与协议相对地址，data/file/javascript 一律丢弃。
+ */
+function link_to_import(string $html): string
+{
+    return preg_replace_callback('#<link\b[^>]*>#i', static function (array $m): string {
+        $tag = $m[0];
+        // 只处理样式表；preconnect / icon / preload 直接丢弃
+        if (!preg_match('#\brel\s*=\s*("|\')?[^"\'>]*\bstylesheet\b#i', $tag)) {
+            return '';
+        }
+        if (!preg_match('#\bhref\s*=\s*("|\')([^"\']+)\1#i', $tag, $h)) {
+            return '';
+        }
+        $url = trim($h[2]);
+        // URL 里不允许出现引号（正则已排除），避免逃出 @import 的字符串
+        if (!preg_match('#^(?:https?:)?//#i', $url)) {
+            return '';
+        }
+        return '<style>@import url("' . $url . '");</style>';
+    }, $html) ?? '';
+}
+
+/**
+ * 字体兼容垫片：随 raw 页注入到 <head> 最前面（优先级最低，作者样式可覆盖）。
+ *
+ * 作者 HTML 常写 font-family:'Noto Serif SC' 却不带字体文件；字体 CDN 在
+ * 国内基本不可达，一旦加载失败就回退成系统宋体，观感和原设计差很远。
+ * 这里用 @font-face + local() 把高频字体名映射到本机已有的等价字体：
+ * 零网络请求、必然命中、不会闪字（local 是同步的）。
+ * 若本机真装了同名字体，local('同名') 排第一位，仍然优先用真字体。
+ */
+const FONT_SHIM_CSS = <<<'CSS'
+@font-face{font-family:'Noto Serif SC';src:local('Noto Serif SC'),local('Source Han Serif SC'),local('Source Han Serif CN'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('SimSun');font-display:swap}
+@font-face{font-family:'Noto Sans SC';src:local('Noto Sans SC'),local('Source Han Sans SC'),local('Source Han Sans CN'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('SimHei');font-display:swap}
+@font-face{font-family:'Source Han Serif SC';src:local('Source Han Serif SC'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('SimSun')}
+@font-face{font-family:'Source Han Sans SC';src:local('Source Han Sans SC'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('SimHei')}
+@font-face{font-family:'LXGW WenKai';src:local('LXGW WenKai'),local('霞鹜文楷'),local('KaiTi'),local('STKaiti'),local('楷体')}
+@font-face{font-family:'Ma Shan Zheng';src:local('Ma Shan Zheng'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti')}
+@font-face{font-family:'Zhi Mang Xing';src:local('Zhi Mang Xing'),local('STXingkai'),local('华文行楷'),local('KaiTi')}
+@font-face{font-family:'Long Cang';src:local('Long Cang'),local('STXingkai'),local('华文行楷'),local('KaiTi')}
+@font-face{font-family:'ZCOOL KuaiLe';src:local('ZCOOL KuaiLe'),local('YouYuan'),local('幼圆'),local('Microsoft YaHei')}
+@font-face{font-family:'Inter';src:local('Inter'),local('Segoe UI'),local('Helvetica Neue'),local('Arial')}
+@font-face{font-family:'Roboto';src:local('Roboto'),local('Segoe UI'),local('Arial')}
+@font-face{font-family:'Playfair Display';src:local('Playfair Display'),local('Georgia'),local('Times New Roman')}
+@font-face{font-family:'Merriweather';src:local('Merriweather'),local('Georgia')}
+@font-face{font-family:'Lora';src:local('Lora'),local('Georgia')}
+CSS;
+
+/**
  * HTML 轻净化：去 script/危险属性（保留 style/结构/动画）。
  * mode=html 的内容阅读时通过沙箱 iframe（route=raw）渲染，与站点完全隔离，
  * 因此无需再做 CSS 作用域隔离，样式 100% 原样。
+ *
+ * 两个例外要保住，否则排版会失真：
+ *   1. <link rel="stylesheet"> → 转成 @import（见 link_to_import）
+ *   2. <meta name="viewport">  → 移动端布局必需，且无攻击面
  */
 function sanitize_html(string $html): string
 {
+    $html = link_to_import($html);
+    // viewport 先用占位符保护起来，躲过下面的 meta 黑名单，净化完再还原
+    $html = preg_replace_callback('#<meta\b[^>]*>#i', static function (array $m): string {
+        return preg_match('#\bname\s*=\s*("|\')?viewport\b#i', $m[0]) ? "\x02VIEWPORT\x02" : $m[0];
+    }, $html) ?? '';
+
     $html = preg_replace('#<\s*script\b[^>]*>[\s\S]*?<\s*/\s*script\s*>#is', '', $html) ?? '';
     $html = preg_replace('#<\s*/?\s*script\b[^>]*>#is', '', $html) ?? '';
     $html = preg_replace('#<\s*(iframe|object|embed|form|link|meta)\b[^>]*>.*?<\s*/\s*\1\s*>#is', '', $html) ?? '';
@@ -315,7 +383,8 @@ function sanitize_html(string $html): string
     $html = preg_replace('#(href|src)\s*=\s*(?!["\'])(javascript|vbscript):[^\s>]*#i', '', $html) ?? '';
     $html = preg_replace('#(?<![-\w])behavior\s*:#i', '', $html) ?? '';
     $html = preg_replace('#expression\s*\(#i', '', $html) ?? '';
-    return trim($html);
+
+    return trim(str_replace("\x02VIEWPORT\x02", '<meta name="viewport" content="width=device-width, initial-scale=1">', $html));
 }
 
 /** 详情页「滚动显现动画」驱动器（站点注入的安全脚本，随 raw 输出附带） */
@@ -350,11 +419,42 @@ function serve_raw_story(array $story): void
 {
     $title = preg_replace('/[<>&"]/', '', (string)($story['title'] ?? '故事')) ?: '故事';
     $body = (string)($story['content'] ?? '');
-    $html = "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"UTF-8\">\n"
-        . "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
-        . "<title>" . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . "</title>\n"
-        . "<style>html,body{margin:0;padding:0;}</style>\n"
-        . "</head>\n<body>\n" . $body . "\n" . REVEAL_SCRIPT . "\n</body>\n</html>";
+    $shim = "<style>\n" . FONT_SHIM_CSS . "\n</style>\n";
+
+    // 作者上传的可能是完整网页（<!DOCTYPE html> / <html>）。这种情况原样输出，
+    // 不再套一层壳 —— 否则 <head> 里的 viewport、样式表顺序、<base> 全被打乱，
+    // 移动端会按 980px 布局宽度渲染，排版直接变形。
+    if (preg_match('#<(?:!doctype\s+html|html)\b#i', $body)) {
+        $html = $body;
+        if (preg_match('#<head\b[^>]*>#i', $html, $m, PREG_OFFSET_CAPTURE)) {
+            // 垫片插在 <head> 最前面：优先级最低，作者自己的样式表随后覆盖
+            $pos  = $m[0][1] + strlen($m[0][0]);
+            $html = substr($html, 0, $pos) . "\n" . $shim . substr($html, $pos);
+        } elseif (preg_match('#<html\b[^>]*>#i', $html, $m, PREG_OFFSET_CAPTURE)) {
+            $pos  = $m[0][1] + strlen($m[0][0]);
+            $html = substr($html, 0, $pos)
+                . "\n<head>\n<meta charset=\"UTF-8\">\n"
+                . "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
+                . "<title>" . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . "</title>\n"
+                . $shim . "</head>\n"
+                . substr($html, $pos);
+        } else {
+            $html = $shim . $html;
+        }
+        if (stripos($html, '</body>') !== false) {
+            $html = preg_replace('#</body>#i', REVEAL_SCRIPT . "\n</body>", $html, 1) ?? $html;
+        } else {
+            $html .= "\n" . REVEAL_SCRIPT;
+        }
+    } else {
+        $html = "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"UTF-8\">\n"
+            . "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
+            . "<title>" . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . "</title>\n"
+            . "<style>html,body{margin:0;padding:0;}</style>\n"
+            . $shim
+            . "</head>\n<body>\n" . $body . "\n" . REVEAL_SCRIPT . "\n</body>\n</html>";
+    }
+
     header('Content-Type: text/html; charset=utf-8');
     // 沙箱化：文档为独立源，内部脚本无法访问站点数据/存储，仅可运行自身动画
     header("Content-Security-Policy: sandbox allow-scripts");
