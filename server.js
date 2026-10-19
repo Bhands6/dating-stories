@@ -1318,9 +1318,13 @@ function handleApi(req, res, url, body) {
         }
         for (const k in newCounts) target[k] = newCounts[k];
         dbSave(db);
+        const hadSource = fs.existsSync(uploadPath(id));
         // 正文被真正改写过 → 原始文件作废（否则读者看到的仍是旧原文，编辑像没生效）
         if (contentChanged) uploadSourceDelete(id);
-        return json(res, { ok: true, message: '已保存' });
+        return json(res, {
+          ok: true,
+          message: (contentChanged && hadSource) ? '已保存（原始文件已删除）' : '已保存'
+        });
       }
 
       // 置顶/取消置顶（独立开关，不必打开编辑弹窗）
@@ -1372,6 +1376,8 @@ function handleApi(req, res, url, body) {
         excerpt: makeExcerpt(s.content || '', s.mode || 'text'),
         pinned: !!s.pinned,
         realCount: Number(s.realCount) || 0,
+        // 是否有原始 HTML 文件存档：管理页据此提示「编辑会替换原文」
+        hasSource: fs.existsSync(uploadPath(s.id)),
       }));
       return json(res, { ok: true, total, page, pageSize, hasMore: page * pageSize < total, items });
     }

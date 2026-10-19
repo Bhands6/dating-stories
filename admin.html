@@ -183,6 +183,10 @@
         font-size: 11px; color: var(--primary); background: #fff0f3;
         padding: 2px 8px; border-radius: 10px; white-space: nowrap; font-weight: 600;
     }
+    .fb-src-badge {
+        font-size: 11px; color: #3b7a57; background: #eefaf1;
+        padding: 2px 8px; border-radius: 10px; white-space: nowrap; font-weight: 600;
+    }
     #list-wrap .fb-item .fb-pin { cursor: pointer; }
         .fb-cm.on { background: var(--gradient); color: white; border-color: transparent; }
 
@@ -768,6 +772,7 @@
             list.innerHTML = '<div class="empty-tip">📭 该分类下暂时没有故事</div>';
             return;
         }
+        items.forEach(it => { storySourceFlags[it.id] = !!it.hasSource; });
         list.innerHTML = items.map(it => {
             const tagBadges = (it.tags || []).map(t => `<span class="fb-tag">${esc(TAG_NAMES[t] || t)}</span>`).join('')
                 || '<span class="fb-tag empty">无标签</span>';
@@ -777,6 +782,7 @@
                     <div class="fb-ava">${esc((it.title || '故').charAt(0))}</div>
                     <span class="fb-name">${esc(it.title)}</span>
                     ${it.pinned ? '<span class="fb-pinned-badge">📌 置顶</span>' : ''}
+                    ${it.hasSource ? '<span class="fb-src-badge" title="上传过原始 HTML 文件，原文阅读直接读它">📄 原件</span>' : ''}
                     <span class="fb-time">${fmtTime(it.createdAt)}</span>
                     <span class="fb-contact">👁️ ${it.views} · ❤️ ${it.likes} · 💬 ${it.commentsCount}${Number(it.realCount) > 0 ? ` · <span class="fb-real" title="真实鉴定数">✔ ${fmtNum(it.realCount)}</span>` : ''}</span>
                 </div>
@@ -1110,10 +1116,15 @@
 
     /* ==================== 编辑故事 ==================== */
     let editingId = null;
+    // 编辑时的原文保护：判断这篇是否有「原始 HTML 文件存档」、打开时的正文内容
+    let editingHasSource = false;
+    let editingOriginalContent = '';
+    const storySourceFlags = {};   // id → 是否有 uploads/{id}.html
     let editingTags = [];
 
     async function openEdit(id) {
         editingId = id;
+        editingHasSource = !!storySourceFlags[id];
         try {
             // 注意：本页的 api() 只发 POST，而 story 是 GET 接口，这里直接 fetch
             const r = await fetch('api.php?route=story&id=' + encodeURIComponent(id) + '&count=0');
@@ -1123,6 +1134,7 @@
             editingTags = (s.tags || []).slice();
             $('#edit-title').value = s.title || '';
             $('#edit-content').value = s.content || '';
+            editingOriginalContent = String(s.content || '').trim();
             $('#edit-likes').value = Number(s.likes || 0);
             $('#edit-views').value = Number(s.views || 0);
         $('#edit-real').value = Number(s.realCount || 0);
@@ -1162,14 +1174,24 @@
         const content = $('#edit-content').value.trim();
         if (!title) { toast('标题不能为空', 'error'); return; }
         if (!content) { toast('正文不能为空', 'error'); return; }
+        // 有原始 HTML 文件存档、且正文确实改了 → 保存会删除原件，先确认
+        if (editingHasSource && content !== editingOriginalContent) {
+            const ok = confirm(
+                '这篇故事有原始 HTML 文件存档。\n\n' +
+                '保存修改后，原始文件会被删除，「原文阅读」改为显示你编辑后的正文 ——\n' +
+                '原文件里的样式、脚本和排版会一并丢失，且无法恢复。\n\n' +
+                '确定继续吗？'
+            );
+            if (!ok) return;
+        }
         const likes = $('#edit-likes').value;
         const views = $('#edit-views').value;
         const real = $('#edit-real').value;
         const btn = $('#edit-save');
         btn.disabled = true;
         try {
-            await api({ key: getKey(), op: 'update', id: editingId, title, content, tags: editingTags, likes, views, realCount: real }, 'admin_stories');
-            toast('💾 已保存');
+            const res = await api({ key: getKey(), op: 'update', id: editingId, title, content, tags: editingTags, likes, views, realCount: real }, 'admin_stories');
+            toast('💾 ' + (res.message || '已保存'));
             closeEdit();
             loadList();
             loadOverview();      // 可能改了点赞/浏览数，概览跟着刷

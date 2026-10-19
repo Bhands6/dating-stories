@@ -1678,8 +1678,12 @@ switch ($route) {
                 fail('内容太长啦，最多 ' . substr($status, 9) . ' 个字符');
             }
             // 正文被真正改写过 → 原始文件作废（否则读者看到的仍是旧原文，编辑像没生效）
+            $hadSource = is_file(upload_path($id));
             if ($contentChanged) { upload_source_delete($id); }
-            respond(['ok' => true, 'message' => '已保存']);
+            respond([
+                'ok'      => true,
+                'message' => ($contentChanged && $hadSource) ? '已保存（原始文件已删除）' : '已保存',
+            ]);
         }
 
         // 置顶/取消置顶（独立开关，不必打开编辑弹窗）
@@ -1750,6 +1754,8 @@ switch ($route) {
             'excerpt'       => make_excerpt((string)($s['content'] ?? ''), (string)($s['mode'] ?? 'text')),
             'pinned'        => !empty($s['pinned']),
             'realCount'     => (int)($s['realCount'] ?? 0),
+            // 是否有原始 HTML 文件存档：管理页据此提示「编辑会替换原文」
+            'hasSource'     => is_file(upload_path((int)$s['id'])),
         ], array_slice($items, ($page - 1) * $pageSize, $pageSize));
 
         respond([
