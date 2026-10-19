@@ -2106,6 +2106,7 @@ switch ($route) {
             'id'            => (int)$s['id'],
             'title'         => (string)$s['title'],
             'views'         => (int)$s['views'],
+            'likes'         => (int)($s['likes'] ?? 0),
             'commentsCount' => comments_count($s),
         ], $arr)]);
     }

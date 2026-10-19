@@ -1652,7 +1652,7 @@ function handleApi(req, res, url, body) {
         .slice()
         .sort((a, b) => hotScore(b) - hotScore(a))
         .slice(0, limit)
-        .map(s => ({ id: s.id, title: s.title, views: s.views, commentsCount: commentsCount(s) }));
+        .map(s => ({ id: s.id, title: s.title, views: s.views, likes: s.likes | 0, commentsCount: commentsCount(s) }));
       return json(res, { ok: true, stories });
     }
 

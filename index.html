@@ -3413,7 +3413,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
                     <div class="hot-rank r${i + 1}">${i + 1}</div>
                     <div class="hot-info">
                         <h4>${esc(s.title)}</h4>
-                        <p>🔥 ${fmtNum(s.views)} 阅读 · ${fmtNum(s.commentsCount)} 评论</p>
+                        <p>🔥 ${fmtNum(s.views)} 阅读 · ❤️ ${fmtNum(s.likes || 0)} 赞 · ${fmtNum(s.commentsCount)} 评论</p>
                     </div>
                 </div>`).join('');
             list.querySelectorAll('.hot-item').forEach(item => {
