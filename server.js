@@ -615,11 +615,48 @@ const REVEAL_SCRIPT = `
 })();
 </script>`;
 
-/** 输出故事的原始 HTML（沙箱隔离，供 iframe/新窗口阅读） */
-function serveRawStory(res, story) {
+/* ================= 原始 HTML 源文件（原样保存、原样阅读） =================
+   与 api.php 一致：上传的 .html 另存 data/uploads/{id}.html，raw 优先读它。
+   安全边界靠双重沙箱 + CSP 收紧（connect-src 'none' / form-action 'none'），
+   而不是靠删标签。 */
+
+const UPLOAD_MAX_BYTES = 524288;   // 单文件上限 512KB
+const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
+
+const uploadPath = id => path.join(UPLOAD_DIR, String(parseInt(id, 10) || 0) + '.html');
+
+function uploadSourceWrite(id, html) {
+  try {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    const target = uploadPath(id);
+    const tmp = target + '.' + process.pid + '.tmp';
+    fs.writeFileSync(tmp, html);
+    fs.renameSync(tmp, target);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function uploadSourceRead(id) {
+  try {
+    const target = uploadPath(id);
+    return fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function uploadSourceDelete(id) {
+  try { fs.unlinkSync(uploadPath(id)); } catch (e) { /* 文件不存在则忽略 */ }
+}
+
+/** 输出故事的原始 HTML（沙箱隔离，供 iframe/新窗口阅读）
+ *  rawSource 不为 null 时用原始文件（未净化），否则回落到净化后的 content */
+function serveRawStory(res, story, rawSource) {
   const title = String(story.title || '故事').replace(/[<>&"]/g, '');
   // 存量内容里可能残留 Google 字体地址（新发布会转成 @import），统一改写成站内代理
-  const body = rewriteGoogleFontUrls(String(story.content || ''));
+  const body = rewriteGoogleFontUrls(rawSource != null ? rawSource : String(story.content || ''));
   // 垫片在前（本机字体兜底），Google CSS 在后（真字体覆盖同名定义，src 已带 local 前缀）
   const shim = '<style>\n' + FONT_SHIM_CSS + '\n</style>\n' + fontLinkTags(body);
   let html;
@@ -657,8 +694,9 @@ function serveRawStory(res, story) {
 
   res.writeHead(200, {
     'Content-Type': 'text/html; charset=utf-8',
-    // 沙箱化：文档为独立源，内部脚本无法访问站点数据/存储，仅可运行自身动画
-    'Content-Security-Policy': 'sandbox allow-scripts',
+    // 沙箱化：文档为独立源，内部脚本无法访问站点数据/存储，仅可运行自身动画。
+    // 原始源文件模式会带上作者的 <script>，因此再收紧一层：禁网络外联与表单提交
+    'Content-Security-Policy': "sandbox allow-scripts; connect-src 'none'; form-action 'none'; base-uri 'none'",
     'Cache-Control': 'no-cache'
   });
   res.end(html);
@@ -855,16 +893,32 @@ function handleApi(req, res, url, body) {
     case 'stories': {
       if (method === 'POST') {
         const title = String(body.title || '').trim();
-        const content = String(body.content || '').trim();
+        let content = String(body.content || '').trim();
+        const source = String(body.source || '');
         const mode = body.mode === 'html' ? 'html' : 'text';
         let nickname = String(body.nickname || '').trim();
         const tagsIn = Array.isArray(body.tags) ? body.tags : [];
 
         if (!title) return fail(res, '故事标题不能为空');
         if (Array.from(title).length > 60) return fail(res, '标题最多 60 个字');
+
+        // 原始源文件模式：完整文件另存到 data/uploads/{id}.html，阅读时原样输出；
+        // content 仍存净化版（截断到 5 万字）供列表摘要与搜索，避免 stories.json 膨胀
+        let keepSource = false;
+        if (mode === 'html' && source) {
+          if (Buffer.byteLength(source, 'utf8') > UPLOAD_MAX_BYTES) {
+            return fail(res, `源文件太大啦，最多 ${UPLOAD_MAX_BYTES / 1024}KB`);
+          }
+          if (!/<[a-z!/][^>]*>/i.test(source)) return fail(res, '源文件内容不像 HTML');
+          content = Array.from(sanitizeHtml(source)).slice(0, 50000).join('');
+          keepSource = true;
+        }
+
         if (!content) return fail(res, '故事内容不能为空');
         const maxLen = mode === 'html' ? 50000 : 20000;
-        if (Array.from(content).length > maxLen) return fail(res, `内容太长啦，最多 ${maxLen} 个字符`);
+        if (!keepSource && Array.from(content).length > maxLen) {
+          return fail(res, `内容太长啦，最多 ${maxLen} 个字符`);
+        }
         if (Array.from(nickname).length > 20) return fail(res, '昵称最多 20 个字符');
         if (!nickname) nickname = randomNickname();
 
@@ -890,6 +944,8 @@ function handleApi(req, res, url, body) {
         story.editKey = editKey;
         db.stories.unshift(story);
         dbSave(db);
+        // 落盘原始文件：写失败不影响发布（raw 会退回净化版显示）
+        if (keepSource) uploadSourceWrite(story.id, source);
         const full = storyFull(story);
         full.editKey = editKey;
         return json(res, { ok: true, story: full });
@@ -939,7 +995,7 @@ function handleApi(req, res, url, body) {
       const db = dbLoad();
       const s = db.stories.find(x => x.id === id);
       if (!s) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('404 Not Found'); return; }
-      if (s.mode === 'html') { serveRawStory(res, s); return; }
+      if (s.mode === 'html') { serveRawStory(res, s, uploadSourceRead(s.id)); return; }
       // 纯文本故事：简单排版输出
       const escText = String(s.content || '')
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -1138,6 +1194,8 @@ function handleApi(req, res, url, body) {
       }
       db.stories.splice(idx, 1);
       dbSave(db);
+      // 原始 HTML 文件随故事一起清理，避免 data/uploads 里留下孤儿文件
+      uploadSourceDelete(s.id);
       // 🔔 记录访客自发删除（管理页「删除动态」提示用）；记录失败不影响删除本身
       recordDeletion({
         type: 'story', storyId: s.id,
@@ -1168,6 +1226,8 @@ function handleApi(req, res, url, body) {
         const removed = before - db.stories.length;
         if (removed === 0) return fail(res, '未找到这些故事，可能已被删除');
         dbSave(db);
+        // 原始 HTML 文件随故事一起清理
+        ids.forEach(uploadSourceDelete);
 
         if (ids.length > 1) {
           return json(res, { ok: true, message: `已删除 ${removed} 篇故事`, removed });
@@ -1204,8 +1264,10 @@ function handleApi(req, res, url, body) {
         const max = mode === 'html' ? 50000 : 20000;
         if (Array.from(content).length > max) return fail(res, `内容太长啦，最多 ${max} 个字符`);
 
+        const newBody = mode === 'html' ? sanitizeHtml(content) : content;
+        const contentChanged = newBody !== String(target.content || '');
         target.title = title;
-        target.content = mode === 'html' ? sanitizeHtml(content) : content;
+        target.content = newBody;
         if (Array.isArray(tagsIn)) {
           let tags = [...new Set(tagsIn.filter(t => VALID_TAGS.includes(t)))].slice(0, 4);
           if (!tags.length) tags = ['daily'];
@@ -1213,6 +1275,8 @@ function handleApi(req, res, url, body) {
         }
         for (const k in newCounts) target[k] = newCounts[k];
         dbSave(db);
+        // 正文被真正改写过 → 原始文件作废（否则读者看到的仍是旧原文，编辑像没生效）
+        if (contentChanged) uploadSourceDelete(id);
         return json(res, { ok: true, message: '已保存' });
       }
 

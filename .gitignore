@@ -22,6 +22,9 @@ data/deletions.json
 # 字体代理的落盘缓存（Google Fonts 中转产物，可随时删除自动重建）
 data/fontcache/
 
+# 上传的原始 HTML 源文件（作者内容，属隐私数据；不进仓库但必须备份）
+data/uploads/
+
 # 互斥锁与原子写的临时文件（运行时产物，不进仓库）
 data/*.lock
 data/*.tmp

@@ -890,6 +890,10 @@
     }
 
     /* ===== 导入本地 HTML 文件 ===== */
+    // 记住最近一次导入的文件原文：发布时原样上传，服务端落盘后「原文阅读」按原样输出
+    // （作者文件里的 <script>、<style>、注释都不再被净化改写）
+    let importedSource = '';
+
     function handleHtmlFile(file) {
         if (!file) return;
         const isHtml = /\.(html?|htm)$/i.test(file.name) || file.type === 'text/html';
@@ -931,16 +935,22 @@
             const ta = document.getElementById('story-content');
             if (ta.value.trim() && !confirm('导入「' + file.name + '」会替换当前编辑器里的内容，确定继续吗？')) return;
             ta.value = content;
+            importedSource = content;   // 发布时原样上传这份原文
             switchEditor('html', true); // 导入文件场景已会操作，不弹 AI 引导
             if (isFullDoc) {
-                toast('📄 已导入 ' + file.name + '（完整网页，已保留 <head> 与字体引用）');
+                toast('📄 已导入 ' + file.name + '（原文件将原样保存，阅读时完整还原）');
             } else {
                 toast(styleCount
-                    ? '📄 已导入 ' + file.name + '（含 ' + styleCount + ' 段样式表）'
+                    ? '📄 已导入 ' + file.name + '（原文件将原样保存，含 ' + styleCount + ' 段样式表）'
                     : '📄 已导入 ' + file.name + '（文件未含样式表，如需样式请在内容里加 <style>）');
             }
         }).catch(() => toast('文件读取失败，请重试', 'error'));
     }
+
+    // 导入后一旦手改内容，就不再按「原文件」提交（改为提交编辑后的 HTML）
+    document.getElementById('story-content').addEventListener('input', function () {
+        if (importedSource && this.value !== importedSource) importedSource = '';
+    });
 
     document.getElementById('html-file').addEventListener('change', function () {
         if (this.files && this.files[0]) handleHtmlFile(this.files[0]);
@@ -1029,7 +1039,12 @@
         btn.disabled = true;
         btn.innerHTML = '发布中…';
         try {
-            const d = await api('stories', null, { title, content, mode, tags, nickname: nickEl.value.trim() });
+            const payload = { title, content, mode, tags, nickname: nickEl.value.trim() };
+            // 来自上传且未被编辑 → 原样提交源文件，由服务端落盘（不受 5 万字符限制）
+            if (mode === 'html' && importedSource && content === importedSource) {
+                payload.source = importedSource;
+            }
+            const d = await api('stories', null, payload);
             // 记住"我发布的故事"的删除凭证（仅存在本机浏览器）
             try {
                 const myKeys = JSON.parse(localStorage.getItem('fs_my_keys') || '{}');

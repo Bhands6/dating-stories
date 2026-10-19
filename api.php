@@ -612,11 +612,64 @@ const REVEAL_SCRIPT = <<<'HTML'
 </script>
 HTML;
 
-/** 输出故事的原始 HTML（沙箱隔离，供 iframe/新窗口阅读） */
-function serve_raw_story(array $story): void
+/* ================= 原始 HTML 源文件（原样保存、原样阅读） =================
+ *
+ * 上传的 .html 源文件单独落盘到 data/uploads/{id}.html，raw 路由优先读它。
+ * 作者文件里的 <script>、<style>、注释、渲染结构都保持原样 ——
+ * 净化版（stories.json 的 content）只用于列表摘要与搜索，不再承担「显示全文」。
+ *
+ * 安全边界靠双重沙箱 + CSP 收紧，而不是靠删标签：
+ *   - iframe sandbox="allow-scripts" + 响应头 CSP: sandbox allow-scripts
+ *     → 文档是独立的不透明源，读不到站点 cookie / localStorage / 同源接口
+ *   - connect-src 'none'  → fetch / XHR / WebSocket 全禁（挡挖矿与外传）
+ *   - form-action 'none'  → 挡住钓鱼表单提交
+ *   - base-uri 'none'     → 防止用 <base> 劫持相对地址
+ */
+
+const UPLOAD_MAX_BYTES = 524288;   // 单文件上限 512KB（与前端上传限制一致）
+
+function upload_dir(): string
+{
+    return DATA_DIR . '/uploads';
+}
+
+function upload_path(int $id): string
+{
+    return upload_dir() . '/' . $id . '.html';
+}
+
+/** 写入原始 HTML；返回是否成功（失败不影响发布，只是退回净化版显示） */
+function upload_source_write(int $id, string $html): bool
+{
+    $dir = upload_dir();
+    if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) { return false; }
+    $path = upload_path($id);
+    $tmp  = $path . '.' . getmypid() . '.tmp';
+    if (@file_put_contents($tmp, $html) === false) { return false; }
+    if (!@rename($tmp, $path)) { @unlink($tmp); return false; }
+    return true;
+}
+
+function upload_source_read(int $id): ?string
+{
+    $path = upload_path($id);
+    if (!is_file($path)) { return null; }
+    $body = @file_get_contents($path);
+    return $body === false ? null : $body;
+}
+
+function upload_source_delete(int $id): void
+{
+    $path = upload_path($id);
+    if (is_file($path)) { @unlink($path); }
+}
+
+/** 输出故事的原始 HTML（沙箱隔离，供 iframe/新窗口阅读）
+ *  $rawSource 不为 null 时用原始文件（未净化），否则回落到净化后的 content */
+function serve_raw_story(array $story, ?string $rawSource = null): void
 {
     $title = preg_replace('/[<>&"]/', '', (string)($story['title'] ?? '故事')) ?: '故事';
-    $body = (string)($story['content'] ?? '');
+    $body = $rawSource !== null ? $rawSource : (string)($story['content'] ?? '');
     // 存量内容里可能残留 Google 字体地址（新发布会转成 @import），统一改写成站内代理
     $body = rewrite_google_font_urls($body);
     // 垫片在前（本机字体兜底），Google CSS 在后（真字体覆盖同名定义，src 已带 local 前缀）
@@ -657,8 +710,9 @@ function serve_raw_story(array $story): void
     }
 
     header('Content-Type: text/html; charset=utf-8');
-    // 沙箱化：文档为独立源，内部脚本无法访问站点数据/存储，仅可运行自身动画
-    header("Content-Security-Policy: sandbox allow-scripts");
+    // 沙箱化：文档为独立源，内部脚本无法访问站点数据/存储，仅可运行自身动画。
+    // 原始源文件模式会带上作者的 <script>，因此再收紧一层：禁网络外联与表单提交
+    header("Content-Security-Policy: sandbox allow-scripts; connect-src 'none'; form-action 'none'; base-uri 'none'");
     header('Cache-Control: no-cache');
     echo $html;
     exit;
@@ -1052,14 +1106,28 @@ switch ($route) {
             $in = body_json();
             $title = trim((string)($in['title'] ?? ''));
             $content = trim((string)($in['content'] ?? ''));
+            $source = (string)($in['source'] ?? '');   // 上传的原始 .html 全文（可选）
             $mode = ($in['mode'] ?? 'text') === 'html' ? 'html' : 'text';
             $nickname = trim((string)($in['nickname'] ?? ''));
             $tagsIn = (array)($in['tags'] ?? []);
 
             if ($title === '') { fail('故事标题不能为空'); }
             if (mb_strlen($title) > 60) { fail('标题最多 60 个字'); }
+
+            // 原始源文件模式：完整文件另存到 data/uploads/{id}.html，阅读时原样输出；
+            // content 仍存净化版（截断到 5 万字）供列表摘要与搜索，避免 stories.json 膨胀
+            $keepSource = false;
+            if ($mode === 'html' && $source !== '') {
+                if (strlen($source) > UPLOAD_MAX_BYTES) {
+                    fail('源文件太大啦，最多 ' . (int)(UPLOAD_MAX_BYTES / 1024) . 'KB');
+                }
+                if (!preg_match('#<[a-z!/][^>]*>#i', $source)) { fail('源文件内容不像 HTML'); }
+                $content = mb_substr(sanitize_html($source), 0, 50000);
+                $keepSource = true;
+            }
+
             if ($content === '') { fail('故事内容不能为空'); }
-            if (mb_strlen($content) > ($mode === 'html' ? 50000 : 20000)) {
+            if (!$keepSource && mb_strlen($content) > ($mode === 'html' ? 50000 : 20000)) {
                 fail('内容太长啦，最多 ' . ($mode === 'html' ? 50000 : 20000) . ' 个字符');
             }
             if (mb_strlen($nickname) > 20) { fail('昵称最多 20 个字符'); }
@@ -1092,6 +1160,10 @@ switch ($route) {
                 array_unshift($db['stories'], $story);
                 return $story;
             });
+            // 事务外落盘原始文件：大块 IO 不占数据锁，写失败也不影响发布（退回净化版显示）
+            if ($keepSource) {
+                upload_source_write((int)$created['id'], $source);
+            }
             $full = story_full($created);
             $full['editKey'] = $created['editKey'];
             respond(['ok' => true, 'story' => $full]);
@@ -1144,7 +1216,8 @@ switch ($route) {
         foreach ($db['stories'] as $s) {
             if ((int)$s['id'] === $id) {
                 if (($s['mode'] ?? 'text') === 'html') {
-                    serve_raw_story($s);
+                    // 优先读原始源文件（未净化，作者写什么就显示什么）；没有才回落到净化版
+                    serve_raw_story($s, upload_source_read((int)$s['id']));
                     exit;
                 }
                 // 纯文本故事：简单排版输出
@@ -1461,6 +1534,8 @@ switch ($route) {
                 'comments' => comments_count($gone),
             ]);
         }
+        // 原始 HTML 文件随故事一起清理，避免 data/uploads 里留下孤儿文件
+        upload_source_delete($id);
         respond(['ok' => true, 'message' => '故事已删除']);
     }
 
@@ -1491,6 +1566,9 @@ switch ($route) {
             });
             if ($removed === 0) { fail('未找到这些故事，可能已被删除'); }
 
+            // 原始 HTML 文件随故事一起清理
+            foreach ($ids as $one) { upload_source_delete((int)$one); }
+
             // 批量删除直接返回，不用再拉列表
             if (count($ids) > 1) {
                 respond(['ok' => true, 'message' => '已删除 ' . $removed . ' 篇故事', 'removed' => $removed]);
@@ -1518,15 +1596,18 @@ switch ($route) {
             if (mb_strlen($title) > 60) { fail('标题最多 60 个字'); }
             if ($content === '') { fail('正文不能为空'); }
 
-            $status = db_transaction(static function (array &$db) use ($id, $title, $content, $tagsIn, $newCounts): string {
+            $contentChanged = false;
+            $status = db_transaction(static function (array &$db) use ($id, $title, $content, $tagsIn, $newCounts, &$contentChanged): string {
                 foreach ($db['stories'] as $i => $s) {
                     if ((int)$s['id'] !== $id) { continue; }
                     $mode = ($s['mode'] ?? 'text') === 'html' ? 'html' : 'text';
                     $max  = $mode === 'html' ? 50000 : 20000;
                     if (mb_strlen($content) > $max) { return 'too_long:' . $max; }
 
+                    $newBody = $mode === 'html' ? sanitize_html($content) : $content;
+                    if ($newBody !== (string)($s['content'] ?? '')) { $contentChanged = true; }
                     $db['stories'][$i]['title']   = $title;
-                    $db['stories'][$i]['content'] = $mode === 'html' ? sanitize_html($content) : $content;
+                    $db['stories'][$i]['content'] = $newBody;
                     if (is_array($tagsIn)) {
                         $tags = array_values(array_unique(array_intersect($tagsIn, VALID_TAGS)));
                         if (count($tags) > 4) { $tags = array_slice($tags, 0, 4); }
@@ -1543,6 +1624,8 @@ switch ($route) {
             if (strpos($status, 'too_long:') === 0) {
                 fail('内容太长啦，最多 ' . substr($status, 9) . ' 个字符');
             }
+            // 正文被真正改写过 → 原始文件作废（否则读者看到的仍是旧原文，编辑像没生效）
+            if ($contentChanged) { upload_source_delete($id); }
             respond(['ok' => true, 'message' => '已保存']);
         }
 

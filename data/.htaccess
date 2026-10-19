@@ -6,6 +6,7 @@
 #   feedback.json      网友反馈（可能含联系方式）
 #   deletions.json     访客删除动态（含访客昵称与被删内容摘录）
 #   fontcache/         字体代理缓存（Google Fonts 中转产物，可随时删除自动重建）
+#   uploads/           上传的原始 HTML 源文件（作者内容，未净化）
 #
 # 应用只通过 PHP / Node 的文件系统 API 读取这些文件，HTTP 层永远不需要访问它们。
 # 没有这道拦截时，Web 服务器会把它们当普通静态资源直接返回给公网——
