@@ -10,6 +10,7 @@
 'use strict';
 
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -369,6 +370,163 @@ function linkToImport(html) {
   });
 }
 
+/* ================= 站内字体代理（Google Fonts） =================
+   与 api.php 的 serve_font_proxy 行为一致：
+   浏览器不直连 Google（国内基本超时），由本服务代理并落盘缓存。
+   仅放行 https + fonts.googleapis.com / fonts.gstatic.com，不跟随重定向。 */
+
+const FONT_MAX_BYTES = 3145728;    // 单资源上限 3MB
+const FONT_CACHE_TTL = 2592000;    // 缓存 30 天
+const FONT_CACHE_DIR = path.join(DATA_DIR, 'fontcache');
+const FONT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+/** 站内可代理的字体：小写字体名 => Google Fonts family 参数 */
+const FONT_GOOGLE_MAP = {
+  'zcool xiaowei': 'ZCOOL+XiaoWei',
+  'zcool kuaile': 'ZCOOL+KuaiLe',
+  'zcool qingke huangyou': 'ZCOOL+QingKe+HuangYou',
+  'ma shan zheng': 'Ma+Shan+Zheng',
+  'zhi mang xing': 'Zhi+Mang+Xing',
+  'long cang': 'Long+Cang',
+  'liu jian mao cao': 'Liu+Jian+Mao+Cao',
+  'noto serif sc': 'Noto+Serif+SC',
+  'noto sans sc': 'Noto+Sans+SC',
+  'lxgw wenkai tc': 'LXGW+WenKai+TC',
+  'inter': 'Inter',
+  'roboto': 'Roboto',
+  'playfair display': 'Playfair+Display',
+  'merriweather': 'Merriweather',
+  'lora': 'Lora',
+  'open sans': 'Open+Sans',
+  'lato': 'Lato',
+  'montserrat': 'Montserrat',
+  'poppins': 'Poppins',
+  'noto serif': 'Noto+Serif',
+  'noto sans': 'Noto+Sans',
+  'eb garamond': 'EB+Garamond',
+  'cormorant garamond': 'Cormorant+Garamond'
+};
+
+const b64urlEncode = s => Buffer.from(s, 'utf8').toString('base64')
+  .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const b64urlDecode = s => Buffer.from(String(s).replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+
+/** 外部字体地址 → 站内代理地址 */
+const proxyFontUrl = u => 'api.php?route=font&u=' + b64urlEncode(u);
+
+/** 正文里出现的、站内可代理的字体名（保持首次出现顺序） */
+function usedGoogleFonts(html) {
+  const found = {};
+  const re = /font-family\s*:\s*([^;}\n]+)/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    for (const raw of m[1].split(',')) {
+      const name = raw.trim().replace(/^["']|["']$/g, '').trim().toLowerCase();
+      if (name && FONT_GOOGLE_MAP[name] && !found[name]) found[name] = FONT_GOOGLE_MAP[name];
+    }
+  }
+  return found;
+}
+
+/** 为正文用到的字体生成 <link>（走站内代理，国内可达） */
+function fontLinkTags(html) {
+  const families = Object.values(usedGoogleFonts(html));
+  if (!families.length) return '';
+  return families.map(f =>
+    '<link rel="stylesheet" href="' +
+    proxyFontUrl('https://fonts.googleapis.com/css2?family=' + f + '&display=swap') + '">'
+  ).join('\n') + '\n';
+}
+
+/** 把正文/样式表里的 Google 字体地址全部换成站内代理地址 */
+function rewriteGoogleFontUrls(html) {
+  return html.replace(/https:\/\/fonts\.(?:googleapis|gstatic)\.com\/[^\s"'()]+/gi, u => proxyFontUrl(u));
+}
+
+/** 抓取远端资源（限流大小，失败返回 null） */
+function fontFetch(url) {
+  return new Promise(resolve => {
+    let done = false;
+    const finish = v => { if (!done) { done = true; resolve(v); } };
+    const req = https.get(url, { headers: { 'User-Agent': FONT_UA }, timeout: 8000 }, r => {
+      if (r.statusCode !== 200) { r.resume(); return finish(null); }
+      const chunks = [];
+      let size = 0;
+      r.on('data', c => {
+        size += c.length;
+        if (size > FONT_MAX_BYTES) { req.destroy(); finish(null); } else { chunks.push(c); }
+      });
+      r.on('end', () => finish(Buffer.concat(chunks)));
+      r.on('error', () => finish(null));
+    });
+    req.on('timeout', () => { req.destroy(); finish(null); });
+    req.on('error', () => finish(null));
+  });
+}
+
+/** 字体代理路由：api.php?route=font&u=<base64url(原始URL)> */
+async function serveFontProxy(res, url) {
+  let parsed = null;
+  try { parsed = new URL(b64urlDecode(url.searchParams.get('u') || '')); } catch (e) { /* 非法地址 */ }
+
+  const host = parsed ? parsed.hostname.toLowerCase() : '';
+  if (!parsed || parsed.protocol !== 'https:' ||
+      !['fonts.googleapis.com', 'fonts.gstatic.com'].includes(host)) {
+    res.writeHead(404);
+    return res.end();
+  }
+
+  const isCss = host === 'fonts.googleapis.com';
+  const file = path.join(FONT_CACHE_DIR,
+    crypto.createHash('sha1').update(parsed.href).digest('hex') + (isCss ? '.css' : '.woff2'));
+
+  let buf = null;
+  try {
+    if (Date.now() / 1000 - fs.statSync(file).mtimeMs / 1000 < FONT_CACHE_TTL) buf = fs.readFileSync(file);
+  } catch (e) { /* 未缓存，走远端 */ }
+
+  if (!buf) {
+    buf = await fontFetch(parsed.href);
+    if (buf && buf.length) {
+      try {
+        fs.mkdirSync(FONT_CACHE_DIR, { recursive: true });
+        const tmp = file + '.' + process.pid + '.tmp';
+        fs.writeFileSync(tmp, buf);
+        fs.renameSync(tmp, file);
+      } catch (e) { /* 缓存失败不影响本次响应 */ }
+    }
+  }
+  if (!buf || !buf.length) {
+    res.writeHead(404, { 'Cache-Control': 'no-store' });
+    return res.end();
+  }
+
+  if (isCss) {
+    // woff2 分片地址同样改写成代理；再给每个 @font-face 的 src 加 local() 前缀，
+    // 本机装了同名字体时直接用本机字体，省掉整片字体文件的下载
+    let css = rewriteGoogleFontUrls(buf.toString('utf8'));
+    css = css.replace(/@font-face\s*\{[^}]*\}/gi, block => {
+      const f = block.match(/font-family:\s*(["'])([^"']+)\1/i);
+      if (!f) return block;
+      const esc = f[2].replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      return block.replace(/\bsrc:\s*/i, "src: local('" + esc + "'), ");
+    });
+    res.writeHead(200, {
+      'Content-Type': 'text/css; charset=utf-8',
+      'Cache-Control': 'public, max-age=' + FONT_CACHE_TTL
+    });
+    return res.end(css);
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'font/woff2',
+    // sandbox iframe 是独立的不透明源，字体属 CORS 请求（Origin: null），必须显式放行
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': 'public, max-age=' + FONT_CACHE_TTL
+  });
+  res.end(buf);
+}
+
 /**
  * 字体兼容垫片：随 raw 页注入到 <head> 最前面（优先级最低，作者样式可覆盖）。
  *
@@ -378,15 +536,25 @@ function linkToImport(html) {
  * 零网络请求、必然命中、不会闪字（local 是同步的）。
  */
 const FONT_SHIM_CSS = [
-  "@font-face{font-family:'Noto Serif SC';src:local('Noto Serif SC'),local('Source Han Serif SC'),local('Source Han Serif CN'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('SimSun');font-display:swap}",
-  "@font-face{font-family:'Noto Sans SC';src:local('Noto Sans SC'),local('Source Han Sans SC'),local('Source Han Sans CN'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('SimHei');font-display:swap}",
-  "@font-face{font-family:'Source Han Serif SC';src:local('Source Han Serif SC'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('SimSun')}",
-  "@font-face{font-family:'Source Han Sans SC';src:local('Source Han Sans SC'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('SimHei')}",
-  "@font-face{font-family:'LXGW WenKai';src:local('LXGW WenKai'),local('霞鹜文楷'),local('KaiTi'),local('STKaiti'),local('楷体')}",
-  "@font-face{font-family:'Ma Shan Zheng';src:local('Ma Shan Zheng'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti')}",
-  "@font-face{font-family:'Zhi Mang Xing';src:local('Zhi Mang Xing'),local('STXingkai'),local('华文行楷'),local('KaiTi')}",
-  "@font-face{font-family:'Long Cang';src:local('Long Cang'),local('STXingkai'),local('华文行楷'),local('KaiTi')}",
-  "@font-face{font-family:'ZCOOL KuaiLe';src:local('ZCOOL KuaiLe'),local('YouYuan'),local('幼圆'),local('Microsoft YaHei')}",
+  // 中文衬线 / 宋体系
+  "@font-face{font-family:'Noto Serif SC';src:local('Noto Serif SC'),local('Source Han Serif SC'),local('Source Han Serif CN'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('华文宋体'),local('SimSun'),local('宋体');font-display:swap}",
+  "@font-face{font-family:'Source Han Serif SC';src:local('Source Han Serif SC'),local('Noto Serif SC'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('华文宋体'),local('SimSun')}",
+  "@font-face{font-family:'ZCOOL XiaoWei';src:local('ZCOOL XiaoWei'),local('Source Han Serif SC'),local('Noto Serif SC'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('华文宋体'),local('SimSun')}",
+  "@font-face{font-family:'Songti SC';src:local('Songti SC'),local('STSong'),local('华文宋体'),local('SimSun')}",
+  // 中文无衬线 / 黑体系
+  "@font-face{font-family:'Noto Sans SC';src:local('Noto Sans SC'),local('Source Han Sans SC'),local('Source Han Sans CN'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('微软雅黑'),local('MiSans'),local('HarmonyOS Sans SC'),local('SimHei'),local('黑体');font-display:swap}",
+  "@font-face{font-family:'Source Han Sans SC';src:local('Source Han Sans SC'),local('Noto Sans SC'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('微软雅黑'),local('SimHei')}",
+  "@font-face{font-family:'PingFang SC';src:local('PingFang SC'),local('PingFang Medium'),local('Microsoft YaHei'),local('微软雅黑'),local('Source Han Sans SC'),local('Noto Sans SC')}",
+  "@font-face{font-family:'ZCOOL KuaiLe';src:local('ZCOOL KuaiLe'),local('YouYuan'),local('幼圆'),local('Microsoft YaHei'),local('微软雅黑')}",
+  "@font-face{font-family:'ZCOOL QingKe HuangYou';src:local('ZCOOL QingKe HuangYou'),local('Microsoft YaHei'),local('微软雅黑'),local('SimHei'),local('黑体')}",
+  // 手写 / 书法
+  "@font-face{font-family:'LXGW WenKai';src:local('LXGW WenKai'),local('霞鹜文楷'),local('KaiTi'),local('STKaiti'),local('华文楷体'),local('楷体')}",
+  "@font-face{font-family:'Ma Shan Zheng';src:local('Ma Shan Zheng'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti'),local('楷体')}",
+  "@font-face{font-family:'Zhi Mang Xing';src:local('Zhi Mang Xing'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti')}",
+  "@font-face{font-family:'Long Cang';src:local('Long Cang'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti')}",
+  "@font-face{font-family:'Liu Jian Mao Cao';src:local('Liu Jian Mao Cao'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti')}",
+  "@font-face{font-family:'Kaiti SC';src:local('Kaiti SC'),local('STKaiti'),local('华文楷体'),local('KaiTi'),local('楷体')}",
+  // 西文
   "@font-face{font-family:'Inter';src:local('Inter'),local('Segoe UI'),local('Helvetica Neue'),local('Arial')}",
   "@font-face{font-family:'Roboto';src:local('Roboto'),local('Segoe UI'),local('Arial')}",
   "@font-face{font-family:'Playfair Display';src:local('Playfair Display'),local('Georgia'),local('Times New Roman')}",
@@ -450,8 +618,10 @@ const REVEAL_SCRIPT = `
 /** 输出故事的原始 HTML（沙箱隔离，供 iframe/新窗口阅读） */
 function serveRawStory(res, story) {
   const title = String(story.title || '故事').replace(/[<>&"]/g, '');
-  const body = String(story.content || '');
-  const shim = '<style>\n' + FONT_SHIM_CSS + '\n</style>\n';
+  // 存量内容里可能残留 Google 字体地址（新发布会转成 @import），统一改写成站内代理
+  const body = rewriteGoogleFontUrls(String(story.content || ''));
+  // 垫片在前（本机字体兜底），Google CSS 在后（真字体覆盖同名定义，src 已带 local 前缀）
+  const shim = '<style>\n' + FONT_SHIM_CSS + '\n</style>\n' + fontLinkTags(body);
   let html;
 
   // 作者上传的可能是完整网页（<!DOCTYPE html> / <html>）。这种情况原样输出，
@@ -754,6 +924,14 @@ function handleApi(req, res, url, body) {
       const total = arr.length;
       const stories = arr.slice((page - 1) * limit, page * limit).map(storyCard);
       return json(res, { ok: true, total, page, hasMore: page * limit < total, stories });
+    }
+
+    /* ---- 字体代理（Google Fonts 站内中转，见 serveFontProxy） ---- */
+    case 'font': {
+      serveFontProxy(res, url).catch(() => {
+        try { res.writeHead(500); res.end(); } catch (e) { /* 已响应 */ }
+      });
+      return;
     }
 
     /* ---- 故事原文（沙箱隔离渲染，供 iframe/新窗口阅读） ---- */

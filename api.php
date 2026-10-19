@@ -331,6 +331,194 @@ function link_to_import(string $html): string
     }, $html) ?? '';
 }
 
+/* ================= 站内字体代理（Google Fonts） =================
+ *
+ * 作者 HTML 常用 Google Fonts 的中文创意字体（站酷小薇、志莽行书…），
+ * 但 fonts.googleapis.com 在国内基本超时，加载不到就回退成系统宋体。
+ * 服务器本身能访问 Google（实测 ~100ms），因此由服务端代理并落盘缓存：
+ * 浏览器只跟本站通信，字体就能真正显示出来。
+ *
+ * 安全约束（都很关键，别放松）：
+ *   - 只放行 https + fonts.googleapis.com / fonts.gstatic.com
+ *   - 不跟随重定向（否则可 302 跳到内网地址，等于 SSRF）
+ *   - 单资源上限 3MB，超时 8s
+ *   - 任何失败都返回 404，让浏览器回落到 local() / 系统字体
+ */
+
+const FONT_MAX_BYTES = 3145728;    // 单资源上限 3MB
+const FONT_CACHE_TTL = 2592000;    // 缓存 30 天
+
+/** 站内可代理的字体：小写字体名 => Google Fonts family 参数 */
+const FONT_GOOGLE_MAP = [
+    'zcool xiaowei'         => 'ZCOOL+XiaoWei',
+    'zcool kuaile'          => 'ZCOOL+KuaiLe',
+    'zcool qingke huangyou' => 'ZCOOL+QingKe+HuangYou',
+    'ma shan zheng'         => 'Ma+Shan+Zheng',
+    'zhi mang xing'         => 'Zhi+Mang+Xing',
+    'long cang'             => 'Long+Cang',
+    'liu jian mao cao'      => 'Liu+Jian+Mao+Cao',
+    'noto serif sc'         => 'Noto+Serif+SC',
+    'noto sans sc'          => 'Noto+Sans+SC',
+    'lxgw wenkai tc'        => 'LXGW+WenKai+TC',
+    'inter'                 => 'Inter',
+    'roboto'                => 'Roboto',
+    'playfair display'      => 'Playfair+Display',
+    'merriweather'          => 'Merriweather',
+    'lora'                  => 'Lora',
+    'open sans'             => 'Open+Sans',
+    'lato'                  => 'Lato',
+    'montserrat'            => 'Montserrat',
+    'poppins'               => 'Poppins',
+    'noto serif'            => 'Noto+Serif',
+    'noto sans'             => 'Noto+Sans',
+    'eb garamond'           => 'EB+Garamond',
+    'cormorant garamond'    => 'Cormorant+Garamond',
+];
+
+function font_cache_dir(): string
+{
+    return DATA_DIR . '/fontcache';
+}
+
+function b64url_encode(string $s): string
+{
+    return rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
+}
+
+function b64url_decode(string $s): string
+{
+    $s = strtr($s, '-_', '+/');
+    $pad = strlen($s) % 4;
+    if ($pad > 0) { $s .= str_repeat('=', 4 - $pad); }
+    $out = base64_decode($s, true);
+    return $out === false ? '' : $out;
+}
+
+/** 外部字体地址 → 站内代理地址 */
+function proxy_font_url(string $url): string
+{
+    return 'api.php?route=font&u=' . b64url_encode($url);
+}
+
+/** 正文里出现的、站内可代理的字体名（保持首次出现顺序） */
+function used_google_fonts(string $html): array
+{
+    if (!preg_match_all('/font-family\s*:\s*([^;}\n]+)/i', $html, $m)) { return []; }
+    $found = [];
+    foreach ($m[1] as $decl) {
+        foreach (preg_split('/,/', $decl) ?: [] as $name) {
+            $name = strtolower(trim(trim($name), "\"'"));
+            if ($name !== '' && isset(FONT_GOOGLE_MAP[$name]) && !isset($found[$name])) {
+                $found[$name] = FONT_GOOGLE_MAP[$name];
+            }
+        }
+    }
+    return $found;
+}
+
+/** 为正文用到的字体生成 <link>（走站内代理，国内可达） */
+function font_link_tags(string $html): string
+{
+    $out = '';
+    foreach (used_google_fonts($html) as $family) {
+        $css = 'https://fonts.googleapis.com/css2?family=' . $family . '&display=swap';
+        $out .= '<link rel="stylesheet" href="' . proxy_font_url($css) . '">' . "\n";
+    }
+    return $out;
+}
+
+/** 把正文/样式表里的 Google 字体地址全部换成站内代理地址 */
+function rewrite_google_font_urls(string $html): string
+{
+    return preg_replace_callback(
+        '#https://fonts\.(?:googleapis|gstatic)\.com/[^\s"\'()]+#i',
+        static function (array $m): string { return proxy_font_url($m[0]); },
+        $html
+    ) ?? $html;
+}
+
+/** 抓取远端资源（curl 优先，未装扩展时退回 file_get_contents） */
+function font_fetch(string $url): ?string
+{
+    $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => false,   // 不跟随重定向：防 SSRF 跳到内网
+            CURLOPT_CONNECTTIMEOUT => 4,
+            CURLOPT_TIMEOUT        => 8,
+            CURLOPT_USERAGENT      => $ua,
+        ]);
+        $body = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if (!is_string($body) || $code !== 200 || strlen($body) > FONT_MAX_BYTES) { return null; }
+        return $body;
+    }
+    $ctx = stream_context_create(['http' => ['timeout' => 8, 'user_agent' => $ua]]);
+    $body = @file_get_contents($url, false, $ctx, 0, FONT_MAX_BYTES);
+    return is_string($body) && $body !== '' ? $body : null;
+}
+
+/** 字体代理路由：api.php?route=font&u=<base64url(原始URL)> */
+function serve_font_proxy(): void
+{
+    $url = b64url_decode((string)($_GET['u'] ?? ''));
+    $p = $url === '' ? false : parse_url($url);
+    $host = $p ? strtolower((string)($p['host'] ?? '')) : '';
+    if (!$p || ($p['scheme'] ?? '') !== 'https'
+        || !in_array($host, ['fonts.googleapis.com', 'fonts.gstatic.com'], true)) {
+        http_response_code(404);
+        exit;
+    }
+
+    $isCss = $host === 'fonts.googleapis.com';
+    $dir  = font_cache_dir();
+    $path = $dir . '/' . sha1($url) . ($isCss ? '.css' : '.woff2');
+
+    $body = null;
+    if (is_file($path) && (time() - (int)filemtime($path)) < FONT_CACHE_TTL) {
+        $cached = @file_get_contents($path);
+        if ($cached !== false) { $body = $cached; }
+    }
+    if ($body === null) {
+        $body = font_fetch($url);
+        if ($body !== null) {
+            if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
+            $tmp = $path . '.' . getmypid() . '.tmp';
+            if (@file_put_contents($tmp, $body) !== false && !@rename($tmp, $path)) {
+                @unlink($tmp);
+            }
+        }
+    }
+    if ($body === null || $body === '') {
+        http_response_code(404);
+        header('Cache-Control: no-store');
+        exit;
+    }
+
+    if ($isCss) {
+        // woff2 分片地址同样改写成代理；再给每个 @font-face 的 src 加 local() 前缀，
+        // 本机装了同名字体时直接用本机字体，省掉整片字体文件的下载
+        $body = rewrite_google_font_urls($body);
+        $body = preg_replace_callback('#@font-face\s*\{[^}]*\}#i', static function (array $m): string {
+            $block = $m[0];
+            if (!preg_match('#font-family:\s*([\'"])([^\'"]+)\1#i', $block, $f)) { return $block; }
+            $esc = str_replace(['\\', "'"], ['\\\\', "\\'"], $f[2]);
+            return preg_replace('#\bsrc:\s*#i', "src: local('" . $esc . "'), ", $block, 1) ?? $block;
+        }, $body) ?? $body;
+        header('Content-Type: text/css; charset=utf-8');
+    } else {
+        header('Content-Type: font/woff2');
+        // sandbox iframe 是独立的不透明源，字体属 CORS 请求（Origin: null），必须显式放行
+        header('Access-Control-Allow-Origin: *');
+    }
+    header('Cache-Control: public, max-age=' . FONT_CACHE_TTL);
+    echo $body;
+    exit;
+}
+
 /**
  * 字体兼容垫片：随 raw 页注入到 <head> 最前面（优先级最低，作者样式可覆盖）。
  *
@@ -341,15 +529,25 @@ function link_to_import(string $html): string
  * 若本机真装了同名字体，local('同名') 排第一位，仍然优先用真字体。
  */
 const FONT_SHIM_CSS = <<<'CSS'
-@font-face{font-family:'Noto Serif SC';src:local('Noto Serif SC'),local('Source Han Serif SC'),local('Source Han Serif CN'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('SimSun');font-display:swap}
-@font-face{font-family:'Noto Sans SC';src:local('Noto Sans SC'),local('Source Han Sans SC'),local('Source Han Sans CN'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('SimHei');font-display:swap}
-@font-face{font-family:'Source Han Serif SC';src:local('Source Han Serif SC'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('SimSun')}
-@font-face{font-family:'Source Han Sans SC';src:local('Source Han Sans SC'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('SimHei')}
-@font-face{font-family:'LXGW WenKai';src:local('LXGW WenKai'),local('霞鹜文楷'),local('KaiTi'),local('STKaiti'),local('楷体')}
-@font-face{font-family:'Ma Shan Zheng';src:local('Ma Shan Zheng'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti')}
-@font-face{font-family:'Zhi Mang Xing';src:local('Zhi Mang Xing'),local('STXingkai'),local('华文行楷'),local('KaiTi')}
-@font-face{font-family:'Long Cang';src:local('Long Cang'),local('STXingkai'),local('华文行楷'),local('KaiTi')}
-@font-face{font-family:'ZCOOL KuaiLe';src:local('ZCOOL KuaiLe'),local('YouYuan'),local('幼圆'),local('Microsoft YaHei')}
+/* 中文衬线 / 宋体系 */
+@font-face{font-family:'Noto Serif SC';src:local('Noto Serif SC'),local('Source Han Serif SC'),local('Source Han Serif CN'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('华文宋体'),local('SimSun'),local('宋体');font-display:swap}
+@font-face{font-family:'Source Han Serif SC';src:local('Source Han Serif SC'),local('Noto Serif SC'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('华文宋体'),local('SimSun')}
+@font-face{font-family:'ZCOOL XiaoWei';src:local('ZCOOL XiaoWei'),local('Source Han Serif SC'),local('Noto Serif SC'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('华文宋体'),local('SimSun')}
+@font-face{font-family:'Songti SC';src:local('Songti SC'),local('STSong'),local('华文宋体'),local('SimSun')}
+/* 中文无衬线 / 黑体系 */
+@font-face{font-family:'Noto Sans SC';src:local('Noto Sans SC'),local('Source Han Sans SC'),local('Source Han Sans CN'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('微软雅黑'),local('MiSans'),local('HarmonyOS Sans SC'),local('SimHei'),local('黑体');font-display:swap}
+@font-face{font-family:'Source Han Sans SC';src:local('Source Han Sans SC'),local('Noto Sans SC'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('微软雅黑'),local('SimHei')}
+@font-face{font-family:'PingFang SC';src:local('PingFang SC'),local('PingFang Medium'),local('Microsoft YaHei'),local('微软雅黑'),local('Source Han Sans SC'),local('Noto Sans SC')}
+@font-face{font-family:'ZCOOL KuaiLe';src:local('ZCOOL KuaiLe'),local('YouYuan'),local('幼圆'),local('Microsoft YaHei'),local('微软雅黑')}
+@font-face{font-family:'ZCOOL QingKe HuangYou';src:local('ZCOOL QingKe HuangYou'),local('Microsoft YaHei'),local('微软雅黑'),local('SimHei'),local('黑体')}
+/* 手写 / 书法 */
+@font-face{font-family:'LXGW WenKai';src:local('LXGW WenKai'),local('霞鹜文楷'),local('KaiTi'),local('STKaiti'),local('华文楷体'),local('楷体')}
+@font-face{font-family:'Ma Shan Zheng';src:local('Ma Shan Zheng'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti'),local('楷体')}
+@font-face{font-family:'Zhi Mang Xing';src:local('Zhi Mang Xing'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti')}
+@font-face{font-family:'Long Cang';src:local('Long Cang'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti')}
+@font-face{font-family:'Liu Jian Mao Cao';src:local('Liu Jian Mao Cao'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti')}
+@font-face{font-family:'Kaiti SC';src:local('Kaiti SC'),local('STKaiti'),local('华文楷体'),local('KaiTi'),local('楷体')}
+/* 西文 */
 @font-face{font-family:'Inter';src:local('Inter'),local('Segoe UI'),local('Helvetica Neue'),local('Arial')}
 @font-face{font-family:'Roboto';src:local('Roboto'),local('Segoe UI'),local('Arial')}
 @font-face{font-family:'Playfair Display';src:local('Playfair Display'),local('Georgia'),local('Times New Roman')}
@@ -419,7 +617,10 @@ function serve_raw_story(array $story): void
 {
     $title = preg_replace('/[<>&"]/', '', (string)($story['title'] ?? '故事')) ?: '故事';
     $body = (string)($story['content'] ?? '');
-    $shim = "<style>\n" . FONT_SHIM_CSS . "\n</style>\n";
+    // 存量内容里可能残留 Google 字体地址（新发布会转成 @import），统一改写成站内代理
+    $body = rewrite_google_font_urls($body);
+    // 垫片在前（本机字体兜底），Google CSS 在后（真字体覆盖同名定义，src 已带 local 前缀）
+    $shim = "<style>\n" . FONT_SHIM_CSS . "\n</style>\n" . font_link_tags($body);
 
     // 作者上传的可能是完整网页（<!DOCTYPE html> / <html>）。这种情况原样输出，
     // 不再套一层壳 —— 否则 <head> 里的 viewport、样式表顺序、<base> 全被打乱，
@@ -929,6 +1130,12 @@ switch ($route) {
             'hasMore' => ($page * $limit) < $total,
             'stories' => array_map('story_card', $slice),
         ]);
+    }
+
+    /* ---- 字体代理（Google Fonts 站内中转，见 serve_font_proxy） ---- */
+    case 'font': {
+        serve_font_proxy();
+        exit;
     }
 
     /* ---- 故事原文（沙箱隔离渲染，供 iframe/新窗口阅读） ---- */

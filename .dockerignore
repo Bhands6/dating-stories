@@ -18,6 +18,7 @@ data/feedback.json
 data/views_log.json
 data/rate_guard.json
 data/deletions.json
+data/fontcache/
 data/admin_key.txt
 data/admin_guard.json
 data/*.lock

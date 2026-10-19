@@ -783,21 +783,83 @@
     // 而字体 CDN 在国内基本不可达。这里用 @font-face + local() 把高频字体名
     // 映射到本机已有的等价字体：零网络请求、必然命中、不会闪字。
     const FONT_SHIM_CSS = [
-        "@font-face{font-family:'Noto Serif SC';src:local('Noto Serif SC'),local('Source Han Serif SC'),local('Source Han Serif CN'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('SimSun');font-display:swap}",
-        "@font-face{font-family:'Noto Sans SC';src:local('Noto Sans SC'),local('Source Han Sans SC'),local('Source Han Sans CN'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('SimHei');font-display:swap}",
-        "@font-face{font-family:'Source Han Serif SC';src:local('Source Han Serif SC'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('SimSun')}",
-        "@font-face{font-family:'Source Han Sans SC';src:local('Source Han Sans SC'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('SimHei')}",
-        "@font-face{font-family:'LXGW WenKai';src:local('LXGW WenKai'),local('霞鹜文楷'),local('KaiTi'),local('STKaiti'),local('楷体')}",
-        "@font-face{font-family:'Ma Shan Zheng';src:local('Ma Shan Zheng'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti')}",
-        "@font-face{font-family:'Zhi Mang Xing';src:local('Zhi Mang Xing'),local('STXingkai'),local('华文行楷'),local('KaiTi')}",
-        "@font-face{font-family:'Long Cang';src:local('Long Cang'),local('STXingkai'),local('华文行楷'),local('KaiTi')}",
-        "@font-face{font-family:'ZCOOL KuaiLe';src:local('ZCOOL KuaiLe'),local('YouYuan'),local('幼圆'),local('Microsoft YaHei')}",
+        // 中文衬线 / 宋体系
+        "@font-face{font-family:'Noto Serif SC';src:local('Noto Serif SC'),local('Source Han Serif SC'),local('Source Han Serif CN'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('华文宋体'),local('SimSun'),local('宋体');font-display:swap}",
+        "@font-face{font-family:'Source Han Serif SC';src:local('Source Han Serif SC'),local('Noto Serif SC'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('华文宋体'),local('SimSun')}",
+        "@font-face{font-family:'ZCOOL XiaoWei';src:local('ZCOOL XiaoWei'),local('Source Han Serif SC'),local('Noto Serif SC'),local('Noto Serif CJK SC'),local('Songti SC'),local('STSong'),local('华文宋体'),local('SimSun')}",
+        "@font-face{font-family:'Songti SC';src:local('Songti SC'),local('STSong'),local('华文宋体'),local('SimSun')}",
+        // 中文无衬线 / 黑体系
+        "@font-face{font-family:'Noto Sans SC';src:local('Noto Sans SC'),local('Source Han Sans SC'),local('Source Han Sans CN'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('微软雅黑'),local('MiSans'),local('HarmonyOS Sans SC'),local('SimHei'),local('黑体');font-display:swap}",
+        "@font-face{font-family:'Source Han Sans SC';src:local('Source Han Sans SC'),local('Noto Sans SC'),local('Noto Sans CJK SC'),local('PingFang SC'),local('Microsoft YaHei'),local('微软雅黑'),local('SimHei')}",
+        "@font-face{font-family:'PingFang SC';src:local('PingFang SC'),local('PingFang Medium'),local('Microsoft YaHei'),local('微软雅黑'),local('Source Han Sans SC'),local('Noto Sans SC')}",
+        "@font-face{font-family:'ZCOOL KuaiLe';src:local('ZCOOL KuaiLe'),local('YouYuan'),local('幼圆'),local('Microsoft YaHei'),local('微软雅黑')}",
+        "@font-face{font-family:'ZCOOL QingKe HuangYou';src:local('ZCOOL QingKe HuangYou'),local('Microsoft YaHei'),local('微软雅黑'),local('SimHei'),local('黑体')}",
+        // 手写 / 书法
+        "@font-face{font-family:'LXGW WenKai';src:local('LXGW WenKai'),local('霞鹜文楷'),local('KaiTi'),local('STKaiti'),local('华文楷体'),local('楷体')}",
+        "@font-face{font-family:'Ma Shan Zheng';src:local('Ma Shan Zheng'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti'),local('楷体')}",
+        "@font-face{font-family:'Zhi Mang Xing';src:local('Zhi Mang Xing'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti')}",
+        "@font-face{font-family:'Long Cang';src:local('Long Cang'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti')}",
+        "@font-face{font-family:'Liu Jian Mao Cao';src:local('Liu Jian Mao Cao'),local('STXingkai'),local('华文行楷'),local('KaiTi'),local('STKaiti')}",
+        "@font-face{font-family:'Kaiti SC';src:local('Kaiti SC'),local('STKaiti'),local('华文楷体'),local('KaiTi'),local('楷体')}",
+        // 西文
         "@font-face{font-family:'Inter';src:local('Inter'),local('Segoe UI'),local('Helvetica Neue'),local('Arial')}",
         "@font-face{font-family:'Roboto';src:local('Roboto'),local('Segoe UI'),local('Arial')}",
         "@font-face{font-family:'Playfair Display';src:local('Playfair Display'),local('Georgia'),local('Times New Roman')}",
         "@font-face{font-family:'Merriweather';src:local('Merriweather'),local('Georgia')}",
         "@font-face{font-family:'Lora';src:local('Lora'),local('Georgia')}"
     ].join('\n');
+
+    // 站内可代理的 Google 字体（与 api.php 的 FONT_GOOGLE_MAP 保持一致）
+    const FONT_GOOGLE_MAP = {
+        'zcool xiaowei': 'ZCOOL+XiaoWei',
+        'zcool kuaile': 'ZCOOL+KuaiLe',
+        'zcool qingke huangyou': 'ZCOOL+QingKe+HuangYou',
+        'ma shan zheng': 'Ma+Shan+Zheng',
+        'zhi mang xing': 'Zhi+Mang+Xing',
+        'long cang': 'Long+Cang',
+        'liu jian mao cao': 'Liu+Jian+Mao+Cao',
+        'noto serif sc': 'Noto+Serif+SC',
+        'noto sans sc': 'Noto+Sans+SC',
+        'lxgw wenkai tc': 'LXGW+WenKai+TC',
+        'inter': 'Inter',
+        'roboto': 'Roboto',
+        'playfair display': 'Playfair+Display',
+        'merriweather': 'Merriweather',
+        'lora': 'Lora',
+        'open sans': 'Open+Sans',
+        'lato': 'Lato',
+        'montserrat': 'Montserrat',
+        'poppins': 'Poppins',
+        'noto serif': 'Noto+Serif',
+        'noto sans': 'Noto+Sans',
+        'eb garamond': 'EB+Garamond',
+        'cormorant garamond': 'Cormorant+Garamond'
+    };
+
+    // base64url 编码（预览页与线上走同一条代理路由，效果一致）
+    function b64url(str) {
+        const bytes = new TextEncoder().encode(str);
+        let bin = '';
+        for (const b of bytes) bin += String.fromCharCode(b);
+        return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    // 为内容里实际用到的 Google 字体生成 <link>（走站内代理）
+    function fontLinkTags(src) {
+        const re = /font-family\s*:\s*([^;}\n]+)/gi;
+        const found = {};
+        let m;
+        while ((m = re.exec(src)) !== null) {
+            for (const raw of m[1].split(',')) {
+                const name = raw.trim().replace(/^["']|["']$/g, '').trim().toLowerCase();
+                if (name && FONT_GOOGLE_MAP[name] && !found[name]) found[name] = FONT_GOOGLE_MAP[name];
+            }
+        }
+        return Object.values(found).map(f =>
+            '<link rel="stylesheet" href="api.php?route=font&u=' +
+            b64url('https://fonts.googleapis.com/css2?family=' + f + '&display=swap') + '">'
+        ).join('\n') + (Object.keys(found).length ? '\n' : '');
+    }
 
     // <link rel="stylesheet"> → <style>@import url("...")</style>
     // 服务端净化会删掉 link（防 preconnect/icon 探测），字体必须提前转成 @import 才活得下来
@@ -814,7 +876,7 @@
 
     // 预览文档：完整网页原样保留（只插垫片），片段才包壳
     function buildPreviewDoc(src) {
-        const shim = '<style>\n' + FONT_SHIM_CSS + '\n</style>\n';
+        const shim = '<style>\n' + FONT_SHIM_CSS + '\n</style>\n' + fontLinkTags(src);
         if (/<(?:!doctype\s+html|html)\b/i.test(src)) {
             const head = src.match(/<head\b[^>]*>/i);
             if (head) {
