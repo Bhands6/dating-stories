@@ -2,6 +2,8 @@
 .loomy-tmp/
 .check.js
 *.png
+# 站点 logo 例外：Dockerfile 需显式 COPY logo.png 进镜像（父规则会盖住 COPY）
+!logo.png
 *.zip
 run-*.txt
 *-out.txt

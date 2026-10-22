@@ -19,6 +19,8 @@ RUN sed -i 's/^expose_php = .*/expose_php = Off/' "$PHP_INI_DIR/php.ini" \
 # 复制站点文件（全部页面 + 生产后端 api.php；data 运行时数据由 compose 卷挂载，不入镜像）
 # 注意：server.js / package.json 只是本地开发用的 Node 服务器，不进生产镜像
 COPY index.html publish.html admin.html feedback.html terms.html privacy.html disclaimer.html /var/www/html/
+# 站点 logo（页脚友链 logo 位 + apple-touch-icon 使用，对外地址 /logo.png）
+COPY logo.png /var/www/html/
 COPY api.php /var/www/html/
 COPY .htaccess /var/www/html/.htaccess
 

@@ -3,6 +3,8 @@
 .loomy-tmp/
 *.log
 *.png
+# 站点 logo 例外：页面与友链需要对外提供 https://bhands.me/logo.png
+!logo.png
 *.zip
 
 # 部署/调试输出（本机 bat 重定向产物，曾被打包上传到服务器，2026-09-28 清理）
