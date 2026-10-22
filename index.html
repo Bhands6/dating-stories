@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💕</text></svg>">
+    <link rel="apple-touch-icon" href="logo.png">
     <title>💕 缘分故事屋 - 分享你的相亲故事</title>
     <style>
         /* ===== CSS Variables ===== */
@@ -1193,6 +1194,48 @@
             background: rgba(232, 85, 109, 0.05);
             transform: translateY(-2px);
             box-shadow: 0 4px 15px rgba(232, 85, 109, 0.12);
+        }
+
+        /* 友情链接：轻量文字行，不抢页脚主视觉 */
+        .footer-friends {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px 16px;
+            margin-bottom: 26px;
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-lighter);
+        }
+
+        .footer-friends-label {
+            position: relative;
+            padding-right: 16px;
+            color: var(--text-lighter);
+        }
+
+        .footer-friends-label::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 50%;
+            width: 1px;
+            height: 12px;
+            background: var(--border);
+            transform: translateY(-50%);
+        }
+
+        .footer-friend {
+            color: var(--text-light);
+            text-decoration: none;
+            transition: color 0.25s ease;
+        }
+
+        .footer-friend:hover {
+            color: var(--primary);
+            text-decoration: underline;
+            text-underline-offset: 3px;
         }
 
         .footer-bottom {
@@ -2418,6 +2461,10 @@
                 <a class="footer-link" href="terms.html">📖 内容规范</a>
                 <a class="footer-link" href="privacy.html">🔒 隐私声明</a>
                 <a class="footer-link" href="disclaimer.html">📜 免责声明</a>
+            </div>
+            <div class="footer-friends">
+                <span class="footer-friends-label">友情链接</span>
+                <a class="footer-friend" href="https://wangzhy.top/" target="_blank" rel="noopener">解压小站</a>
             </div>
             <div class="footer-bottom">
                 <p>© 2026 缘分故事屋 · Made with <span class="heart">❤</span> · 每一个故事都值得被听见</p>
