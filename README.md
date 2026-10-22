@@ -116,6 +116,8 @@ docker compose up -d --build
 ├── admin.html          # 站长管理页
 ├── feedback.html       # 反馈建议页
 ├── terms / privacy / disclaimer.html
+├── theme.css           # 🔑 全站主题层（默认粉 + 摸鱼表格/代码/文档四套）
+├── theme.js            # 🔑 主题切换（防闪、注入切换器、Alt+1~4、标签页伪装）
 ├── api.php             # PHP 后端（生产）
 ├── server.js           # Node 开发服务器
 ├── docker-entrypoint.sh # 容器启动钩子（data 权限修复 + 管理密码自动生成）

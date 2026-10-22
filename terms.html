@@ -5,21 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💕</text></svg>">
     <title>内容规范 - 缘分故事屋</title>
+    <!-- 全站主题层：变量 + 四套主题 + 切换器样式；脚本负责防闪、注入菜单、Alt+1~4 -->
+    <link rel="stylesheet" href="theme.css">
+    <script src="theme.js"></script>
     <style>
-        :root {
-            --primary: #e8556d;
-            --primary-light: #ff7eb3;
-            --bg: #fff5f5;
-            --card-bg: #ffffff;
-            --text: #2d2d3a;
-            --text-light: #6b6b80;
-            --text-lighter: #a0a0b8;
-            --border: #f0e0e5;
-            --shadow: 0 4px 20px rgba(232, 85, 109, 0.08);
-            --radius: 16px;
-            --gradient: linear-gradient(135deg, #ff9a76 0%, #e8556d 50%, #c23555 100%);
-            --gradient-soft: linear-gradient(135deg, #fff0f3 0%, #ffe0e8 100%);
-        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html { scroll-behavior: smooth; }
         body {
@@ -28,28 +17,28 @@
         }
         .navbar {
             position: fixed; top: 0; left: 0; right: 0; z-index: 1000; padding: 0 24px;
-            background: rgba(255, 245, 245, 0.85); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
-            border-bottom: 1px solid rgba(232, 85, 109, 0.06);
+            background: var(--navbar-bg); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(var(--primary-rgb), 0.06);
         }
         .nav-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 72px; }
         .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
-        .logo-icon { width: 42px; height: 42px; background: var(--gradient); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3); }
+        .logo-icon { width: 42px; height: 42px; background: var(--gradient); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; box-shadow: 0 4px 15px rgba(var(--primary-rgb), 0.3); }
         .logo-text { font-size: 22px; font-weight: 700; background: var(--gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
         .logo-sub { font-size: 11px; color: var(--text-lighter); margin-top: -2px; letter-spacing: 1px; }
         .nav-links { display: flex; align-items: center; gap: 8px; list-style: none; }
         .nav-links a { text-decoration: none; color: var(--text-light); padding: 8px 16px; border-radius: 25px; font-size: 14px; font-weight: 500; transition: all 0.3s ease; }
-        .nav-links a:hover { color: var(--primary); background: rgba(232, 85, 109, 0.06); }
-        .nav-cta { padding: 10px 24px; background: var(--gradient); color: white !important; font-weight: 600 !important; box-shadow: 0 4px 15px rgba(232, 85, 109, 0.3); }
+        .nav-links a:hover { color: var(--primary); background: rgba(var(--primary-rgb), 0.06); }
+        .nav-cta { padding: 10px 24px; background: var(--gradient); color: white !important; font-weight: 600 !important; box-shadow: 0 4px 15px rgba(var(--primary-rgb), 0.3); }
         .back-wrap { max-width: 1200px; margin: 96px auto 0; padding: 0 24px; }
         .back-btn {
             display: inline-flex; align-items: center; gap: 6px;
-            padding: 9px 24px; background: white; border: 1.5px solid var(--border);
+            padding: 9px 24px; background: var(--surface); border: 1.5px solid var(--border);
             border-radius: 25px; color: var(--text-light); font-size: 14px; font-weight: 600;
-            text-decoration: none; transition: all 0.3s ease; box-shadow: 0 4px 20px rgba(232, 85, 109, 0.08);
+            text-decoration: none; transition: all 0.3s ease; box-shadow: 0 4px 20px rgba(var(--primary-rgb), 0.08);
         }
         .back-btn:hover { border-color: var(--primary); color: var(--primary); transform: translateX(-3px); }
         .page-head { padding: 30px 24px 10px; text-align: center; }
-        .page-tag { display: inline-block; padding: 5px 16px; background: rgba(232, 85, 109, 0.08); border-radius: 25px; font-size: 13px; color: var(--primary); font-weight: 600; margin-bottom: 12px; letter-spacing: 1px; }
+        .page-tag { display: inline-block; padding: 5px 16px; background: rgba(var(--primary-rgb), 0.08); border-radius: 25px; font-size: 13px; color: var(--primary); font-weight: 600; margin-bottom: 12px; letter-spacing: 1px; }
         .page-head h1 { font-size: 36px; font-weight: 800; margin-bottom: 10px; }
         .page-head p { color: var(--text-light); }
         .section { padding: 30px 24px 70px; }
@@ -67,7 +56,7 @@
             margin-top: 30px; padding: 16px 20px; background: var(--gradient-soft);
             border-radius: 12px; font-size: 14px; color: var(--primary-dark, #c23555);
         }
-        .footer { margin-top: 30px; padding: 40px 24px 30px; background: white; border-top: 1px solid var(--border); text-align: center; }
+        .footer { margin-top: 30px; padding: 40px 24px 30px; background: var(--surface); border-top: 1px solid var(--border); text-align: center; }
         .footer p { font-size: 13px; color: var(--text-lighter); }
         .footer .heart { color: var(--primary); display: inline-block; animation: heartbeat 1.5s infinite; }
         @keyframes heartbeat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.2); } }
@@ -75,16 +64,16 @@
             position: fixed; right: 28px; bottom: 28px; width: 48px; height: 48px;
             border-radius: 50%; background: var(--gradient); color: white; border: none;
             cursor: pointer; font-size: 20px; font-weight: 700;
-            box-shadow: 0 6px 20px rgba(232, 85, 109, 0.35);
+            box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.35);
             display: flex; align-items: center; justify-content: center;
             opacity: 0; visibility: hidden; transform: translateY(16px);
             transition: all 0.3s ease; z-index: 1500;
         }
         .back-top.show { opacity: 1; visibility: visible; transform: translateY(0); }
-        .back-top:hover { transform: translateY(-4px); box-shadow: 0 10px 28px rgba(232, 85, 109, 0.45); }
+        .back-top:hover { transform: translateY(-4px); box-shadow: 0 10px 28px rgba(var(--primary-rgb), 0.45); }
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: var(--bg); }
-        ::-webkit-scrollbar-thumb { background: rgba(232, 85, 109, 0.2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(var(--primary-rgb), 0.2); border-radius: 4px; }
         @media (max-width: 768px) {
             .nav-links { display: none; }
             .page-head h1 { font-size: 28px; }
