@@ -387,6 +387,16 @@
             transform: translateY(-3px);
         }
 
+        /* 友链按钮里的站点图标（对方 logo，20px 圆角小方块） */
+        .btn-logo {
+            width: 20px;
+            height: 20px;
+            border-radius: 5px;
+            object-fit: cover;
+            flex: none;
+            display: block;
+        }
+
         /* Stats */
         .hero-stats {
             display: flex;
@@ -2312,7 +2322,7 @@
             <div class="hero-actions">
                 <a href="publish.html" class="btn btn-primary">✏️ 分享我的故事</a>
                 <a href="#stories" class="btn btn-secondary">📖 浏览故事</a>
-                <a href="https://wangzhy.top/" class="btn btn-ghost" target="_blank" rel="noopener" title="友好站点 · 新标签页打开">🎮 解压小站 ↗</a>
+                <a href="https://wangzhy.top/" class="btn btn-ghost" target="_blank" rel="noopener" title="友好站点 · 新标签页打开"><img class="btn-logo" src="https://wangzhy.top/logo.png" alt="" width="20" height="20" loading="lazy" onerror="this.style.display='none'">解压小站 ↗</a>
             </div>
             <div class="hero-stats">
                 <div class="stat-item">
