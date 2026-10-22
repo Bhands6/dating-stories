@@ -7,6 +7,15 @@ FROM php:8.2-apache
 # 避免任何运行时 Warning 混入 JSON 响应开头导致前端解析失败（报错形如 Unexpected token '<'）
 RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 
+# 运行时安全加固（2026-10-22，配合 php2shell 事件）：
+# - expose_php=Off：不再通过 X-Powered-By 把精确版本号告诉公网（官方镜像默认是 On，
+#   等于给扫描器指路，2026-10-22 之前线上确实在暴露 "PHP/8.2.34"）
+# - session.upload_progress.enabled=Off：本站 api.php 完全不使用 session（无 session_start），
+#   这项关掉零业务影响，同时切断上传进度相关的攻击面
+# 追加在 php.ini 末尾：ini 里同名指令以最后一条为准，因此无需管前面是 On 还是注释
+RUN sed -i 's/^expose_php = .*/expose_php = Off/' "$PHP_INI_DIR/php.ini" \
+ && printf '\n; --- site hardening (2026-10-22) ---\nexpose_php = Off\nsession.upload_progress.enabled = Off\n' >> "$PHP_INI_DIR/php.ini"
+
 # 复制站点文件（全部页面 + 生产后端 api.php；data 运行时数据由 compose 卷挂载，不入镜像）
 # 注意：server.js / package.json 只是本地开发用的 Node 服务器，不进生产镜像
 COPY index.html publish.html admin.html feedback.html terms.html privacy.html disclaimer.html /var/www/html/
