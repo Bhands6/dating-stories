@@ -330,6 +330,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            flex-wrap: wrap;
             gap: 16px;
             animation: fadeInDown 0.8s ease 0.3s both;
         }
@@ -370,6 +371,20 @@
             border-color: var(--primary);
             transform: translateY(-3px);
             box-shadow: var(--shadow-hover);
+        }
+
+        /* 站外跳转按钮：视觉权重压到最低，和站内两个动作区分开 */
+        .btn-ghost {
+            background: transparent;
+            color: var(--text-light);
+            border: 1.5px solid var(--border);
+        }
+
+        .btn-ghost:hover {
+            color: var(--primary);
+            border-color: var(--primary-light);
+            background: rgba(232, 85, 109, 0.04);
+            transform: translateY(-3px);
         }
 
         /* Stats */
@@ -2297,6 +2312,7 @@
             <div class="hero-actions">
                 <a href="publish.html" class="btn btn-primary">✏️ 分享我的故事</a>
                 <a href="#stories" class="btn btn-secondary">📖 浏览故事</a>
+                <a href="https://wangzhy.top/" class="btn btn-ghost" target="_blank" rel="noopener" title="友好站点 · 新标签页打开">🎮 解压小站 ↗</a>
             </div>
             <div class="hero-stats">
                 <div class="stat-item">
