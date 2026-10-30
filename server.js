@@ -716,6 +716,9 @@ function serveRawStory(res, story, rawSource) {
   const title = String(story.title || '故事').replace(/[<>&"]/g, '');
   // 存量内容里可能残留 Google 字体地址（新发布会转成 @import），统一改写成站内代理
   let body = rewriteGoogleFontUrls(rawSource != null ? rawSource : String(story.content || ''));
+  // 「原文阅读」就该是原件：源文件模式自带作者的 <script>，站点不再注入揭示兜底脚本。
+  // 兜底只服务于「没有源文件、正文脚本已被净化掉」的回落路径（净化版 content）。
+  const injectReveal = (rawSource == null);
   // CSS 选择器与 DOM 结构对不上时（AI 生成的 HTML 常见），把标题字体规则补到位
   body = shimOrphanFontRules(body);
   // 垫片在前（本机字体兜底），Google CSS 在后（真字体覆盖同名定义，src 已带 local 前缀）
@@ -743,8 +746,11 @@ function serveRawStory(res, story, rawSource) {
         html = shim + html;
       }
     }
-    if (/<\/body>/i.test(html)) html = html.replace(/<\/body>/i, REVEAL_SCRIPT + '\n</body>');
-    else html += '\n' + REVEAL_SCRIPT;
+    // 完整原件原样输出，作者自己的揭示脚本负责动画 —— 站点不插手
+    if (injectReveal) {
+      if (/<\/body>/i.test(html)) html = html.replace(/<\/body>/i, REVEAL_SCRIPT + '\n</body>');
+      else html += '\n' + REVEAL_SCRIPT;
+    }
   } else {
     html = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n' +
       '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
