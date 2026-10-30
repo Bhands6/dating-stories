@@ -592,11 +592,27 @@ function sanitizeHtml(html) {
   return html.replace(/\u0002VIEWPORT\u0002/g, '<meta name="viewport" content="width=device-width, initial-scale=1">').trim();
 }
 
-/** 详情页「滚动显现动画」驱动器（站点注入的安全脚本，随 raw 输出附带） */
+/** 详情页「滚动显现动画」驱动器（站点注入的安全脚本，随 raw 输出附带）
+ *
+ * 目的：作者页面常见写法是「初始 opacity:0 + 滚动 IntersectionObserver 揭示」。
+ * 一旦揭示脚本失效（净化版、或脚本被 CSP 拦下），正文会整片看不见，所以要兜底。
+ *
+ * ⚠️ 早先的实现是批量 addClass(['visible','active','show','in','on',...,'display'])
+ * 去「猜」作者的揭示类名。这些词在作者页面里太常见，撞上就是灾难：
+ * 《那年·白衣》（2026-10-30）作者用 .display 做 72px 主标题，注入脚本把 display
+ * 加到了每个待揭示元素上，页头小字与正文段落全被套上 72px / 行高 1.05，
+ * 手机端正文被挤成每行两个字。
+ *
+ * 现在改成写内联样式（带 !important）强制可见：不碰 class，与作者命名零冲突；
+ * 过渡动画仍由作者 CSS 的 transition 负责，观感不变。
+ */
 const REVEAL_SCRIPT = `
 <script>
 (function () {
-  var CLASSES = ['visible','active','show','in','on','entered','revealed','appear','appeared','fade-in','shown','display'];
+  function reveal(el) {
+    el.style.setProperty('opacity', '1', 'important');
+    el.style.setProperty('transform', 'none', 'important');
+  }
   function drive() {
     var targets = [];
     document.querySelectorAll('*').forEach(function (el) {
@@ -604,10 +620,14 @@ const REVEAL_SCRIPT = `
       targets.push(el);
     });
     if (!targets.length) return;
+    if (!('IntersectionObserver' in window)) {
+      targets.forEach(reveal);
+      return;
+    }
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
         if (!entry.isIntersecting) return;
-        CLASSES.forEach(function (c) { entry.target.classList.add(c); });
+        reveal(entry.target);
         io.unobserve(entry.target);
       });
     }, { threshold: 0.06, rootMargin: '60px' });
