@@ -139,6 +139,7 @@ docker compose up -d --build
 │   ├── views_log.json  # 运行时生成：防刷记录
 │   └── *.lock          # 运行时生成：互斥锁（0 字节，删掉会自动重建）
 ├── Dockerfile / docker-compose.yml
+├── uploads-alias.conf  # 原文阅读静态直出：放行 /uploads/{id}.html + CSP sandbox
 └── docs/部署说明.md    # 详细部署文档（docs/ 目录）
 ```
 

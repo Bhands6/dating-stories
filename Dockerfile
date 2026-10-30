@@ -50,6 +50,13 @@ RUN a2enmod headers \
  && printf '<FilesMatch "\\.(html|htm|css|js)$">\n    Header set Cache-Control "no-cache, must-revalidate"\n</FilesMatch>\n' > /etc/apache2/conf-available/no-cache.conf \
  && a2enconf no-cache
 
+# 原文阅读：静态直出上传的原始 HTML
+# compose 把 ./data/uploads 只读挂到 /var/www/html/uploads，这里只负责给那个目录
+# 放行（data/ 是整体 deny 的），并配上 CSP sandbox —— 少了它等于把访客上传的 HTML
+# 放到同源下执行，能读 cookie/localStorage、能调同源接口。详见 uploads-alias.conf。
+COPY uploads-alias.conf /etc/apache2/conf-available/uploads-alias.conf
+RUN a2enconf uploads-alias
+
 # 启动前自动修正 data 目录属主（宿主机挂载目录属主可能不是 www-data）
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh

@@ -935,6 +935,8 @@ function storyCard(s) {
     pinned: !!s.pinned,
     realCount: Number(s.realCount) || 0,
     createdAt: s.createdAt,
+    // 是否存有原始 HTML 源文件 → 前端据此决定「原文阅读」走静态直出还是回落 raw 接口
+    hasSource: fs.existsSync(uploadPath(s.id)),
   };
 }
 
@@ -1784,7 +1786,40 @@ function createServer() {
       return;
     }
 
+    // 原文阅读：静态直出上传的原始 HTML（与线上 Apache 的 /uploads/ alias 对齐）。
+    // 线上由 Apache 直接吐文件并加 CSP sandbox 头；本地开发这里手写一份等价实现，
+    // 保证「弹窗里的 iframe」与「原文阅读新标签页」两端行为一致。
+    if (url.pathname.startsWith('/uploads/')) {
+      serveUploadSource(res, url.pathname);
+      return;
+    }
+
     serveStatic(req, res, url.pathname);
+  });
+}
+
+/** 直出 data/uploads/{id}.html —— 零加工，字节级原件，仅补 CSP 沙箱头 */
+function serveUploadSource(res, pathname) {
+  const name = pathname.slice('/uploads/'.length);
+  if (!/^\d+\.html$/.test(name)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('403 Forbidden');
+    return;
+  }
+  fs.readFile(path.join(UPLOAD_DIR, name), (err, data) => {
+    if (err) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('404 Not Found');
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      // 与线上一致：不透明源隔离，禁外联与表单提交
+      'Content-Security-Policy': "sandbox allow-scripts; connect-src 'none'; form-action 'none'; base-uri 'none'",
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'no-cache, must-revalidate'
+    });
+    res.end(data);
   });
 }
 

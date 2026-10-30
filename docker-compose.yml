@@ -6,4 +6,8 @@ services:
       - "8010:80"          # 左边改成你想用的端口
     volumes:
       - ./data:/var/www/html/data   # 数据持久化（故事/评论/点赞都存这里）
+      # 原文阅读直出：同一份上传文件再只读挂一个路径给 Apache，
+      # 由 uploads-alias.conf 放行 /uploads/{id}.html（CSP sandbox 隔离）。
+      # 只读挂载 = Apache 永远不写这个目录，写入仍走 PHP 的 data/uploads。
+      - ./data/uploads:/var/www/html/uploads:ro
     restart: unless-stopped

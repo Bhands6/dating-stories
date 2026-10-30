@@ -968,6 +968,8 @@ function story_card(array $s): array
         'pinned'        => !empty($s['pinned']),
         'realCount'     => (int)($s['realCount'] ?? 0),
         'createdAt'     => (int)($s['createdAt'] ?? time()),
+        // 是否存有原始 HTML 源文件 → 前端据此决定「原文阅读」走静态直出还是回落 raw 接口
+        'hasSource'     => is_file(upload_path((int)$s['id'])),
     ];
 }
 

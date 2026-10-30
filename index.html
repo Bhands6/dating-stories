@@ -3004,6 +3004,10 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         const isMine = !!(myKeys && myKeys[s.id]);
         const isHtmlMode = s.mode === 'html';
         const rawUrl = 'api.php?route=raw&id=' + s.id + '&t=' + (s.createdAt || 0);
+        // 原文阅读：有原始源文件时直接打开静态原件 /uploads/{id}.html
+        // （Apache 原样吐文件、零加工，只补 CSP sandbox 头），
+        // 早期没有源文件的存量故事才回落到 raw 接口（净化版 + 字体垫片）。
+        const srcUrl = s.hasSource ? ('uploads/' + s.id + '.html') : rawUrl;
         // HTML 沙箱故事：关闭弹窗背景模糊，减轻用户滤镜叠加导致的卡顿
         overlay.classList.toggle('no-blur', isHtmlMode);
         const contentHtml = isHtmlMode
@@ -3023,7 +3027,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
                         <div class="story-author-info">${esc(s.author.info || '匿名分享')} · ${timeAgo(s.createdAt)}</div>
                     </div>
                 </div>
-                ${isHtmlMode ? '<a class="meta-read-btn" href="' + esc(rawUrl) + '" target="_blank" rel="noopener" title="在新标签页打开原样式排版">📖 原文阅读</a>' : ''}
+                ${isHtmlMode ? '<a class="meta-read-btn" href="' + esc(srcUrl) + '" target="_blank" rel="noopener" title="在新标签页打开你上传的原始 HTML 文件">📖 原文阅读</a>' : ''}
                 <div class="story-time">👁️ ${fmtNum(s.views)} 阅读</div>
             </div>
             <div class="modal-content">${contentHtml}</div>
