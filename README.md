@@ -5,7 +5,7 @@
 **一个零数据库依赖的匿名人生故事分享社区**
 —— 爱情、日常、搞笑、职场、家庭，每一件小事都值得记一笔。
 
-![PHP](https://img.shields.io/badge/PHP-7.4%2B-777bb4) ![Database](https://img.shields.io/badge/数据库-无-orange) ![Node](https://img.shields.io/badge/Node-开发服务器-green) ![Docker](https://img.shields.io/badge/Docker-支持-2496ed) ![Version](https://img.shields.io/badge/version-v1.15-pink) ![License](https://img.shields.io/badge/用途-个人项目-pink)
+![Node](https://img.shields.io/badge/Node.js-22-339933) ![Database](https://img.shields.io/badge/数据库-无-orange) ![Dependencies](https://img.shields.io/badge/npm%20依赖-零-brightgreen) ![Docker](https://img.shields.io/badge/Docker-支持-2496ed) ![Version](https://img.shields.io/badge/version-v1.16-pink) ![License](https://img.shields.io/badge/用途-个人项目-pink)
 
 **在线访问**：[bhands.me](https://bhands.me)
 </div>
@@ -44,14 +44,14 @@ node server.js          # 打开 http://localhost:8000
 
 **方式一：宝塔面板（推荐）**
 
-1. 建站（PHP 7.4+，**不勾选数据库**），将仓库文件放入站点根目录
+1. 建站（**纯静态 + Node 反代**；若用 Apache/PHP 面板建站，请把 `api.php` 时代的老版本检出另行部署——本仓库 v1.16 起后端已是 Node）
 2. `data/` 目录赋予写权限（755/775）
 3. 🔒 **确认 `data/` 无法通过 HTTP 访问**：Apache 站点由仓库自带的 `data/.htaccess` 自动生效；
    **nginx 站点 `.htaccess` 无效**，必须在站点配置里加 `location ^~ /data/ { deny all; return 404; }`。
    验证：访问 `你的域名/data/admin_key.txt` **必须返回 403 或 404**——能下载到内容说明密码已泄露，请立即轮换。
-4. 完成。无需任何 PHP 扩展与数据库
+4. 完成。无需数据库
 
-**方式二：Docker**
+**方式二：Docker（推荐，生产在用）**
 
 ```bash
 docker compose up -d --build
@@ -64,7 +64,7 @@ docker compose up -d --build
 
 管理页 `/admin.html` 的密码**自动生成**，**代码里不再有任何默认密码**：
 
-- **Docker**：容器首次启动生成 **12 位随机密码**，写入 `data/admin_key.txt`，并打印在 `docker logs` 里
+- **Docker**：容器首次启动自动生成 **12 位随机密码**，写入 `data/admin_key.txt`（启动日志有提示；读取：`docker exec yuanfen-stories cat /app/data/admin_key.txt`）
 - **宝塔 / 本地 Node**：首次调用管理接口时若该文件不存在，同样会**自动生成**并写入 `data/admin_key.txt`
 - 手动修改：`echo '新密码' > data/admin_key.txt`（立即生效，无需重启）
 - ⚠️ 这个文件是唯一的管理入口，请妥善保存；它**已在 `.gitignore` 中排除**，不要提交进仓库
@@ -91,8 +91,8 @@ docker compose up -d --build
                 │
                 ▼  fetch api.php?route=xxx
         ┌───────────────┐
-        │  api.php      │  PHP 单文件后端（生产）
-        │  或 server.js │  Node 零依赖开发服务器（接口完全对齐）
+        │  server.js    │  Node 零依赖后端（生产与本地同一份代码）
+        │               │  前端仍请求 /api.php?route=xxx，由它原样接住
         └───────┬───────┘
                 ▼  JSON 文件读写（独立 .lock 互斥 + 临时文件原子替换）
         data/stories.json   故事/评论/点赞/删除凭证
@@ -106,8 +106,8 @@ docker compose up -d --build
 ```
 
 - **零数据库**：无 MySQL/SQLite，数据即文件，备份 = 复制 `data/` 目录
-- **数据一致性**：所有写盘走「临时文件 + `rename` 原子替换」，进程中断不会留下残缺 JSON；互斥用**独立的 `.lock` 文件**（`flock` 锁的是 inode，若直接锁数据文件，`rename` 之后锁就失效了）；PHP 侧的「读-改-写」全程持锁（`db_transaction()`），并发下不会丢更新
-- **双后端对齐**：`server.js`（本地）与 `api.php`（生产）接口行为一致，同一份 `data/` 无缝迁移
+- **数据一致性**：所有写盘走「临时文件 + `rename` 原子替换」，进程中断不会留下残缺 JSON；互斥用**独立的 `.lock` 文件**（`flock` 锁的是 inode，若直接锁数据文件，`rename` 之后锁就失效了）；「读-改-写」全程持锁，并发下不会丢更新
+- **单一后端**：生产与本地都是 `server.js`（2026-11-06 起，`api.php` 已退役），无同步负担
 - **安全设计**：UGC 内容服务端净化（script/事件属性/危险协议/CSS 表达式全清）；HTML 排版故事以 `CSP: sandbox` 沙箱 iframe 渲染，内部脚本无法触碰站点数据；管理接口密码校验 + 同 IP 失败限流锁定；**写接口按 IP 滑动窗口限流**（防脚本刷屏）；**接口不做跨域授权**（站点为同源部署，杜绝第三方站点跨域猜密码）；**不信任 `X-Forwarded-For`**（无反向代理时该头可由客户端伪造，信任它会让限流被一个请求头绕过）；🔒 **`/data/` 目录禁止 HTTP 访问**（内含管理密码与故事删除凭证，Apache 由 `.htaccess` + 镜像内 deny 规则双重拦截）；发布者删除凭证（随机 editKey，仅存发布者本机）；**原始 HTML 源文件模式额外收紧 CSP**（`connect-src 'none'` / `form-action 'none'` / `base-uri 'none'`），脚本仍跑在不透明源里，既读不到站点数据也发不出网络请求
 
 ## 📂 目录结构
@@ -120,9 +120,10 @@ docker compose up -d --build
 ├── terms / privacy / disclaimer.html
 ├── theme.css           # 🔑 全站主题层（默认粉 + 摸鱼表格/代码/文档四套）
 ├── theme.js            # 🔑 主题切换（防闪、注入切换器、Alt+1~4、标签页伪装）
-├── api.php             # PHP 后端（生产）
-├── server.js           # Node 开发服务器
-├── docker-entrypoint.sh # 容器启动钩子（data 权限修复 + 管理密码自动生成）
+├── server.js           # 🔑 后端（Node 零依赖，生产/本地同一份；前端仍调 /api.php?route=）
+├── package.json        # npm start 入口（零依赖，无 node_modules）
+├── tools/
+│   └── migrate_channels.js  # 频道迁移脚本（Node，容器内可执行）
 ├── .htaccess           # 页面禁强缓存（宝塔等 AllowOverride 环境生效；容器内靠 conf-enabled）
 ├── .dockerignore       # 镜像构建排除运行时数据与密钥
 ├── .gitattributes      # 换行规则（* text=auto eol=lf 统一 LF；*.sh=LF、*.bat=CRLF 作例外）
@@ -151,7 +152,7 @@ docker compose up -d --build
 
 ## 📖 API 概览
 
-统一入口 `api.php?route=xxx`，完整参数见 [部署说明.md](docs/部署说明.md#-api-一览)：
+统一入口 `/api.php?route=xxx`（历史路径，由 `server.js` 处理），完整参数见 [部署说明.md](docs/部署说明.md#-api-一览)：
 
 | route | 说明 |
 |-------|------|
@@ -183,7 +184,7 @@ docker compose up -d --build
 | 标记真实故事 | 30 次 | 10 分钟 |
 
 > 阈值刻意留得宽松，正常用户基本碰不到。**校验不通过的提交不消耗额度**（填错重试不会被罚）。
-> 想调整就改 `api.php` 顶部的 `RATE_LIMITS` 与 `server.js` 的 `RATE_LIMITS`（两边要一致）。
+> 想调整就改 `server.js` 顶部的 `RATE_LIMITS`。
 > 清理过期记录时**按各自动作自己的窗口**判过期（三个动作窗口不同），不会互相误删。
 
 

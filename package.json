@@ -1,7 +1,7 @@
 {
   "name": "yuanfen-story-house",
   "version": "1.0.0",
-  "description": "缘分故事屋 - 相亲故事分享站（PHP 单文件后端 + 零依赖 Node 本地开发服务器）",
+  "description": "人生故事屋 - 零数据库故事社区（Node 零依赖后端 server.js，api.php 已退役）",
   "scripts": {
     "start": "node server.js"
   },

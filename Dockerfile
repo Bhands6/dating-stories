@@ -1,68 +1,41 @@
-# 缘分故事屋 - Docker 部署（PHP + Apache）
+# 人生故事屋 - Docker 部署（Node.js，零依赖）
 # 构建：docker compose up -d --build
 # 访问：http://服务器IP:8010
-FROM php:8.2-apache
+#
+# 2026-11-06 起后端统一为 Node（server.js），api.php 退役（git 历史里可找回）。
+# server.js 零 npm 依赖，无需 npm install；前端所有页面仍请求 /api.php?route=xxx，
+# 由 server.js 原样接住，页面代码零改动。
+# data/ 运行时数据由 compose 卷挂载，不入镜像。
 
-# 使用生产级 PHP 配置（display_errors=Off）：
-# 避免任何运行时 Warning 混入 JSON 响应开头导致前端解析失败（报错形如 Unexpected token '<'）
-RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+FROM node:22-alpine
 
-# 运行时安全加固（2026-10-22，配合 php2shell 事件）：
-# - expose_php=Off：不再通过 X-Powered-By 把精确版本号告诉公网（官方镜像默认是 On，
-#   等于给扫描器指路，2026-10-22 之前线上确实在暴露 "PHP/8.2.34"）
-# - session.upload_progress.enabled=Off：本站 api.php 完全不使用 session（无 session_start），
-#   这项关掉零业务影响，同时切断上传进度相关的攻击面
-# 追加在 php.ini 末尾：ini 里同名指令以最后一条为准，因此无需管前面是 On 还是注释
-RUN sed -i 's/^expose_php = .*/expose_php = Off/' "$PHP_INI_DIR/php.ini" \
- && printf '\n; --- site hardening (2026-10-22) ---\nexpose_php = Off\nsession.upload_progress.enabled = Off\n' >> "$PHP_INI_DIR/php.ini"
+WORKDIR /app
+ENV NODE_ENV=production PORT=80
 
-# 复制站点文件（全部页面 + 生产后端 api.php；data 运行时数据由 compose 卷挂载，不入镜像）
-# 注意：server.js / package.json 只是本地开发用的 Node 服务器，不进生产镜像
-COPY index.html publish.html admin.html feedback.html terms.html privacy.html disclaimer.html /var/www/html/
-# 公共主题层：6 个对外页面 link theme.css + script theme.js；
-# admin.html 自 v1.12 起换成自带浅色/夜间皮肤的自包含设计，不再依赖这两个文件，
-# 但其它页面仍需要，漏 COPY 会让整站变成裸样式
-COPY theme.css theme.js /var/www/html/
-# 站点 logo（页脚友链 logo 位 + apple-touch-icon 使用，对外地址 /logo.png）
-COPY logo.png /var/www/html/
-COPY api.php /var/www/html/
-COPY .htaccess /var/www/html/.htaccess
+# 静态页面与公共资源（server.js 的 serveStatic 托管）。
+# admin.html 自 v1.12 起是自包含设计，但仍随页面一起 COPY。
+COPY index.html publish.html admin.html feedback.html terms.html privacy.html disclaimer.html ./
+COPY theme.css theme.js logo.png ./
+# 根 .htaccess 仅宝塔等 Apache 部署方式使用，Node 容器不读它，放进来无妨
+COPY .htaccess ./
+
+# 后端 + 频道迁移工具（线上执行：docker exec yuanfen-stories node tools/migrate_channels.js ...）
+COPY server.js package.json ./
+COPY tools/migrate_channels.js ./tools/migrate_channels.js
 
 # 种子数据兜底：宿主机 ./data 为空时首次运行可自动初始化
-COPY data/seed.json /var/www/html/data/seed.json
+COPY data/seed.json ./data/seed.json
 
-# data 目录挂载点（数据持久化）
-RUN mkdir -p /var/www/html/data && chown -R www-data:www-data /var/www/html/data
-VOLUME ["/var/www/html/data"]
+# data 目录挂载点（数据持久化）。
+# 🔒 禁止通过 HTTP 访问 data/ 由 server.js 内部实现（serveStatic 对 DATA_DIR 一律 403），
+# 与旧 Apache 的 deny-data 规则等价；管理密码、全站 JSON、上传图片都只走应用层读取。
+RUN mkdir -p /app/data
+VOLUME ["/app/data"]
 
-# 🔒 禁止通过 HTTP 访问 data/ 目录
-# 里面是管理密码（admin_key.txt）、全站数据库（stories.json，含每篇故事的删除凭证 editKey）
-# 和网友反馈（feedback.json）。应用只通过 PHP 的文件系统读取，HTTP 层必须挡住——
-# 否则 Apache 会把这些文件当普通静态资源直接吐给公网（曾真实发生：/data/admin_key.txt 可下载）。
-RUN printf '<Directory /var/www/html/data>\n    Require all denied\n</Directory>\n' > /etc/apache2/conf-available/deny-data.conf \
- && a2enconf deny-data
+# HTML/CSS/JS 的 no-cache 响应头由 server.js 设置，无需额外配置。
+# /uploads/{id}.html 直出（CSP sandbox）也由 server.js 内置实现，
+# 旧 Apache 的 uploads-alias.conf 不再需要。
 
-# HTML 页面禁止强缓存：发布页内联了大量前端逻辑，浏览器缓存旧版会导致
-# 「代码已更新但行为还是旧的」这类极难察觉的问题（曾导致导入 HTML 时丢 <header>）。
-# 2026-10-22 起 css/js 也一并纳入：theme.css / theme.js 是全站共用，缓存旧版会让
-# 「换了主题但某个页面还是旧配色」这种问题一直复现。
-# ⚠️ 容器里 Apache 是 AllowOverride None，根目录 .htaccess 不生效，必须写进 conf-enabled。
-# 根 .htaccess 仍保留，供宝塔等允许 AllowOverride 的部署方式使用。
-RUN a2enmod headers \
- && printf '<FilesMatch "\\.(html|htm|css|js)$">\n    Header set Cache-Control "no-cache, must-revalidate"\n</FilesMatch>\n' > /etc/apache2/conf-available/no-cache.conf \
- && a2enconf no-cache
-
-# 原文阅读：静态直出上传的原始 HTML
-# compose 把 ./data/uploads 只读挂到 /var/www/html/uploads，这里只负责给那个目录
-# 放行（data/ 是整体 deny 的），并配上 CSP sandbox —— 少了它等于把访客上传的 HTML
-# 放到同源下执行，能读 cookie/localStorage、能调同源接口。详见 uploads-alias.conf。
-COPY uploads-alias.conf /etc/apache2/conf-available/uploads-alias.conf
-RUN a2enconf uploads-alias
-
-# 启动前自动修正 data 目录属主（宿主机挂载目录属主可能不是 www-data）
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-ENTRYPOINT ["docker-entrypoint.sh"]
-
-ENV APACHE_DOCUMENT_ROOT=/var/www/html
 EXPOSE 80
+
+CMD ["node", "server.js"]

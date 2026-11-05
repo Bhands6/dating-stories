@@ -1,11 +1,11 @@
 /**
- * 人生故事屋 - 零依赖 Node 本地开发服务器
+ * 人生故事屋 - 后端服务（Node.js，零依赖，生产与本地同一份代码）
  *
- * 接口行为与 api.php 完全对齐（同一份 data/stories.json 数据文件），
- * 本机未装 PHP 时用这个做本地测试：node server.js
- * 生产部署（宝塔 PHP / Docker）时使用 api.php，前端代码无需任何改动。
+ * 2026-11-06 起统一语言：本文件就是生产后端（Docker node:22-alpine，PORT=80），
+ * 原 api.php（PHP）退役。前端所有页面仍请求 /api.php?route=xxx，由本文件原样接住，
+ * 页面代码零改动。本地开发同样跑它：node server.js（默认端口 8000，可 PORT=xx 指定）。
  *
- * 用法：node server.js   （默认端口 8000，可 PORT=xx node server.js 指定）
+ * 数据：零数据库，全部落 data/*.json；写盘统一「临时文件 + rename」原子替换。
  */
 'use strict';
 

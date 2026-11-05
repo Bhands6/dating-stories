@@ -59,3 +59,6 @@ Thumbs.db
 
 # 本地测试用数据快照（不进仓库）
 data/staletest/
+
+# 线上数据备份包（2026-11-06 语言统一前从服务器拉回的 data 全量 tar，绝不进仓库）
+backups/
