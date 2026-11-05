@@ -161,6 +161,48 @@
             font-size: 14px; background: #1e1e2e; color: #cdd6f4; border-color: #313244;
         }
         .composer textarea.html-mode:focus { border-color: var(--primary-light); }
+
+        /* 插图缩略图条：textarea 无法内嵌图片，靠这条把「已上传的图」画出来 */
+        .img-tray {
+            display: none; margin-top: 12px; padding: 12px 14px;
+            border: 1.5px dashed var(--border); border-radius: var(--radius-sm);
+            background: var(--surface-2);
+        }
+        .img-tray.show { display: block; }
+        .img-tray-head {
+            display: flex; align-items: center; justify-content: space-between; gap: 10px;
+            flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; color: var(--text-light); font-weight: 600;
+        }
+        .img-tray-head b { color: var(--primary); font-family: inherit; }
+        .img-tray-hint { font-size: 11px; font-weight: 400; color: var(--text-lighter); }
+        .img-tray-list { display: flex; gap: 10px; flex-wrap: wrap; }
+        .img-chip {
+            position: relative; width: 68px; height: 68px; padding: 0; flex: none;
+            border: 2px solid var(--border); border-radius: 10px; overflow: hidden;
+            background: var(--surface); cursor: pointer; transition: all .2s ease;
+        }
+        .img-chip:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: var(--shadow-hover); }
+        .img-chip img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .img-chip .n {
+            position: absolute; left: 0; right: 0; bottom: 0; line-height: 16px;
+            background: rgba(0,0,0,.6); color: #fff; font-size: 10px; text-align: center;
+        }
+        .img-chip .x {
+            position: absolute; top: 2px; right: 2px; width: 17px; height: 17px; padding: 0;
+            border: 0; border-radius: 50%; background: rgba(0,0,0,.62); color: #fff;
+            font-size: 11px; line-height: 17px; text-align: center; cursor: pointer;
+        }
+        .img-chip .x:hover { background: var(--primary); }
+        .img-chip.unused { opacity: .45; }
+        .img-chip.unused .n { background: rgba(0,0,0,.75); }
+        /* 纯文本预览里把【图N】渲染成图片 */
+        .preview-figure { margin: 18px 0; text-align: center; }
+        .preview-figure img {
+            max-width: 100%; height: auto; border-radius: 12px; display: block; margin: 0 auto;
+            /* 加一圈淡边框：白底截图在浅色预览里才看得出边界（与详情页 .story-figure 一致） */
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 16px rgba(var(--primary-rgb), 0.08);
+        }
         .composer-footer { display: flex; flex-direction: column; align-items: stretch; gap: 16px; margin-top: 20px; }
         .composer-options { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
         .option-btn {
@@ -595,6 +637,14 @@
         <input type="text" placeholder="你的昵称（选填，不填将随机生成）" aria-label="你的昵称（选填，不填将随机生成）" autocomplete="nickname" id="story-nickname" maxlength="20">
         <input type="text" placeholder="给你的故事起个标题吧..." aria-label="给你的故事起个标题吧" id="story-title" maxlength="60">
         <textarea id="story-content" aria-label="在这里写下你想记下来的事" placeholder="在这里写下你想记下来的事...&#10;&#10;比如：&#10;那天发生了什么？&#10;当时你在想什么？&#10;有没有哪个瞬间让你记到现在？&#10;后来呢？"></textarea>
+        <!-- 插图缩略图条：textarea 里只能存文字，【图N】是位置标记，真图在这里看 -->
+        <div class="img-tray" id="img-tray">
+            <div class="img-tray-head">
+                <span>已插入的图片 <b id="img-tray-count">0</b></span>
+                <span class="img-tray-hint">正文里的【图N】是图片位置 · 点缩略图可定位或重新插入</span>
+            </div>
+            <div class="img-tray-list" id="img-tray-list"></div>
+        </div>
                 <div class="composer-footer">
                     <div class="composer-options">
                         <button class="option-btn active" data-tag="daily" onclick="selectTag(this)">📝 日常</button>
@@ -735,6 +785,7 @@
                 showAiGuide();
             }
         }
+        renderImgTray();
     }
 
     /* ===== 插图：按钮选图 / 直接 Ctrl+V 粘贴 ===== */
@@ -848,6 +899,82 @@
         el.dispatchEvent(new Event('input', { bubbles: true }));   // 让字数统计刷新
     }
 
+    /* ===== 插图缩略图条 =====
+     * textarea 只能存纯文本，正文里的【图N】是「图片插在哪里」的标记。
+     * 这里把已上传的图画成小缩略图；点一下可定位或重新插入对应标记。
+     * ⚠️ 绝不 splice storyImages —— 序号必须和【图N】严格对齐，删中间的会让后面的图错位。
+     */
+    function imgTokenText(n) { return '【图' + n + '】'; }
+
+    function renderImgTray() {
+        const tray = $('#img-tray');
+        const list = $('#img-tray-list');
+        const el = $('#story-content');
+        if (!tray || !list || !el) return;
+        const isHtml = el.classList.contains('html-mode');
+        // HTML 模式直接写 <img> 标签，不需要 token，缩略图条隐藏
+        if (!storyImages.length || isHtml) { tray.classList.remove('show'); return; }
+        tray.classList.add('show');
+        $('#img-tray-count').textContent = storyImages.length;
+        list.innerHTML = storyImages.map((f, i) => {
+            const n = i + 1;
+            const used = el.value.includes(imgTokenText(n));
+            return '<div class="img-chip' + (used ? '' : ' unused') + '" data-img="' + n + '"'
+                + ' title="点一下定位或插入' + imgTokenText(n) + '">'
+                + '<img src="api.php?route=story_img&amp;f=' + esc(f) + '" alt="图' + n + '">'
+                + '<span class="n">图' + n + (used ? '' : ' · 未用') + '</span>'
+                + '<button type="button" class="x" data-rm="' + n + '" title="从正文移除这个位置标记">✕</button>'
+                + '</div>';
+        }).join('');
+    }
+
+    function insertImgToken(n) {
+        const el = $('#story-content');
+        const token = imgTokenText(n);
+        const at = el.value.indexOf(token);
+        el.focus();
+        if (at >= 0) {
+            // 正文里已经有这个标记 → 不重复插入，直接选中定位，方便用户看清它在哪
+            try { el.setSelectionRange(at, at + token.length); } catch (e) { /* 忽略 */ }
+            toast('已定位到 ' + token);
+            return;
+        }
+        insertAtCursor(el, '\n' + token + '\n');
+        renderImgTray();
+        toast('已插入 ' + token);
+    }
+
+    function removeImgToken(n) {
+        const el = $('#story-content');
+        const re = new RegExp('\\n?' + '【图' + n + '】' + '\\n?');
+        const next = el.value.replace(re, '\n');
+        if (next === el.value) { toast('正文里没有【图' + n + '】', 'error'); return; }
+        el.value = next;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        renderImgTray();
+        toast('已移除【图' + n + '】的位置标记（图片保留，发布时不展示）');
+    }
+
+    const trayList = $('#img-tray-list');
+    if (trayList) {
+        trayList.addEventListener('click', e => {
+            const rm = e.target.closest('[data-rm]');
+            if (rm) { removeImgToken(Number(rm.dataset.rm)); return; }
+            const chip = e.target.closest('[data-img]');
+            if (chip) insertImgToken(Number(chip.dataset.img));
+        });
+    }
+
+    /** 纯文本预览：把【图N】换成真正的图片（编辑区里仍保留文字标记） */
+    function renderTextWithImages(escaped) {
+        return nl2br(escaped).replace(/(?:<br\s*\/?>)?【图(\d+)】(?:<br\s*\/?>)?/g, (m, n) => {
+            const f = storyImages[Number(n) - 1];
+            if (!f) return m;
+            return '<figure class="preview-figure"><img src="api.php?route=story_img&amp;f='
+                + esc(f) + '" alt="图' + n + '"></figure>';
+        });
+    }
+
     async function handleImageFiles(files) {
         const el = document.getElementById('story-content');
         const btn = document.getElementById('img-btn');
@@ -887,6 +1014,7 @@
         btn.disabled = false;
         if (submitBtn) submitBtn.disabled = false;
         btn.innerHTML = oldLabel;
+        renderImgTray();   // 上传完成后把缩略图条刷新出来
         if (ok) toast('🖼️ 已插入 ' + ok + ' 张图片');
     }
 
@@ -1129,6 +1257,7 @@
     // 导入后一旦手改内容，就不再按「原文件」提交（改为提交编辑后的 HTML）
     document.getElementById('story-content').addEventListener('input', function () {
         if (importedSource && this.value !== importedSource) importedSource = '';
+        renderImgTray();   // 手删/手改【图N】后，缩略图上的「未用」状态要跟着变
     });
 
     document.getElementById('html-file').addEventListener('change', function () {
@@ -1194,7 +1323,7 @@
             preview.appendChild(frame);
         } else {
             preview.style.cssText += 'padding:18px 20px;border:2px solid var(--border);border-radius:10px;background:var(--surface-2);overflow:auto;font-size:15px;line-height:1.8;';
-            preview.innerHTML = nl2br(esc(textarea.value));
+            preview.innerHTML = renderTextWithImages(esc(textarea.value));
         }
         textarea.parentNode.insertBefore(preview, textarea.nextSibling);
         btn.innerHTML = '✏️ 编辑';
@@ -1255,6 +1384,8 @@
         $('#story-title').value = '';
         $('#story-nickname').value = '';
         $('#story-content').value = '';
+        storyImages.length = 0;   // 清空插图列表，否则「再写一篇」会继承上一篇的序号
+        renderImgTray();
         $$('.option-btn.active').forEach(b => b.classList.remove('active'));
         switchEditor('text');
         $('#success-view').style.display = 'none';
@@ -1266,6 +1397,9 @@
     }
 
     $('#submit-btn').addEventListener('click', submitStory);
+
+    // 启动：没有插图时缩略图条保持隐藏
+    renderImgTray();
 
     /* ===== 导航滚动效果 ===== */
     const navbar = document.getElementById('navbar');
