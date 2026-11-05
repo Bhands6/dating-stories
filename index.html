@@ -1658,6 +1658,66 @@
             display: block;
             margin: 0 auto;
             box-shadow: 0 4px 16px rgba(var(--primary-rgb), 0.08);
+            cursor: zoom-in;
+        }
+
+        /* ===== 图片查看器：页面内放大，不跳新标签 ===== */
+        .img-viewer {
+            position: fixed;
+            inset: 0;
+            z-index: 2600;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 44px;
+            background: rgba(20, 20, 26, 0.86);
+            -webkit-backdrop-filter: blur(6px);
+            backdrop-filter: blur(6px);
+            cursor: zoom-out;
+        }
+
+        .img-viewer.open {
+            display: flex;
+        }
+
+        .img-viewer img {
+            max-width: 100%;
+            max-height: 100%;
+            border-radius: 10px;
+            background: #fff;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            cursor: default;
+        }
+
+        .img-viewer-close {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            width: 40px;
+            height: 40px;
+            border: none;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.16);
+            color: #fff;
+            font-size: 17px;
+            line-height: 1;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .img-viewer-close:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .img-viewer-tip {
+            position: absolute;
+            bottom: 18px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.55);
+            pointer-events: none;
         }
 
         /* ===== 用户自定义 HTML 的沙箱阅读容器 ===== */
@@ -2819,6 +2879,13 @@
     <!-- Back to Top -->
     <button class="back-top" id="back-top" title="返回顶部" aria-label="返回顶部">↑</button>
 
+    <!-- 图片查看器：点故事正文 / 评论里的图，在当前页面放大（不跳新标签） -->
+    <div class="img-viewer" id="img-viewer" role="dialog" aria-modal="true" aria-label="查看大图">
+        <button class="img-viewer-close" id="img-viewer-close" title="关闭">✕</button>
+        <img id="img-viewer-img" alt="原图">
+        <div class="img-viewer-tip">点空白处或按 Esc 关闭</div>
+    </div>
+
     <script>
     'use strict';
     /* ==================== 工具 ==================== */
@@ -3274,6 +3341,43 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         } catch (e) { /* 查新失败不打扰用户 */ }
     }
 
+    /* ==================== 图片查看器（页面内放大，不跳新标签） ==================== */
+    function openImageViewer(src) {
+        const v = $('#img-viewer');
+        const img = $('#img-viewer-img');
+        if (!v || !img || !src) return;
+        img.src = src;
+        v.classList.add('open');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeImageViewer() {
+        const v = $('#img-viewer');
+        const img = $('#img-viewer-img');
+        if (!v || !v.classList.contains('open')) return;
+        v.classList.remove('open');
+        img.removeAttribute('src');   // 断开引用，下次打开不会先闪一下旧图
+        // 详情弹窗还开着就继续锁滚动，别把后面的页面放出来
+        if (!overlay.classList.contains('open')) document.body.style.overflow = '';
+    }
+
+    $('#img-viewer-close').addEventListener('click', closeImageViewer);
+    $('#img-viewer').addEventListener('click', e => {
+        if (e.target === e.currentTarget) closeImageViewer();   // 点图片本身不关，点空白才关
+    });
+
+    /** 故事正文与评论里的图：点一下在当前页面放大（委托绑在 modalBody，只绑一次） */
+    function bindImageZoom() {
+        if (modalBody.dataset.zoomBound) return;
+        modalBody.dataset.zoomBound = '1';
+        modalBody.addEventListener('click', e => {
+            const img = e.target.closest('.modal-content img, .comment-img img');
+            if (!img || img.dataset.noZoom === '1') return;
+            e.preventDefault();
+            openImageViewer(img.dataset.full || img.src);
+        });
+    }
+
     function closeModal() {
         openStorySeq++;   // 作废在途的打开/评论刷新响应，别让它们写进下次打开的弹窗
         overlay.classList.remove('open');
@@ -3437,6 +3541,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         }
         modalBody.querySelector('#comment-submit').addEventListener('click', () => submitComment(s.id));
         bindCommentForm();   // 表情面板 / 选图 / 粘贴（DOM 每次重建，必须重绑）
+        bindImageZoom();     // 正文与评论里的图点击放大
 
         /* 评论区事件委托（绑在持久容器上，幂等）：折叠 / 回复 / 发送 / 收起 */
         bindCommentListEvents();
@@ -3731,12 +3836,6 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             if (del) { deleteOwnComment(del.dataset.delId); return; }
             const send = e.target.closest('.reply-send');
             if (send) { submitReply(send.closest('.inline-reply-form')); return; }
-            // 点评论里的图 → 新窗口看原图
-            const pic = e.target.closest('.comment-img img');
-            if (pic) {
-                window.open(pic.dataset.full || pic.src, '_blank', 'noopener');
-                return;
-            }
             const cancel = e.target.closest('.reply-cancel');
             if (cancel) {
                 const f = cancel.closest('.inline-reply-form');
@@ -3934,6 +4033,8 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
     overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
     document.addEventListener('keydown', e => {
         if (e.key !== 'Escape') return;
+        // 图片查看器叠在最上层，Esc 只关它，别连带关掉详情弹窗
+        if ($('#img-viewer').classList.contains('open')) { closeImageViewer(); return; }
         // 确认弹窗叠在详情弹窗之上，Esc 只关它自己，别连带把故事弹窗也关了
         if ($('#confirm-overlay').classList.contains('open')) { closeConfirm(false); return; }
         closeModal();
