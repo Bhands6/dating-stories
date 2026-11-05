@@ -19,7 +19,9 @@ RUN sed -i 's/^expose_php = .*/expose_php = Off/' "$PHP_INI_DIR/php.ini" \
 # 复制站点文件（全部页面 + 生产后端 api.php；data 运行时数据由 compose 卷挂载，不入镜像）
 # 注意：server.js / package.json 只是本地开发用的 Node 服务器，不进生产镜像
 COPY index.html publish.html admin.html feedback.html terms.html privacy.html disclaimer.html /var/www/html/
-# 全站主题层：每个页面都 link theme.css + script theme.js，漏了会导致全站变成裸样式
+# 公共主题层：6 个对外页面 link theme.css + script theme.js；
+# admin.html 自 v1.12 起换成自带浅色/夜间皮肤的自包含设计，不再依赖这两个文件，
+# 但其它页面仍需要，漏 COPY 会让整站变成裸样式
 COPY theme.css theme.js /var/www/html/
 # 站点 logo（页脚友链 logo 位 + apple-touch-icon 使用，对外地址 /logo.png）
 COPY logo.png /var/www/html/

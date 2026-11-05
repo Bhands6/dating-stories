@@ -5,7 +5,7 @@
 **一个零数据库依赖的匿名人生故事分享社区**
 —— 爱情、日常、搞笑、职场、家庭，每一件小事都值得记一笔。
 
-![PHP](https://img.shields.io/badge/PHP-7.4%2B-777bb4) ![Database](https://img.shields.io/badge/数据库-无-orange) ![Node](https://img.shields.io/badge/Node-开发服务器-green) ![Docker](https://img.shields.io/badge/Docker-支持-2496ed) ![Version](https://img.shields.io/badge/version-v1.11-pink) ![License](https://img.shields.io/badge/用途-个人项目-pink)
+![PHP](https://img.shields.io/badge/PHP-7.4%2B-777bb4) ![Database](https://img.shields.io/badge/数据库-无-orange) ![Node](https://img.shields.io/badge/Node-开发服务器-green) ![Docker](https://img.shields.io/badge/Docker-支持-2496ed) ![Version](https://img.shields.io/badge/version-v1.12-pink) ![License](https://img.shields.io/badge/用途-个人项目-pink)
 
 **在线访问**：[bhands.me](https://bhands.me)
 </div>
@@ -23,7 +23,7 @@
 | ✍️ **发布系统** | 匿名发布（随机昵称）、纯文本/HTML 双模式编辑、**插入图片（按钮选图或直接 Ctrl+V 粘贴，自动压缩到长边 1600px 并剥掉 EXIF 定位）**、上传 HTML 文件、富文本粘贴、实时预览、**AI 排版引导弹窗**（三步指引 + 一键复制提示词模板 + DeepSeek/豆包/小米 MiMo 直达） |
 | 🎨 **HTML 排版故事** | 上传你排版的网页，**原件原样存档**（`data/uploads/`），阅读时以沙箱 iframe 呈现——`<header>`、CSS 变量、`@keyframes`、滚动动画 **100% 原样**；Google Fonts 经**站内代理**加载（国内不可达也能显示），还提供「原文阅读」全屏打开 |
 | 🛡️ **防刷机制** | 浏览量按 IP 24h 去重、点赞本地记忆防连点、**写接口按 IP 滑动窗口限流**（发布 5 篇/10 分钟、评论 15 条/5 分钟、反馈 3 条/30 分钟、删评 20 次/10 分钟、删故事 10 次/10 分钟、标记真实 30 次/10 分钟、上传图片 30 张/小时）、内容服务端净化、用户 CSS 沙箱隔离 |
-| 🔐 **站长管理** | 反馈箱（查看/删除网友反馈）、故事管理（最新排序/标签筛选/点击预览/删除）、**友情链接（名称 + 跳转链接 + 图标，可上传图片，排序即时生效于首页页脚）**，列表均支持分页；密码自动生成（`data/admin_key.txt`），连续输错 5 次锁定 15 分钟 |
+| 🔐 **站长管理** | 侧边栏六视图管理台（总览 / 故事管理 / 反馈箱 / 频道管理 / 访客删除 / 站点设置），自带浅色与夜间皮肤；真实数据驱动（统计、频道分布、最近故事、删除留痕），支持故事搜索/排序/频道筛选/分页/批量删除/置顶/编辑/评论管理/预览，反馈单条标已读，友情链接可视化配置，数据导出与修改密码；密码自动生成（`data/admin_key.txt`），连续输错 5 次锁定 15 分钟 |
 | 📮 **互动与合规** | 反馈建议页、内容规范、隐私声明、免责声明、频道云实时计数、站点统计 |
 
 ---
@@ -79,7 +79,7 @@ docker compose up -d --build
 | 🏠 故事广场 | `/` | 浏览、筛选、阅读、评论、点赞 |
 | ✍️ 发布故事 | `/publish.html` | 单选频道 + 双模式编辑器 |
 | 💌 反馈建议 | `/feedback.html` | 网友提交反馈（存服务端） |
-| 🔐 站长管理 | `/admin.html` | 反馈箱 + 故事管理 |
+| 🔐 站长管理 | `/admin.html` | 六视图管理台（总览 / 故事 / 反馈 / 频道 / 删除 / 设置） |
 | 📖 内容规范 / 🔒 隐私声明 / 📜 免责声明 | `/terms.html` 等 | 合规页面 |
 
 ---
@@ -114,7 +114,7 @@ docker compose up -d --build
 ```
 ├── index.html          # 首页
 ├── publish.html        # 发布页
-├── admin.html          # 站长管理页
+├── admin.html          # 站长管理台（自带浅色/夜间皮肤，不依赖 theme.css/theme.js）
 ├── feedback.html       # 反馈建议页
 ├── terms / privacy / disclaimer.html
 ├── theme.css           # 🔑 全站主题层（默认粉 + 摸鱼表格/代码/文档四套）
