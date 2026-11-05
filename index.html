@@ -1640,9 +1640,14 @@
 
         /* 主题开关：用 <button> 而不是 <a>，所以要把浏览器默认样式抹掉 */
         .meta-theme-btn {
+            display: none;          /* 只有深色主题下才有得选，浅色主题隐藏，避免「点了没反应」 */
             cursor: pointer;
             font-family: inherit;
             line-height: 1.2;
+        }
+
+        html[data-theme="code"] .meta-theme-btn {
+            display: inline-flex;
         }
 
         .meta-theme-btn.on {
@@ -3503,8 +3508,10 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         if (!btn) return;
         const on = storyFollowTheme();
         btn.classList.toggle('on', on);
-        btn.innerHTML = on ? '🎨 跟随主题' : '🖼️ 作者原样';
-        btn.title = on ? '当前跟随站点主题；点一下看作者原始配色' : '当前显示作者原始配色；点一下跟随站点主题';
+        btn.innerHTML = on ? '🌙 跟随主题' : '☀️ 原始亮度';
+        btn.title = on
+            ? '深色主题下已把故事页整体调暗；点一下看作者原稿的原始亮度'
+            : '正在显示作者原稿的原始亮度；点一下跟随深色主题';
     }
 
     function bindStoryThemeBtn(s) {
@@ -3516,7 +3523,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             try { localStorage.setItem(STORY_FOLLOW_KEY, storyFollowTheme() ? '0' : '1'); } catch (e) { /* 隐私模式忽略 */ }
             syncStoryThemeBtn(btn);
             frame.src = storyFrameUrl(s);
-            toast(storyFollowTheme() ? '🎨 已跟随站点主题' : '🖼️ 已切回作者原样');
+            toast(storyFollowTheme() ? '🌙 已按深色主题调暗' : '☀️ 已恢复原始亮度');
         });
     }
 
@@ -3563,7 +3570,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
                         <div class="story-author-info">${esc(s.author.info || '匿名分享')} · ${timeAgo(s.createdAt)}</div>
                     </div>
                 </div>
-                ${isHtmlMode ? '<button type="button" class="meta-read-btn meta-theme-btn' + (themeFollow ? ' on' : '') + '" id="story-theme-btn" title="' + (themeFollow ? '当前跟随站点主题；点一下看作者原始配色' : '当前显示作者原始配色；点一下跟随站点主题') + '">' + (themeFollow ? '🎨 跟随主题' : '🖼️ 作者原样') + '</button>' : ''}
+                ${isHtmlMode ? '<button type="button" class="meta-read-btn meta-theme-btn' + (themeFollow ? ' on' : '') + '" id="story-theme-btn" title="深色主题下已把故事页整体调暗；点一下看作者原稿的原始亮度">' + (themeFollow ? '🌙 跟随主题' : '☀️ 原始亮度') + '</button>' : ''}
                 ${isHtmlMode ? '<a class="meta-read-btn" href="' + esc(srcUrl) + '" target="_blank" rel="noopener" title="在新标签页打开你上传的原始 HTML 文件">📖 原文阅读</a>' : ''}
                 <div class="story-time">👁️ ${fmtNum(s.views)} 阅读</div>
             </div>

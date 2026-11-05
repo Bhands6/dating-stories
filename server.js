@@ -947,17 +947,20 @@ function shimOrphanFontRules(html) {
 // 浅色主题刻意统一用白底：作者的设计稿本来就是照着白纸做的，换色只会变味；
 // 只有 code（深色）需要真正改写底色，否则白底弹窗在夜里刺眼。
 const STORY_THEME_PALETTE = {
-  pink:  { bg: '#ffffff', text: '#2d2d3a', thumb: '#f0e0e5', dark: false },
-  excel: { bg: '#ffffff', text: '#1f2328', thumb: '#d6d9dd', dark: false },
-  word:  { bg: '#ffffff', text: '#323130', thumb: '#e1dfdd', dark: false },
-  code:  { bg: '#1e1e2e', text: '#cdd6f4', thumb: '#45475a', dark: true },
+  pink:  { bg: '#ffffff', text: '#2d2d3a', thumb: '#f0e0e5', dark: false, dim: 1 },
+  excel: { bg: '#ffffff', text: '#1f2328', thumb: '#d6d9dd', dark: false, dim: 1 },
+  word:  { bg: '#ffffff', text: '#323130', thumb: '#e1dfdd', dark: false, dim: 1 },
+  code:  { bg: '#1e1e2e', text: '#cdd6f4', thumb: '#45475a', dark: true,  dim: 0.62 },
 };
 
 /**
  * 主题桥接样式：注入在 <head> 最前面，所以**作者自己的规则永远盖得住它**
  * （同权重靠后者胜出、inline style 更强）。这样即使作者写死了配色，
  * 我们也只是给"没指定颜色的页面"补一层主题底色，不会篡改设计稿。
- * 深色主题额外压一层半透明暗幕：作者写死白底时也能降下亮度，不至于夜里刺眼。
+ *
+ * 深色主题额外整体降亮：作者的设计稿（整屏渐变、海报）不可能靠改 CSS 变成"深底浅字"，
+ * 硬改只会毁掉设计；唯一既能看出变化、又不破坏版式的办法是把整页压暗
+ * （brightness 同时压背景与文字，对比度基本保留）。
  */
 function themeBridgeCss(theme) {
   const p = STORY_THEME_PALETTE[theme];
@@ -968,9 +971,9 @@ function themeBridgeCss(theme) {
     '::-webkit-scrollbar-thumb{background:' + p.thumb + ';border-radius:6px;}' +
     '::-webkit-scrollbar-track{background:transparent;}';
   if (p.dark) {
-    // 半透明暗幕而非 filter：不产生新的包含块，不会打乱作者的 fixed/百分比布局
-    css += 'html::after{content:"";position:fixed;inset:0;pointer-events:none;' +
-      'z-index:2147483647;background:rgba(30,30,46,.24);}';
+    // ⚠️ filter 会给 html 造一个包含块，作者 position:fixed 的整屏背景层会改为相对 html
+    //    —— 实测与视口一致，不影响观感；换来的是能真正压暗整页
+    css += 'html{filter:brightness(' + p.dim + ') saturate(.92);}';
   }
   return '<style id="site-theme-bridge">\n' + css + '\n</style>\n';
 }
