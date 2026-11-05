@@ -1,5 +1,5 @@
 /**
- * 人间故事屋 - 零依赖 Node 本地开发服务器
+ * 人生故事屋 - 零依赖 Node 本地开发服务器
  *
  * 接口行为与 api.php 完全对齐（同一份 data/stories.json 数据文件），
  * 本机未装 PHP 时用这个做本地测试：node server.js
@@ -201,7 +201,7 @@ function rateGuard(req, res, action) {
 
 /**
  * 频道（原「标签」）：一篇故事归属一个频道。
- * 2026-11-05 从「相亲故事屋」转为「人间故事屋」时重构：原 13 个相亲专属标签
+ * 2026-11-05 从「相亲故事屋」转为「人生故事屋」时重构：原 13 个相亲专属标签
  * 收敛成 7 个频道，旧标签由 LEGACY_TAG_MAP 映射。tags 仍是数组（不用改数据结构），
  * 但只存一个 key —— 留数组是给以后加「情绪副标签」留余地。
  * ⚠️ 必须与 api.php 的 VALID_TAGS / LEGACY_TAG_MAP 完全一致。
@@ -2047,7 +2047,7 @@ function listen(port, attemptsLeft) {
   });
   server.listen(port, () => {
     console.log('');
-    console.log('  💕 人间故事屋 本地服务已启动');
+    console.log('  💕 人生故事屋 本地服务已启动');
     console.log(`  👉 http://localhost:${port}`);
     console.log('  按 Ctrl+C 停止');
     console.log('');

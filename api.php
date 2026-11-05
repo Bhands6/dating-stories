@@ -1,6 +1,6 @@
 <?php
 /**
- * 人间故事屋 - 单文件 PHP 后端（零依赖，JSON 文件存储，无需 MySQL）
+ * 人生故事屋 - 单文件 PHP 后端（零依赖，JSON 文件存储，无需 MySQL）
  *
  * 接口与 server.js（本地 Node 开发服务器）完全对齐。
  * 前端统一请求：api.php?route=xxx
@@ -39,7 +39,7 @@ define('VIEW_IP_MAX', 20);      // 同 IP 对同一故事在窗口内的计数�
 /**
  * 频道（原「标签」）：一篇故事归属一个频道。
  *
- * 2026-11-05 从「相亲故事屋」转为「人间故事屋」时重构：
+ * 2026-11-05 从「相亲故事屋」转为「人生故事屋」时重构：
  * 原 13 个相亲专属标签收敛成 7 个频道，旧标签由 LEGACY_TAG_MAP 映射过来。
  * tags 仍是数组（沿用原数据结构，不用改 stories.json 的字段），但只存一个 key ——
  * 留数组是给以后加「情绪副标签」留的余地。
@@ -1147,7 +1147,7 @@ function admin_key(): string
         $key = bin2hex(random_bytes(6)); // 12 位随机密码
         if (atomic_write(ADMIN_KEY_FILE, $key)) {
             @chmod(ADMIN_KEY_FILE, 0600);
-            error_log('[人间故事屋] 首次运行已自动生成管理密码，见 data/admin_key.txt');
+            error_log('[人生故事屋] 首次运行已自动生成管理密码，见 data/admin_key.txt');
         }
     }
     unlock_guard($lock);

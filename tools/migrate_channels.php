@@ -1,6 +1,6 @@
 <?php
 /**
- * 频道迁移脚本（2026-11-05「相亲故事屋」→「人间故事屋」）
+ * 频道迁移脚本（2026-11-05「相亲故事屋」→「人生故事屋」）
  *
  * 把历史故事里的旧标签（sweet / touching / complain …）映射成新的 7 个频道
  * （love / daily / funny / work / family / growth / rant），每个故事只留一个 tag。
