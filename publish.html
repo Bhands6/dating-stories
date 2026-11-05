@@ -172,16 +172,16 @@
         }
         .story-rich:focus { border-color: var(--primary-light); background: var(--surface); }
         .story-rich:empty::before { content: attr(data-placeholder); color: var(--text-lighter); pointer-events: none; }
-        /* 正文里的图片卡片：contenteditable=false 让它可以被整体选中/删除 */
+        /* 正文里的插图：只留一张裸缩略图，不要外框 / 背景 / 「图N」文字
+         * contenteditable=false 让它可以被整体选中/删除；inline-flex 才不会把正文强制断成块 */
         .img-token {
-            display: flex; align-items: center; gap: 10px; width: fit-content; max-width: 100%;
-            margin: 10px 0; padding: 8px 10px; border: 1.5px dashed var(--border);
-            border-radius: 12px; background: var(--surface-2); user-select: none;
+            display: inline-flex; align-items: center; vertical-align: middle;
+            max-width: 100%; margin: 0 2px; padding: 0; border: 0;
+            background: none; border-radius: 9px; user-select: none; line-height: 0;
         }
         /* 缩略图容器：X 相对它定位，才能压在「图片」右上角而不是卡片右上角 */
         .img-token .tk-thumb { position: relative; display: inline-flex; flex: none; }
         .img-token img { width: 64px; height: 64px; object-fit: cover; border-radius: 9px; display: block; flex: none; }
-        .img-token .tk-label { font-size: 11px; color: var(--text-light); font-family: 'SF Mono', Consolas, monospace; }
         .img-token .tk-x {
             position: absolute; top: -6px; right: -6px; z-index: 2;
             width: 18px; height: 18px; padding: 0;
@@ -200,7 +200,8 @@
         @media (hover: none) {
             .img-token .tk-x { opacity: 1; pointer-events: auto; transform: none; }
         }
-        .img-token.flash { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(var(--primary-rgb), .12); }
+        /* 重复插入时高亮已有图：没有外框了，改用贴着图片圆角的光晕 */
+        .img-token.flash { box-shadow: 0 0 0 4px rgba(var(--primary-rgb), .22); }
 
         /* 插图缩略图条：只放「正文里没有引用」的图，正常编辑时是隐藏的 */
         .img-tray {
@@ -952,12 +953,11 @@
     function tokenHtml(n) {
         const f = storyImages[Number(n) - 1];
         if (!f) return '【图' + n + '】';
-        return '<span class="img-token" contenteditable="false" data-n="' + n + '" title="图' + n + '">'
+        return '<span class="img-token" contenteditable="false" data-n="' + n + '">'
             + '<span class="tk-thumb">'
             + '<img src="api.php?route=story_img&amp;f=' + esc(f) + '" alt="图' + n + '">'
             + '<button type="button" class="tk-x" data-rm="' + n + '" aria-label="移除图' + n + '" title="从正文移除这张图">✕</button>'
             + '</span>'
-            + '<span class="tk-label">图' + n + '</span>'
             + '</span>';
     }
 
