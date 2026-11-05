@@ -142,7 +142,7 @@ const RATE_LIMITS = {
   delete_comment: { max: 20, window: 600, label: '删除评论' },
   real: { max: 30, window: 600, label: '标记真实故事' },
   delete_story: { max: 10, window: 600, label: '删除故事' },
-  story_img: { max: 30, window: 3600, label: '上传图片' },
+  story_img: { max: 100, window: 3600, label: '上传图片' },
 };
 
 /** 滑动窗口计数。放行返回 null；超限返回还需等待的分钟数 */
@@ -543,6 +543,13 @@ function storyImgGc(db) {
   const keep = new Set();
   for (const s of (db.stories || [])) {
     for (const f of (Array.isArray(s.images) ? s.images : [])) keep.add(String(f));
+    // 评论与回复的附图也走同一个目录，别当成孤儿删了
+    for (const c of (s.comments || [])) {
+      if (c.img) keep.add(String(c.img));
+      for (const r of (c.replies || [])) {
+        if (r.img) keep.add(String(r.img));
+      }
+    }
   }
   const deadline = Math.floor(Date.now() / 1000) - 7200;
   for (const name of names) {
@@ -1023,11 +1030,14 @@ const commentOut = c => ({
   id: String(c.id ?? ''),
   nickname: String(c.nickname ?? '匿名'),
   content: String(c.content ?? ''),
+  // 评论附图（单张，文件名；经 route=story_img 输出），无图时为空串
+  img: String(c.img ?? ''),
   createdAt: Number(c.createdAt ?? 0),
   replies: (c.replies || []).map(r => ({
     id: String(r.id ?? ''),
     nickname: String(r.nickname ?? '匿名'),
     content: String(r.content ?? ''),
+    img: String(r.img ?? ''),
     createdAt: Number(r.createdAt ?? 0),
     replyToNickname: String(r.replyToNickname || ''),
   })),
@@ -1380,7 +1390,11 @@ function handleApi(req, res, url, body) {
         const content = String(body.content || '').trim();
         let nickname = String(body.nickname || '').trim();
         const replyTo = String(body.replyTo || '').trim();
-        if (!content) return fail(res, '评论内容不能为空');
+        // 评论附图：只认本站真实存在过的文件名（正则 + 文件存在）
+        const imgIn = String(body.img || '').trim();
+        const img = (imgIn && STORY_IMG_NAME_RE.test(imgIn) && fs.existsSync(path.join(STORYIMG_DIR, imgIn)))
+          ? imgIn : '';
+        if (!content && !img) return fail(res, '评论内容不能为空');
         if (Array.from(content).length > 500) return fail(res, '评论最多 500 个字');
         if (Array.from(nickname).length > 20) return fail(res, '昵称最多 20 个字符');
         if (!nickname) nickname = randomNickname();
@@ -1392,6 +1406,7 @@ function handleApi(req, res, url, body) {
           // 评论者删除凭证（仅本次响应返回、存储在评论者浏览器里；GET 输出走 commentOut 自动剥离）
           delKey: Math.random().toString(36).slice(2, 10),
         };
+        if (img) entry.img = img;
         if (replyTo) {
           /* 两级楼中楼：replyTo 为目标评论或回复的 id，
              回复统一挂在其所属一级评论的 replies 下，并记录被回复人昵称。
@@ -1426,7 +1441,12 @@ function handleApi(req, res, url, body) {
       for (const c of s.comments) {
         if (String(c.id ?? '') === commentId) {
           if (!c.delKey || !safeEqual(delKey, c.delKey)) { status = 'bad_key'; break; }
-          removed = { nickname: c.nickname || '', content: c.content || '', replies: (c.replies || []).length, isReply: false };
+          removed = {
+            nickname: c.nickname || '', content: c.content || '',
+            replies: (c.replies || []).length, isReply: false,
+            // 一级评论删除会连带回复，它们的附图也要跟着删
+            imgs: [c.img, ...(c.replies || []).map(r => r.img)].filter(Boolean),
+          };
           const pos = s.comments.indexOf(c);
           s.comments.splice(pos, 1);   // 一级评论删除，其回复随之移除
           status = 'deleted';
@@ -1436,7 +1456,10 @@ function handleApi(req, res, url, body) {
         for (let ri = 0; ri < reps.length; ri++) {
           if (String(reps[ri].id ?? '') === commentId) {
             if (!reps[ri].delKey || !safeEqual(delKey, reps[ri].delKey)) { status = 'bad_key'; break outer; }
-            removed = { nickname: reps[ri].nickname || '', content: reps[ri].content || '', replies: 0, isReply: true };
+            removed = {
+              nickname: reps[ri].nickname || '', content: reps[ri].content || '',
+              replies: 0, isReply: true, imgs: [reps[ri].img].filter(Boolean),
+            };
             reps.splice(ri, 1);
             c.replies = reps;
             status = 'deleted';
@@ -1447,6 +1470,8 @@ function handleApi(req, res, url, body) {
       if (status === 'bad_key') return fail(res, '删除凭证不正确，无法删除这条评论');
       if (status === 'not_found') return fail(res, '评论不存在或已被删除', 404);
       dbSave(db);
+      // 评论/回复的附图随内容一起清理（与故事插图同一套存储）
+      if (removed && removed.imgs && removed.imgs.length) storyImgDelete(removed.imgs);
       // 🔔 记录访客自发删除（管理页「删除动态」提示用）；记录失败不影响删除本身
       if (removed) {
         recordDeletion({
@@ -1682,8 +1707,12 @@ function handleApi(req, res, url, body) {
         // ① 命中一级评论 → 连同它的所有回复一起删
         const ci = story.comments.findIndex(c => String(c.id) === commentId);
         if (ci !== -1) {
+          const c = story.comments[ci];
+          // 评论本身 + 它下面所有回复的附图，一并清理
+          const imgs = [c.img, ...(c.replies || []).map(r => r.img)].filter(Boolean);
           story.comments.splice(ci, 1);
           dbSave(db);
+          if (imgs.length) storyImgDelete(imgs);
           return json(res, { ok: true, message: '评论已删除' });
         }
         // ② 命中某条回复 → 只删这一条
@@ -1691,9 +1720,11 @@ function handleApi(req, res, url, body) {
           const reps = c.replies || [];
           const ri = reps.findIndex(r => String(r.id) === commentId);
           if (ri !== -1) {
+            const img = reps[ri].img;
             reps.splice(ri, 1);
             c.replies = reps;
             dbSave(db);
+            if (img) storyImgDelete([img]);
             return json(res, { ok: true, message: '评论已删除' });
           }
         }

@@ -366,6 +366,13 @@ function story_img_gc(array $db): void
     $keep = [];
     foreach ($db['stories'] as $s) {
         foreach ((array)($s['images'] ?? []) as $f) { $keep[(string)$f] = true; }
+        // 评论与回复的附图也走同一个目录，别当成孤儿删了
+        foreach ((array)($s['comments'] ?? []) as $c) {
+            if (!empty($c['img'])) { $keep[(string)$c['img']] = true; }
+            foreach ((array)($c['replies'] ?? []) as $r) {
+                if (!empty($r['img'])) { $keep[(string)$r['img']] = true; }
+            }
+        }
     }
     $deadline = time() - 7200;
     foreach ((array)glob(STORYIMG_DIR . '/*') as $path) {
@@ -1148,11 +1155,14 @@ function comment_out(array $c): array
         'id'              => (string)($c['id'] ?? ''),
         'nickname'        => (string)($c['nickname'] ?? '匿名'),
         'content'         => (string)($c['content'] ?? ''),
+        // 评论附图（单张，文件名；经 route=story_img 输出），无图时为空串
+        'img'             => (string)($c['img'] ?? ''),
         'createdAt'       => (int)($c['createdAt'] ?? 0),
         'replies'         => array_values(array_map(static fn(array $r): array => [
             'id'              => (string)($r['id'] ?? ''),
             'nickname'        => (string)($r['nickname'] ?? '匿名'),
             'content'         => (string)($r['content'] ?? ''),
+            'img'             => (string)($r['img'] ?? ''),
             'createdAt'       => (int)($r['createdAt'] ?? 0),
             'replyToNickname' => (string)($r['replyToNickname'] ?? ''),
         ], array_values($c['replies'] ?? []))),
@@ -1354,7 +1364,7 @@ const RATE_LIMITS = [
     'delete_comment' => [20, 600, '删除评论'],
     'real'           => [30, 600, '标记真实故事'],
     'delete_story'   => [10, 600, '删除故事'],
-    'story_img'      => [30, 3600, '上传图片'],
+    'story_img'      => [100, 3600, '上传图片'],
 ];
 
 /**
@@ -1657,7 +1667,11 @@ switch ($route) {
             $content = trim((string)($in['content'] ?? ''));
             $nickname = trim((string)($in['nickname'] ?? ''));
             $replyTo = trim((string)($in['replyTo'] ?? ''));
-            if ($content === '') { fail('评论内容不能为空'); }
+            // 评论附图：只认本站真实存在过的文件名（正则 + 文件存在）
+            $imgIn = trim((string)($in['img'] ?? ''));
+            $img = ($imgIn !== '' && preg_match(STORY_IMG_NAME_RE, $imgIn) && is_file(STORYIMG_DIR . '/' . $imgIn))
+                ? $imgIn : '';
+            if ($content === '' && $img === '') { fail('评论内容不能为空'); }
             if (mb_strlen($content) > 500) { fail('评论最多 500 个字'); }
             if (mb_strlen($nickname) > 20) { fail('昵称最多 20 个字符'); }
             if ($nickname === '') { $nickname = random_nickname(); }
@@ -1670,6 +1684,7 @@ switch ($route) {
                 // 评论者删除凭证（仅本次响应返回、存储在评论者浏览器里；GET 输出走 comment_out 自动剥离）
                 'delKey'    => substr(bin2hex(random_bytes(5)), 0, 8),
             ];
+            if ($img !== '') { $entry['img'] = $img; }
             // 事务内「定位故事 → 挂评论 → 写盘」：并发评论不会互相覆盖
             $result = db_transaction(static function (array &$db) use ($id, $entry, $replyTo): array {
                 foreach ($db['stories'] as $i => $s) {
@@ -1729,6 +1744,11 @@ switch ($route) {
                             'content'  => (string)($c['content'] ?? ''),
                             'replies'  => count($c['replies'] ?? []),
                             'isReply'  => false,
+                            // 一级评论删除会连带回复一起消失，它们的附图也要跟着删
+                            'imgs'     => array_values(array_filter(array_merge(
+                                [(string)($c['img'] ?? '')],
+                                array_map(static fn(array $r): string => (string)($r['img'] ?? ''), (array)($c['replies'] ?? []))
+                            ))),
                         ];
                         array_splice($comments, $ci, 1);   // 一级评论删除，其回复随之移除
                         $db['stories'][$i]['comments'] = $comments;
@@ -1744,6 +1764,7 @@ switch ($route) {
                                 'content'  => (string)($r['content'] ?? ''),
                                 'replies'  => 0,
                                 'isReply'  => true,
+                                'imgs'     => array_values(array_filter([(string)($r['img'] ?? '')])),
                             ];
                             $reps = $c['replies'];
                             array_splice($reps, $ri, 1);
@@ -1759,6 +1780,8 @@ switch ($route) {
         });
         if ($status === 'bad_key') { fail('删除凭证不正确，无法删除这条评论'); }
         if ($status === 'not_found') { fail('评论不存在或已被删除', 404); }
+        // 评论/回复的附图随内容一起清理（与故事插图同一套存储）
+        if (is_array($removed) && !empty($removed['imgs'])) { story_img_delete($removed['imgs']); }
         // 返回删除后的最新评论数
         $count = 0;
         $owner = null;
@@ -2083,7 +2106,8 @@ switch ($route) {
             $commentId = trim((string)($in['commentId'] ?? ''));
             if ($commentId === '') { fail('缺少 commentId'); }
 
-            $status = db_transaction(static function (array &$db) use ($storyId, $commentId): string {
+            $goneImgs = [];
+            $status = db_transaction(static function (array &$db) use ($storyId, $commentId, &$goneImgs): string {
                 foreach ($db['stories'] as $i => $s) {
                     if ((int)$s['id'] !== $storyId) { continue; }
                     $comments = array_values($s['comments'] ?? []);
@@ -2093,6 +2117,11 @@ switch ($route) {
                         if ((string)($c['id'] ?? '') === $commentId) {
                             array_splice($comments, $ci, 1);
                             $db['stories'][$i]['comments'] = $comments;
+                            // 评论本身 + 它下面所有回复的附图，一并清理
+                            if (!empty($c['img'])) { $goneImgs[] = (string)$c['img']; }
+                            foreach ((array)($c['replies'] ?? []) as $r) {
+                                if (!empty($r['img'])) { $goneImgs[] = (string)$r['img']; }
+                            }
                             return 'deleted';
                         }
                     }
@@ -2101,6 +2130,7 @@ switch ($route) {
                         $reps = array_values($c['replies'] ?? []);
                         foreach ($reps as $ri => $r) {
                             if ((string)($r['id'] ?? '') === $commentId) {
+                                if (!empty($r['img'])) { $goneImgs[] = (string)$r['img']; }
                                 array_splice($reps, $ri, 1);
                                 $comments[$ci]['replies'] = $reps;
                                 $db['stories'][$i]['comments'] = $comments;
@@ -2115,6 +2145,7 @@ switch ($route) {
 
             if ($status === 'no_story')  { fail('故事不存在或已被删除', 404); }
             if ($status === 'not_found') { fail('评论不存在或已被删除', 404); }
+            if ($goneImgs) { story_img_delete($goneImgs); }
             respond(['ok' => true, 'message' => '评论已删除']);
         }
 

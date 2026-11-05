@@ -1872,6 +1872,136 @@
             transform: none;
         }
 
+        /* ===== 评论工具条：表情 / 图片 ===== */
+        .comment-form {
+            position: relative;
+        }
+
+        .comment-form-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .comment-form-actions .comment-submit {
+            float: none;
+            margin-left: auto;
+        }
+
+        .cmt-tool {
+            width: 34px;
+            height: 34px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1.5px solid var(--border);
+            border-radius: 10px;
+            background: var(--surface);
+            font-size: 15px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .cmt-tool:hover {
+            border-color: var(--primary-light);
+            background: rgba(var(--primary-rgb), 0.05);
+        }
+
+        .cmt-tool.active {
+            border-color: var(--primary);
+            background: rgba(var(--primary-rgb), 0.08);
+        }
+
+        .cmt-tool:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* 表情面板：展开时占据表单内一块空间（不浮动，避免挡住正在输入的文字） */
+        .emoji-panel {
+            display: none;
+            width: 100%;
+            max-height: 108px;
+            overflow-y: auto;
+            padding: 6px;
+            margin-bottom: 10px;
+            background: var(--bg);
+            border: 1.5px solid var(--border);
+            border-radius: 12px;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 2px;
+        }
+
+        .emoji-panel.open {
+            display: grid;
+        }
+
+        .emoji-item {
+            font-size: 18px;
+            line-height: 1;
+            padding: 6px 0;
+            text-align: center;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            border-radius: 8px;
+        }
+
+        .emoji-item:hover {
+            background: rgba(var(--primary-rgb), 0.1);
+        }
+
+        /* 待发送的评论附图预览 */
+        .cmt-img-row {
+            margin-bottom: 10px;
+        }
+
+        .cmt-img-thumb {
+            position: relative;
+            display: inline-block;
+        }
+
+        .cmt-img-thumb img {
+            max-width: 120px;
+            max-height: 120px;
+            display: block;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+        }
+
+        .cmt-img-thumb button {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            width: 20px;
+            height: 20px;
+            border: none;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.55);
+            color: #fff;
+            font-size: 11px;
+            line-height: 1;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* 已发布评论里的图 */
+        .comment-img {
+            display: block;
+            margin-top: 6px;
+        }
+
+        .comment-img img {
+            max-width: 180px;
+            max-height: 180px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            cursor: zoom-in;
+        }
+
         /* ===== 评论回复（楼中楼） ===== */
         .comment-actions {
             margin-top: 6px;
@@ -2068,6 +2198,7 @@
         }
 
         .inline-reply-form {
+            position: relative;
             margin-top: 10px;
             background: var(--bg);
             border: 1.5px solid var(--border);
@@ -2109,6 +2240,34 @@
             justify-content: flex-end;
             align-items: center;
             gap: 8px;
+        }
+
+        /* 回复框里的表情/图片按钮（比评论框小一号，挤在操作区左侧） */
+        .reply-form-actions .cmt-tool {
+            width: 28px;
+            height: 28px;
+            font-size: 13px;
+            border-radius: 8px;
+            margin-right: 0;
+        }
+
+        .reply-form-actions .cmt-tool[data-act="emoji"] {
+            margin-left: 0;
+            margin-right: auto;
+        }
+
+        .inline-reply-form .emoji-panel {
+            width: 100%;
+            max-height: 120px;
+        }
+
+        .inline-reply-form .cmt-img-row {
+            margin-bottom: 0;
+        }
+
+        .inline-reply-form .cmt-img-thumb img {
+            max-width: 90px;
+            max-height: 90px;
         }
 
         .reply-cancel {
@@ -3119,6 +3278,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         openStorySeq++;   // 作废在途的打开/评论刷新响应，别让它们写进下次打开的弹窗
         overlay.classList.remove('open');
         document.body.style.overflow = '';
+        pendingCmtImg = '';   // 关掉弹窗就丢弃「已上传但还没发出去」的评论图（文件由 GC 兜底清理）
         // 若地址栏带有一次性弹窗参数（发布后跳转的 ?story=N），关闭时清除，
         // 避免之后刷新页面重复弹出
         if (new URLSearchParams(location.search).has('story')) {
@@ -3230,8 +3390,18 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
                 <div class="comment-form">
                 <input type="text" id="comment-nickname" placeholder="昵称（选填，不填将随机生成）" aria-label="昵称（选填，不填将随机生成）" autocomplete="nickname" maxlength="20">
                 <textarea id="comment-content" placeholder="写下你的鼓励或共鸣…" aria-label="写下你的鼓励或共鸣" maxlength="500"></textarea>
-                    <button class="comment-submit" id="comment-submit">发送 💕</button>
-                    <div style="clear:both;"></div>
+                    <div class="cmt-img-row" id="cmt-img-row" style="display:none;">
+                        <div class="cmt-img-thumb">
+                            <img id="cmt-img-thumb" alt="待发送的图片">
+                            <button type="button" id="cmt-img-remove" title="移除图片">✕</button>
+                        </div>
+                    </div>
+                    <div class="emoji-panel" id="emoji-panel"></div>
+                    <div class="comment-form-actions">
+                        <button type="button" class="cmt-tool" id="cmt-emoji-btn" title="插入表情">😊</button>
+                        <button type="button" class="cmt-tool" id="cmt-img-btn" title="插入图片（也可以直接粘贴）">📷</button>
+                        <button class="comment-submit" id="comment-submit">发送 💕</button>
+                    </div>
                 </div>
             </div>`;
 
@@ -3266,6 +3436,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             });
         }
         modalBody.querySelector('#comment-submit').addEventListener('click', () => submitComment(s.id));
+        bindCommentForm();   // 表情面板 / 选图 / 粘贴（DOM 每次重建，必须重绑）
 
         /* 评论区事件委托（绑在持久容器上，幂等）：折叠 / 回复 / 发送 / 收起 */
         bindCommentListEvents();
@@ -3308,7 +3479,8 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
                             ${r.replyToNickname ? `<span class="reply-to">回复 @${esc(r.replyToNickname)}</span>` : ''}
                             <span class="reply-time">${timeAgo(r.createdAt)}</span>
                         </div>
-                        <div class="reply-text">${nl2br(esc(r.content))}</div>
+                        <div class="reply-text">${r.content ? nl2br(esc(r.content)) : ''}</div>
+                        ${commentImgHtml(r.img)}
                         <div class="comment-actions">${commentReplyBtn(r.id, r.nickname, parentId, false)}${cmtDelBtn(r.id)}</div>
                     </div>
                 </div>`;
@@ -3317,6 +3489,197 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
     const repliesExpanded = (c) => collapsedReplies.has(c.id)
         ? false
         : (expandedReplies.has(c.id) || (c.replies || []).length <= 2);
+
+    /* ==================== 评论：表情 / 配图 ==================== */
+    const EMOJIS = ['😀', '😄', '😁', '😊', '🥰', '😍', '🤩', '😘', '😜', '🤪', '😎', '🤔',
+        '🙃', '😅', '😂', '🤣', '😭', '😢', '🥲', '😌', '😴', '🤗', '🤭', '🙄',
+        '😐', '😔', '😤', '😡', '🥺', '😳', '🤯', '🫠', '👍', '👏', '🙏', '💪',
+        '🤝', '❤️', '💔', '💕', '✨', '🔥', '🎉', '🌷', '🌙', '☕', '🍜', '🐱'];
+    let pendingCmtImg = '';   // 待发送的评论附图（文件名），发出后清空
+
+    /** 在 textarea 光标处插入文本（表情、图片占位都走它） */
+    function insertTextAt(el, text) {
+        if (!el) return;
+        const start = typeof el.selectionStart === 'number' ? el.selectionStart : el.value.length;
+        const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : start;
+        el.value = el.value.slice(0, start) + text + el.value.slice(end);
+        const pos = start + text.length;
+        el.focus();
+        try { el.setSelectionRange(pos, pos); } catch (e) { /* 忽略 */ }
+    }
+
+    /**
+     * 评论配图压缩：长边 ≤1200、JPEG 0.8，顺带剥掉 EXIF（定位）。
+     * 比故事插图更小一档 —— 评论里是缩略图，没必要占大空间。
+     */
+    function compressCommentImage(file) {
+        return new Promise((resolve, reject) => {
+            if (file.size > 30 * 1024 * 1024) return reject(new Error('图片太大了，最多 30MB'));
+            if (/heic|heif/i.test(file.type || '')) {
+                return reject(new Error('iPhone 的 HEIC 格式浏览器解不了，请从相册选择（会自动转 JPG）'));
+            }
+            const fr = new FileReader();
+            fr.onerror = () => reject(new Error('读取图片失败'));
+            fr.onload = () => {
+                const dataUrl = String(fr.result || '');
+                if (file.type === 'image/gif') {          // GIF 保留动画，不压缩
+                    if (file.size > 2 * 1024 * 1024) return reject(new Error('GIF 最多 2MB'));
+                    return resolve(dataUrl);
+                }
+                const img = new Image();
+                img.onerror = () => reject(new Error('图片打不开，换一张试试'));
+                img.onload = () => {
+                    try {
+                        const MAX = 1200;
+                        let w = img.naturalWidth || img.width;
+                        let h = img.naturalHeight || img.height;
+                        if (w > MAX || h > MAX) {
+                            const r = Math.min(MAX / w, MAX / h);
+                            w = Math.max(1, Math.round(w * r));
+                            h = Math.max(1, Math.round(h * r));
+                        }
+                        const cv = document.createElement('canvas');
+                        cv.width = w;
+                        cv.height = h;
+                        const ctx = cv.getContext('2d');
+                        ctx.fillStyle = '#fff';
+                        ctx.fillRect(0, 0, w, h);
+                        ctx.drawImage(img, 0, 0, w, h);
+                        resolve(cv.toDataURL('image/jpeg', 0.8));
+                    } catch (e) {
+                        reject(new Error('图片处理失败，换一张试试'));
+                    }
+                };
+                img.src = dataUrl;
+            };
+            fr.readAsDataURL(file);
+        });
+    }
+
+    /** 选文件 → 压缩 → 上传，返回文件名 */
+    async function pickAndUploadImage(file) {
+        const dataUrl = await compressCommentImage(file);
+        const d = await api('story_img_upload', null, { data: dataUrl }, 90000);
+        return d.f;
+    }
+
+    /** 表情面板：填充 + 开关 + 插入（评论框与回复框共用） */
+    function wireEmojiPanel(ta, panel, btn) {
+        panel.innerHTML = EMOJIS.map(e =>
+            `<button type="button" class="emoji-item" data-emoji="${e}">${e}</button>`).join('');
+        const close = () => {
+            panel.classList.remove('open');
+            btn.classList.remove('active');
+        };
+        btn.addEventListener('click', e => {
+            e.stopPropagation();
+            const open = panel.classList.toggle('open');
+            btn.classList.toggle('active', open);
+            // 面板是内嵌展开，会把底部工具条往下推；确保「发送」还在视野里
+            if (open) {
+                setTimeout(() => {
+                    const acts = panel.nextElementSibling;
+                    if (acts && acts.scrollIntoView) acts.scrollIntoView({ block: 'nearest' });
+                }, 60);
+            }
+        });
+        panel.addEventListener('click', e => {
+            const b = e.target.closest('.emoji-item');
+            if (!b) return;
+            e.stopPropagation();
+            insertTextAt(ta, b.dataset.emoji);   // 连点多个表情时面板保持打开
+        });
+        ta.addEventListener('focus', close);
+        return close;
+    }
+
+    /** 图片：按钮选图 + 直接粘贴，成功后回调文件名（评论框与回复框共用） */
+    function wireImagePicker(ta, btn, row, thumb, onPick) {
+        const take = async file => {
+            btn.disabled = true;
+            try {
+                const f = await pickAndUploadImage(file);
+                onPick(f);
+                row.style.display = '';
+                thumb.src = 'api.php?route=story_img&f=' + encodeURIComponent(f);
+                toast('🖼️ 图片已添加');
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+            btn.disabled = false;
+        };
+        btn.addEventListener('click', () => {
+            const fi = document.createElement('input');
+            fi.type = 'file';
+            fi.accept = 'image/png,image/jpeg,image/gif,image/webp';
+            fi.onchange = () => { if (fi.files && fi.files[0]) take(fi.files[0]); };
+            fi.click();
+        });
+        ta.addEventListener('paste', e => {
+            const items = e.clipboardData && e.clipboardData.items;
+            if (!items) return;
+            for (const it of items) {
+                if (it.kind === 'file' && /^image\//.test(it.type || '')) {
+                    const f = it.getAsFile();
+                    if (f) { e.preventDefault(); take(f); }
+                    return;
+                }
+            }
+        });
+    }
+
+    /** 评论框工具条（DOM 每次重建，所以要重新绑） */
+    function bindCommentForm() {
+        const form = modalBody.querySelector('.comment-form');
+        if (!form) return;
+        const ta = form.querySelector('#comment-content');
+        const panel = form.querySelector('#emoji-panel');
+        const emojiBtn = form.querySelector('#cmt-emoji-btn');
+        const imgBtn = form.querySelector('#cmt-img-btn');
+        if (!ta || !panel || !emojiBtn || !imgBtn) return;
+
+        wireEmojiPanel(ta, panel, emojiBtn);
+        const row = form.querySelector('#cmt-img-row');
+        const thumb = form.querySelector('#cmt-img-thumb');
+        wireImagePicker(ta, imgBtn, row, thumb, f => { pendingCmtImg = f; });
+
+        const rm = form.querySelector('#cmt-img-remove');
+        if (rm) {
+            rm.addEventListener('click', () => {
+                pendingCmtImg = '';
+                row.style.display = 'none';
+            });
+        }
+    }
+
+    /** 评论/回复里的图片（点开看原图） */
+    /** 回复框的表情/图片工具（图片存在 form.dataset.img，多个回复框互不干扰） */
+    function bindReplyFormTools(form) {
+        const ta = form.querySelector('.reply-content');
+        const panel = form.querySelector('.emoji-panel');
+        const emojiBtn = form.querySelector('.cmt-tool[data-act="emoji"]');
+        const imgBtn = form.querySelector('.cmt-tool[data-act="img"]');
+        const row = form.querySelector('.cmt-img-row');
+        if (!ta || !panel || !emojiBtn || !imgBtn || !row) return;
+
+        wireEmojiPanel(ta, panel, emojiBtn);
+        wireImagePicker(ta, imgBtn, row, row.querySelector('img'), f => { form.dataset.img = f; });
+
+        const rm = row.querySelector('.rci-remove');
+        if (rm) {
+            rm.addEventListener('click', () => {
+                delete form.dataset.img;
+                row.style.display = 'none';
+            });
+        }
+    }
+
+    /** 评论/回复里的图片（点开看原图） */
+    function commentImgHtml(f) {
+        if (!f) return '';
+        const url = 'api.php?route=story_img&f=' + encodeURIComponent(f);
+        return `<div class="comment-img"><img src="${url}" alt="评论配图" loading="lazy" data-full="${url}"></div>`;
+    }
 
     function renderCommentListHtml() {
         const comments = currentStory ? (currentStory.comments || []) : [];
@@ -3339,7 +3702,8 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
                         <span class="comment-name">${esc(c.nickname)}</span>
                         <span class="comment-time">${timeAgo(c.createdAt)}</span>
                     </div>
-                    <div class="comment-text">${nl2br(esc(c.content))}</div>
+                    <div class="comment-text">${c.content ? nl2br(esc(c.content)) : ''}</div>
+                    ${commentImgHtml(c.img)}
                     <div class="comment-actions">${commentReplyBtn(c.id, c.nickname, c.id, true)}${cmtDelBtn(c.id)}</div>
                     <div class="reply-form-slot"></div>
                     ${repliesBlock}
@@ -3367,6 +3731,12 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             if (del) { deleteOwnComment(del.dataset.delId); return; }
             const send = e.target.closest('.reply-send');
             if (send) { submitReply(send.closest('.inline-reply-form')); return; }
+            // 点评论里的图 → 新窗口看原图
+            const pic = e.target.closest('.comment-img img');
+            if (pic) {
+                window.open(pic.dataset.full || pic.src, '_blank', 'noopener');
+                return;
+            }
             const cancel = e.target.closest('.reply-cancel');
             if (cancel) {
                 const f = cancel.closest('.inline-reply-form');
@@ -3448,11 +3818,21 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         form.innerHTML = `
             <input type="text" class="reply-nick" placeholder="昵称（选填，不填将随机生成）" aria-label="昵称（选填，不填将随机生成）" autocomplete="nickname" maxlength="20">
             <textarea class="reply-content" rows="2" maxlength="500" aria-label="${isTop ? '写下你的鼓励或共鸣' : '回复内容'}" placeholder="${isTop ? '写下你的鼓励或共鸣…' : '回复 @' + esc(nick) + ' …'}"></textarea>
+            <div class="cmt-img-row" style="display:none;">
+                <div class="cmt-img-thumb">
+                    <img alt="待发送的图片">
+                    <button type="button" class="rci-remove" title="移除图片">✕</button>
+                </div>
+            </div>
+            <div class="emoji-panel"></div>
             <div class="reply-form-actions">
+                <button type="button" class="cmt-tool" data-act="emoji" title="插入表情">😊</button>
+                <button type="button" class="cmt-tool" data-act="img" title="插入图片（也可以直接粘贴）">📷</button>
                 <button type="button" class="reply-cancel">收起</button>
                 <button type="button" class="reply-send">发送 💕</button>
             </div>`;
         slot.appendChild(form);
+        bindReplyFormTools(form);
         form.querySelector('.reply-content').focus();
     }
 
@@ -3490,13 +3870,17 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         const nickEl = form.querySelector('.reply-nick');
         const textEl = form.querySelector('.reply-content');
         const content = textEl.value.trim();
-        if (!content) { toast('先写点内容再发送吧～', 'error'); textEl.focus(); return; }
+        const img = form.dataset.img || '';
+        // 允许「只发一张图」
+        if (!content && !img) { toast('先写点内容再发送吧～', 'error'); textEl.focus(); return; }
         const btn = form.querySelector('.reply-send');
         btn.disabled = true;
         btn.textContent = '发送中…';
         const parent = form.dataset.parent || '';
         try {
-            const d = await api('comments', { id: currentStory.id }, { nickname: nickEl.value.trim(), content, replyTo: form.dataset.replyTo });
+            const payload = { nickname: nickEl.value.trim(), content, replyTo: form.dataset.replyTo };
+            if (img) payload.img = img;
+            const d = await api('comments', { id: currentStory.id }, payload);
             saveCmtKey(d.comment && d.comment.id, d.comment && d.comment.delKey);
             toast('💕 回复成功！');
             // 展开该评论的回复区，局部刷新并高亮新回复（不跳顶）
@@ -3515,15 +3899,24 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         const textEl = modalBody.querySelector('#comment-content');
         const btn = modalBody.querySelector('#comment-submit');
         const content = textEl.value.trim();
-        if (!content) { toast('先写点内容再发送吧～', 'error'); textEl.focus(); return; }
+        // 允许「只发一张图」不写字
+        if (!content && !pendingCmtImg) { toast('先写点内容再发送吧～', 'error'); textEl.focus(); return; }
         btn.disabled = true;
         btn.innerHTML = '发送中…';
         try {
-            const d = await api('comments', { id }, { nickname: nickEl.value.trim(), content });
+            const payload = { nickname: nickEl.value.trim(), content };
+            if (pendingCmtImg) payload.img = pendingCmtImg;
+            const d = await api('comments', { id }, payload);
             saveCmtKey(d.comment && d.comment.id, d.comment && d.comment.delKey);
             toast('💕 评论成功！');
             nickEl.value = '';
             textEl.value = '';
+            // 清掉待发送的配图（图片文件已被这条评论引用，不能删）
+            pendingCmtImg = '';
+            const row = modalBody.querySelector('#cmt-img-row');
+            if (row) row.style.display = 'none';
+            const panel = modalBody.querySelector('#emoji-panel');
+            if (panel) panel.classList.remove('open');
             // 复位按钮：评论表单在 .comment-list 之外，refreshComments 不会重建它，
             // 不在这里复位按钮就会一直卡在「disabled + 发送中…」。
             btn.disabled = false;
