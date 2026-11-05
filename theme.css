@@ -736,3 +736,18 @@ html[data-theme="word"] :is(.theme-menu, .theme-menu button) {
         font-size: 32px;
     }
 }
+
+/* ===== 页脚心形：管理后台的隐藏入口 =====
+ * 各页面自己的 .heart 规则只管颜色和跳动动画，这里补链接语义：
+ * 去掉浏览器默认的蓝色下划线，让 <a> 和原来的 <span> 长得一模一样。 */
+a.heart {
+    text-decoration: none;
+    cursor: pointer;
+    transition: opacity .2s ease;
+}
+a.heart:hover { opacity: .7; }
+a.heart:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 3px;
+    border-radius: 4px;
+}
