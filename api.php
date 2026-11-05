@@ -24,6 +24,7 @@ define('DATA_FILE', DATA_DIR . '/stories.json');
 define('SEED_FILE', DATA_DIR . '/seed.json');
 define('FEEDBACK_FILE', DATA_DIR . '/feedback.json');
 define('VIEWS_LOG', DATA_DIR . '/views_log.json');
+define('VISIT_STATS', DATA_DIR . '/visit_stats.json');    // 访客趋势按天聚合（管理台折线图用）
 define('ADMIN_KEY_FILE', DATA_DIR . '/admin_key.txt');
 define('ADMIN_GUARD_FILE', DATA_DIR . '/admin_guard.json');
 define('RATE_GUARD_FILE', DATA_DIR . '/rate_guard.json');
@@ -1190,7 +1191,66 @@ function should_count_view(string $ip, int $id, string $vid = ''): bool
     }
     atomic_write(VIEWS_LOG, json_encode(['v' => $v, 'i' => $i], JSON_UNESCAPED_UNICODE));
     unlock_guard($lock);
+
+    // 计数成立时顺带记进按天聚合（折线图数据源）。放在 views_log 解锁之后：
+    // 任意时刻只持一把锁，不引入 VIEWS_LOG → VISIT_STATS 的多锁持有。
+    if ($counted) {
+        visit_stats_record($vKey !== '' ? 'v:' . $vid : 'i:' . $ip);
+    }
     return $counted;
+}
+
+const VISIT_STATS_DAYS = 60;   // 趋势聚合保留天数，文件恒定在几 KB 量级
+
+/**
+ * 访客趋势按天聚合（管理台折线图的数据源）。
+ * views_log.json 只保留 12 小时窗口，撑不起按天曲线，这里单独落一份每日聚合：
+ *   { days: { "YYYY-MM-DD": { pv: 计数次数, u: ["v:vid"|"i:ip", ...] } } }
+ * pv = 当天被计数的浏览次数；u = 当天出现过的访客集合（vid 优先、退化为 IP），uv = 集合大小。
+ * 独立 flock，写盘走临时文件 + rename；只留最近 VISIT_STATS_DAYS 天。
+ */
+function visit_stats_record(string $uid): void
+{
+    $lock = lock_guard(VISIT_STATS);
+    if (!$lock) { return; }   // 统计文件不可用时静默跳过，不影响浏览计数本身
+
+    $raw = json_decode((string)@file_get_contents(VISIT_STATS) ?: '', true);
+    $days = is_array($raw['days'] ?? null) ? $raw['days'] : [];
+
+    $today = date('Y-m-d');
+    $rec = is_array($days[$today] ?? null) ? $days[$today] : [];
+    $rec['pv'] = (int)($rec['pv'] ?? 0) + 1;
+    $u = is_array($rec['u'] ?? null) ? $rec['u'] : [];
+    if (!in_array($uid, $u, true)) { $u[] = $uid; }
+    $rec['u'] = $u;
+    $days[$today] = $rec;
+
+    // 清掉窗口外的旧日期（按字符串日期比较即可，YYYY-MM-DD 字典序就是时间序）
+    $cut = date('Y-m-d', time() - VISIT_STATS_DAYS * 86400);
+    foreach ($days as $d => $r) {
+        if ((string)$d < $cut) { unset($days[$d]); }
+    }
+    atomic_write(VISIT_STATS, json_encode(['days' => $days], JSON_UNESCAPED_UNICODE));
+    unlock_guard($lock);
+}
+
+/** 访客趋势：从 visit_stats.json 取最近 N 天序列（缺的日期补 0），admin_stats 折线图用 */
+function visit_stats_series(int $days): array
+{
+    $raw = json_decode((string)@file_get_contents(VISIT_STATS) ?: '', true);
+    $all = is_array($raw['days'] ?? null) ? $raw['days'] : [];
+    $out = [];
+    for ($k = $days - 1; $k >= 0; $k--) {
+        $ts = strtotime('today') - $k * 86400;
+        $key = date('Y-m-d', $ts);
+        $rec = is_array($all[$key] ?? null) ? $all[$key] : [];
+        $out[] = [
+            'd'  => date('m-d', $ts),
+            'pv' => (int)($rec['pv'] ?? 0),
+            'uv' => is_array($rec['u'] ?? null) ? count($rec['u']) : 0,
+        ];
+    }
+    return $out;
 }
 
 /** 评论输出映射（两级楼中楼：一级评论 + 扁平回复列表；字段级兜底，残缺数据不再触发 Warning） */
@@ -2682,6 +2742,7 @@ switch ($route) {
             'feedbackUnread' => $fbUnread,
             'todayFeedback'  => $todayFb,
             'today'          => date('Y-m-d'),
+            'visitors'       => visit_stats_series(14),   // 最近 14 天访客趋势（折线图）
         ]]);
     }
 

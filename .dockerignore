@@ -18,6 +18,7 @@ node_modules/
 data/stories.json
 data/feedback.json
 data/views_log.json
+data/visit_stats.json
 data/rate_guard.json
 data/deletions.json
 data/friends.json

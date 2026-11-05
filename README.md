@@ -99,6 +99,7 @@ docker compose up -d --build
         data/feedback.json  网友反馈
         data/friends.json   友情链接（管理页维护，首页页脚展示）
         data/views_log.json 浏览量防刷记录
+        data/visit_stats.json 访客趋势按天聚合（管理台折线图）
         data/uploads/       上传的原始 HTML 源文件（原样阅读用，未净化）
         data/fontcache/     字体代理缓存（Google Fonts 中转产物）
         data/*.lock         互斥锁（0 字节，运行时生成，删掉会自动重建）
@@ -141,6 +142,7 @@ docker compose up -d --build
 │   ├── storyimg/       # 运行时生成：故事插图（发布页上传，经 route=story_img 输出）
 │   ├── fontcache/      # 运行时生成：字体代理缓存（Google Fonts 中转产物，删掉自动重建）
 │   ├── views_log.json  # 运行时生成：防刷记录
+│   ├── visit_stats.json # 运行时生成：访客趋势按天聚合（管理台折线图）
 │   └── *.lock          # 运行时生成：互斥锁（0 字节，删掉会自动重建）
 ├── Dockerfile / docker-compose.yml
 ├── uploads-alias.conf  # 原文阅读静态直出：放行 /uploads/{id}.html + CSP sandbox

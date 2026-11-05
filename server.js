@@ -1121,6 +1121,8 @@ const hotScore = s => s.likes * 3 + commentsCount(s) * 5 + s.views * 0.5;
 const VIEWS_LOG = path.join(DATA_DIR, 'views_log.json');
 const VIEW_WINDOW = 12 * 60 * 60;        // 12 小时（秒，与 PHP 同单位）
 const VIEW_IP_MAX = 20;                  // 同 IP 对同一故事在窗口内的计数上限
+const VISIT_STATS = path.join(DATA_DIR, 'visit_stats.json');  // 访客趋势按天聚合（管理台折线图用）
+const VISIT_STATS_DAYS = 60;             // 趋势聚合保留天数（与 PHP 一致）
 
 /**
  * 是否信任 X-Forwarded-For 头（默认**关闭**）。
@@ -1193,7 +1195,64 @@ function shouldCountView(req, storyId, vid) {
     fs.renameSync(tmp, VIEWS_LOG);   // 原子替换，避免写一半被读到
   } catch (e) { /* 日志不可写时退化为仅内存判断：不影响浏览本身 */ }
 
+  // 计数成立时顺带记进按天聚合（与 api.php 的 visit_stats_record() 对齐）
+  if (counted) visitStatsRecord(vKey ? 'v:' + vid : 'i:' + clientIp(req));
   return counted;
+}
+
+/**
+ * 访客趋势按天聚合（折线图数据源，与 api.php 共用同一份 visit_stats.json、同一格式）：
+ *   { days: { "YYYY-MM-DD": { pv: 计数次数, u: ["v:vid"|"i:ip", ...] } } }
+ * pv = 当天被计数的浏览次数；u = 当天出现过的访客集合（vid 优先、退化为 IP），uv = 集合大小。
+ * 只留最近 VISIT_STATS_DAYS 天；Node 单进程内同步执行，无并发写竞争，原子替换防读半截。
+ */
+function visitStatsRecord(uid) {
+  let days = {};
+  try {
+    const j = JSON.parse(fs.readFileSync(VISIT_STATS, 'utf8'));
+    if (j && j.days && typeof j.days === 'object') days = j.days;
+  } catch (e) { /* 文件不存在/损坏：从空聚合开始 */ }
+
+  const p2 = n => String(n).padStart(2, '0');
+  const ymdOf = dt => dt.getFullYear() + '-' + p2(dt.getMonth() + 1) + '-' + p2(dt.getDate());
+  const today = ymdOf(new Date());
+  const rec = (days[today] && typeof days[today] === 'object') ? days[today] : { pv: 0, u: [] };
+  rec.pv = (rec.pv | 0) + 1;
+  const u = Array.isArray(rec.u) ? rec.u : [];
+  if (!u.includes(uid)) u.push(uid);
+  rec.u = u;
+  days[today] = rec;
+
+  const cut = ymdOf(new Date(Date.now() - VISIT_STATS_DAYS * 86400000));
+  for (const d of Object.keys(days)) { if (d < cut) delete days[d]; }
+
+  try {
+    const tmp = VISIT_STATS + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ days }), 'utf8');
+    fs.renameSync(tmp, VISIT_STATS);
+  } catch (e) { /* 统计文件不可写时跳过，不影响浏览计数本身 */ }
+}
+
+/** 访客趋势：最近 N 天序列（缺的日期补 0），admin_stats 折线图用 */
+function visitStatsSeries(nDays) {
+  let all = {};
+  try {
+    const j = JSON.parse(fs.readFileSync(VISIT_STATS, 'utf8'));
+    if (j && j.days && typeof j.days === 'object') all = j.days;
+  } catch (e) {}
+  const p2 = n => String(n).padStart(2, '0');
+  const out = [];
+  for (let k = nDays - 1; k >= 0; k--) {
+    const dt = new Date(Date.now() - k * 86400000);
+    const key = dt.getFullYear() + '-' + p2(dt.getMonth() + 1) + '-' + p2(dt.getDate());
+    const rec = (all[key] && typeof all[key] === 'object') ? all[key] : {};
+    out.push({
+      d: p2(dt.getMonth() + 1) + '-' + p2(dt.getDate()),
+      pv: rec.pv | 0,
+      uv: Array.isArray(rec.u) ? rec.u.length : 0,
+    });
+  }
+  return out;
 }
 
 /** 列表项字段（不含全文） */
@@ -2216,6 +2275,7 @@ function handleApi(req, res, url, body) {
           feedback: fbTotal, feedbackUnread: fbUnread, todayFeedback: todayFb,
           deletionsToday, deletionsUnread,
           today: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`,
+          visitors: visitStatsSeries(14),   // 最近 14 天访客趋势（折线图）
         },
       });
     }

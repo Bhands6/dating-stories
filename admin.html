@@ -207,6 +207,21 @@ body.locked{overflow:hidden}
 .donut-mid{position:absolute;inset:0;display:grid;place-content:center;text-align:center;z-index:2}
 .donut-mid b{font-family:"DM Mono",monospace;font-size:30px;font-weight:500;display:block;line-height:1}
 .donut-mid span{font-size:10.5px;color:var(--muted);letter-spacing:.18em;font-family:"DM Mono",monospace}
+/* 访客趋势折线图：纯 SVG 双线（浏览量 = 玫瑰 / 访客数 = 灰绿），颜色全走主题变量 */
+.ov-chart{width:100%}
+.ov-chart svg{display:block;width:100%;height:auto}
+.ov-chart .cg{stroke:var(--line-soft);stroke-width:1}
+.ov-chart .cl{font-family:"DM Mono",monospace;font-size:10px;fill:var(--muted)}
+.ov-chart .ln-pv{fill:none;stroke:var(--rose);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
+.ov-chart .ln-uv{fill:none;stroke:var(--sage);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.ov-chart .ar-pv{fill:var(--rose);opacity:.07}
+.ov-chart .dot-pv{fill:var(--rose)}
+.ov-chart .dot-uv{fill:var(--sage)}
+.chart-legend{display:flex;gap:16px;align-items:center}
+.chart-legend .lg{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted)}
+.chart-legend .lg i{display:inline-block;width:16px;height:3px;border-radius:2px}
+.chart-legend .lg.pv i{background:var(--rose)}
+.chart-legend .lg.uv i{background:var(--sage)}
 .legend-list{flex:1;min-width:170px;display:flex;flex-direction:column;gap:11px}
 .legend-item{display:flex;align-items:center;gap:10px;font-size:12.5px}
 .legend-item i{width:9px;height:9px;border-radius:3px;flex:none}
@@ -674,6 +689,20 @@ input[type=checkbox]{
 
       <div class="panel rv">
         <div class="panel-head">
+          <div>
+            <div class="panel-title">访客趋势</div>
+            <div class="panel-note" style="margin-top:6px">Visitors · 最近 14 天</div>
+          </div>
+          <div class="chart-legend">
+            <span class="lg pv"><i></i>浏览量</span>
+            <span class="lg uv"><i></i>访客数</span>
+          </div>
+        </div>
+        <div class="ov-chart" id="ov-chart"><div class="empty sm"><p>加载中…</p></div></div>
+      </div>
+
+      <div class="panel rv">
+        <div class="panel-head">
           <div class="panel-title">最近的故事</div>
           <button class="btn btn-sm btn-ghost" data-goto="stories">全部故事 →</button>
         </div>
@@ -1083,12 +1112,63 @@ async function loadOverview() {
         if (badge) badge.textContent = s.feedbackUnread ? s.feedbackUnread : '';
         const sb = $('#badge-stories');
         if (sb) sb.textContent = s.stories || '';
+        renderVisitorsChart(s.visitors);
     } catch (e) {
         if (String(e.message).includes('密码')) handleBadKey();
     }
     loadDelCount();
     loadChannels(false);
     loadRecent();
+}
+
+/* 访客趋势折线图：纯 SVG 双线（浏览量 / 访客数），无第三方库；数据点用原生 <title> 悬停提示 */
+function renderVisitorsChart(data) {
+    const box = $('#ov-chart');
+    if (!box) return;
+    data = Array.isArray(data) ? data : [];
+    if (!data.length) {
+        box.innerHTML = '<div class="empty sm"><p>还没有访问数据，有人浏览后这里就会出现折线</p></div>';
+        return;
+    }
+    const W = 860, H = 230, L = 46, R = 16, T = 16, B = 28;
+    const iw = W - L - R, ih = H - T - B, n = data.length;
+    // 纵轴刻度取「1/2/5 × 10^k」的好看数：先按 max/4 选步长，再 ×4 得到轴顶
+    const rawMax = Math.max(1, ...data.map(pt => Math.max(pt.pv || 0, pt.uv || 0)));
+    const niceStep = v => {
+        const p = Math.pow(10, Math.floor(Math.log10(v)));
+        const m = v / p;
+        return Math.max(1, (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p);
+    };
+    const step = niceStep(rawMax / 4);
+    const top = step * 4;
+    const X = i => L + (n <= 1 ? iw / 2 : i * iw / (n - 1));
+    const Y = v => T + ih - (Math.min(v, top) / top) * ih;
+    const path = k => data.map((pt, i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(pt[k] || 0).toFixed(1)).join(' ');
+    const area = k => path(k) + ' L' + X(n - 1).toFixed(1) + ' ' + (T + ih) + ' L' + X(0).toFixed(1) + ' ' + (T + ih) + ' Z';
+    // 网格线 + 纵轴刻度
+    let g = '';
+    for (let s = 0; s <= 4; s++) {
+        const val = step * s, yy = Y(val).toFixed(1);
+        g += '<line class="cg" x1="' + L + '" y1="' + yy + '" x2="' + (W - R) + '" y2="' + yy + '"/>'
+           + '<text class="cl" x="' + (L - 7) + '" y="' + (Number(yy) + 3.5) + '" text-anchor="end">' + fmtNum(val) + '</text>';
+    }
+    // 横轴日期（最多标 8 个，最后一个必标）
+    const every = Math.max(1, Math.ceil(n / 8));
+    data.forEach((pt, i) => {
+        if (i % every === 0 || i === n - 1) {
+            g += '<text class="cl" x="' + X(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + esc(pt.d) + '</text>';
+        }
+    });
+    const dots = k => data.map((pt, i) =>
+        '<circle class="dot-' + k + '" cx="' + X(i).toFixed(1) + '" cy="' + Y(pt[k] || 0).toFixed(1) + '" r="3">'
+        + '<title>' + esc(pt.d) + ' · ' + (k === 'pv' ? '浏览' : '访客') + ' ' + (pt[k] || 0) + '</title></circle>').join('');
+    box.innerHTML =
+        '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="最近 14 天访客趋势折线图">'
+        + '<path class="ar-pv" d="' + area('pv') + '"/>'
+        + '<path class="ln-pv" d="' + path('pv') + '"/>'
+        + '<path class="ln-uv" d="' + path('uv') + '"/>'
+        + g + dots('pv') + dots('uv')
+        + '</svg>';
 }
 
 async function loadRecent() {
