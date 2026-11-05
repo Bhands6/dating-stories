@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💕</text></svg>">
-    <title>✏️ 发布故事 - 缘分故事屋</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>">
+    <title>✏️ 发布故事 - 人间故事屋</title>
     <!-- 全站主题层：变量 + 四套主题 + 切换器样式；脚本负责防闪、注入菜单、Alt+1~4 -->
     <link rel="stylesheet" href="theme.css">
     <script src="theme.js"></script>
@@ -536,10 +536,10 @@
     <nav class="navbar" id="navbar">
         <div class="nav-inner">
             <a class="logo" href="index.html">
-                <div class="logo-icon">💕</div>
+                <div class="logo-icon">📖</div>
                 <div>
-                    <div class="logo-text">缘分故事屋</div>
-                    <div class="logo-sub">DATING STORIES</div>
+                    <div class="logo-text">人间故事屋</div>
+                    <div class="logo-sub">LIFE STORIES</div>
                 </div>
             </a>
             <ul class="nav-links">
@@ -564,7 +564,7 @@
                 匿名发布 · 无需注册登录
             </div>
             <h1>写下你的<span class="highlight">故事</span></h1>
-            <p>甜蜜的、搞笑的、感动的、吐槽的——让每一段经历都有被倾听的机会。</p>
+            <p>爱情、日常、搞笑、职场、家庭——让每一件小事都有被倾听的机会。</p>
         </div>
     </section>
 
@@ -591,22 +591,16 @@
                 </div>
         <input type="text" placeholder="你的昵称（选填，不填将随机生成）" aria-label="你的昵称（选填，不填将随机生成）" autocomplete="nickname" id="story-nickname" maxlength="20">
         <input type="text" placeholder="给你的故事起个标题吧..." aria-label="给你的故事起个标题吧" id="story-title" maxlength="60">
-        <textarea id="story-content" aria-label="在这里写下你的相亲故事" placeholder="在这里写下你的相亲故事...&#10;&#10;比如：&#10;是怎么认识的？&#10;见面聊了什么？&#10;有没有什么有趣的瞬间？&#10;结局如何？"></textarea>
+        <textarea id="story-content" aria-label="在这里写下你想记下来的事" placeholder="在这里写下你想记下来的事...&#10;&#10;比如：&#10;那天发生了什么？&#10;当时你在想什么？&#10;有没有哪个瞬间让你记到现在？&#10;后来呢？"></textarea>
                 <div class="composer-footer">
                     <div class="composer-options">
                         <button class="option-btn active" data-tag="daily" onclick="selectTag(this)">📝 日常</button>
-                        <button class="option-btn" data-tag="sweet" onclick="selectTag(this)">💕 甜蜜</button>
+                        <button class="option-btn" data-tag="love" onclick="selectTag(this)">💕 爱情</button>
                         <button class="option-btn" data-tag="funny" onclick="selectTag(this)">😂 搞笑</button>
-                        <button class="option-btn" data-tag="touching" onclick="selectTag(this)">💖 感动</button>
-                        <button class="option-btn" data-tag="complain" onclick="selectTag(this)">💔 吐槽</button>
-                        <button class="option-btn" data-tag="yidi" onclick="selectTag(this)">🌊 异地相亲</button>
-                        <button class="option-btn" data-tag="chujian" onclick="selectTag(this)">👋 初次见面</button>
-                        <button class="option-btn" data-tag="liaotian" onclick="selectTag(this)">💬 聊天记录</button>
-                        <button class="option-btn" data-tag="jiaolv" onclick="selectTag(this)">😰 年龄焦虑</button>
-                        <button class="option-btn" data-tag="cuihun" onclick="selectTag(this)">📞 父母催婚</button>
-                        <button class="option-btn" data-tag="jianjia" onclick="selectTag(this)">🏠 见家长</button>
-                        <button class="option-btn" data-tag="yilian" onclick="selectTag(this)">🌙 异地恋</button>
-                        <button class="option-btn" data-tag="shanhun" onclick="selectTag(this)">💍 闪婚</button>
+                        <button class="option-btn" data-tag="work" onclick="selectTag(this)">💼 职场</button>
+                        <button class="option-btn" data-tag="family" onclick="selectTag(this)">🏠 家庭</button>
+                        <button class="option-btn" data-tag="growth" onclick="selectTag(this)">🌱 成长</button>
+                        <button class="option-btn" data-tag="rant" onclick="selectTag(this)">💬 吐槽</button>
                     </div>
                     <div class="composer-actions">
                         <button class="preview-btn" id="previewBtn" onclick="togglePreview()">👁️ 预览</button>
@@ -635,16 +629,16 @@
         <div class="footer-inner">
             <div class="footer-brand">
                 <a class="logo" href="index.html">
-                    <div class="logo-icon">💕</div>
+                    <div class="logo-icon">📖</div>
                     <div>
-                        <div class="logo-text">缘分故事屋</div>
-                        <div class="logo-sub">DATING STORIES</div>
+                        <div class="logo-text">人间故事屋</div>
+                        <div class="logo-sub">LIFE STORIES</div>
                     </div>
                 </a>
-                <p>每一段缘分都值得被记录。在这里分享你的相亲故事，让后来的人知道，爱情有很多种样子。</p>
+                <p>每个人的日子都值得记一笔。在这里写下你的小事，让后来的人知道，生活有很多种样子。</p>
             </div>
             <div class="footer-bottom">
-                <p>© 2026 缘分故事屋 · Made with <span class="heart">❤</span> · 每一个故事都值得被听见</p>
+                <p>© 2026 人间故事屋 · Made with <span class="heart">❤</span> · 每一个故事都值得被听见</p>
             </div>
         </div>
     </footer>
@@ -714,11 +708,11 @@
         if (mode === 'text') {
             tabs[0].classList.add('active');
             textarea.classList.remove('html-mode');
-            textarea.placeholder = '在这里写下你的相亲故事...\n\n比如：\n是怎么认识的？\n见面聊了什么？\n有没有什么有趣的瞬间？\n结局如何？';
+            textarea.placeholder = '在这里写下你想记下来的事...\n\n比如：\n那天发生了什么？\n当时你在想什么？\n有没有哪个瞬间让你记到现在？\n后来呢？';
         } else {
             tabs[1].classList.add('active');
             textarea.classList.add('html-mode');
-            textarea.placeholder = '<!-- 在这里编写HTML内容，或点击上方「上传 HTML 文件」导入 -->\n\n<h2>我的相亲故事</h2>\n<p>那是一个阳光明媚的下午...</p>\n\n<div style="padding: 10px; background: var(--surface-3); border-radius: 8px;">\n    <strong>甜蜜瞬间：</strong>他紧张到把咖啡打翻了...\n</div>';
+            textarea.placeholder = '<!-- 在这里编写HTML内容，或点击上方「上传 HTML 文件」导入 -->\n\n<h2>我的故事</h2>\n<p>那是一个很普通的下午...</p>\n\n<div style="padding: 10px; background: var(--surface-3); border-radius: 8px;">\n    <strong>难忘的瞬间：</strong>她笑着把最后一块蛋糕推给我...\n</div>';
             // 切到 HTML 模式时弹出 AI 引导（导入文件场景跳过；用户勾选「不再提示」后不再弹）
             if (!skipGuide && localStorage.getItem('ai_guide_dismissed') !== '1') {
                 showAiGuide();
@@ -1106,11 +1100,11 @@
                 <textarea id="ai-template-text" spellcheck="false">请你帮我把一段真实经历写成一个精美的 HTML 网页故事，要求如下：
 
 【故事剧情线】
-（在这里用几句话写下你的故事梗概，比如：相亲对象居然是游戏里骂过我的队友，我们从互怼到双排，三个月后他表白了……）
+（在这里用几句话写下你的故事梗概，比如：楼下便利店阿姨每次都多给我一根葱，直到有天我发现她认错了人……）
 
 【要求】
-1. 温馨甜美的叙事风格，带一点幽默，符合相亲/恋爱主题；
-2. 粉色系温柔配色，手机和电脑上看都舒服；
+1. 温和自然的叙事语气，可以幽默，别煽情过头；主题是「人生小事」，不限爱情；
+2. 温柔的浅色配色（粉色或米色），手机和电脑上看都舒服；
 3. 单个 HTML 文件、内联 CSS：包含大标题、分段正文、一句高亮的"金句卡片"，结尾加一句温暖的祝福；
 4. 直接输出完整的 HTML 代码，我会保存为 .html 文件使用。</textarea>
             </div>

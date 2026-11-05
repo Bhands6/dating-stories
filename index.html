@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💕</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>">
     <link rel="apple-touch-icon" href="logo.png">
-    <title>💕 缘分故事屋 - 分享你的相亲故事</title>
+    <title>📖 人间故事屋 - 记录你的人生小事</title>
     <!-- 全站主题层：变量 + 四套主题 + 切换器样式；脚本负责防闪、注入菜单、Alt+1~4 -->
     <link rel="stylesheet" href="theme.css">
     <script src="theme.js"></script>
@@ -992,6 +992,66 @@
             line-height: 1.6;
         }
 
+        /* ===== Channel Cards（七个频道总览） ===== */
+        .channel-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            justify-content: center;
+            margin-bottom: 8px;
+        }
+
+        .channel-card {
+            flex: 1 1 200px;
+            max-width: 264px;
+            min-height: 208px;
+            padding: 22px 18px;
+            border-radius: var(--radius);
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            text-decoration: none;
+            color: var(--text);
+            transition: all 0.3s ease;
+        }
+
+        .channel-card:hover {
+            transform: translateY(-3px);
+            box-shadow: var(--shadow-hover);
+            border-color: rgba(var(--primary-rgb), 0.25);
+        }
+
+        .channel-icon {
+            width: 44px;
+            height: 44px;
+            margin-bottom: 12px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            background: var(--gradient-soft);
+        }
+
+        .channel-card h3 {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .channel-card p {
+            font-size: 13px;
+            color: var(--text-light);
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .channel-count {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--primary);
+        }
+
         /* ===== Hot Stories Sidebar ===== */
         .hot-section {
             margin-top: 20px;
@@ -1341,6 +1401,17 @@
             }
             .features {
                 grid-template-columns: 1fr;
+            }
+            /* 频道卡片：窄屏改单列（用 grid 更稳，flex-basis 容易撑出横向滚动） */
+            .channel-grid {
+                display: grid;
+                /* minmax(0,1fr)：grid 项默认 min-width:auto 会被长文案撑破容器，右侧贴边 */
+                grid-template-columns: minmax(0, 1fr);
+                gap: 12px;
+            }
+            .channel-card {
+                max-width: none;
+                min-height: 0;
             }
             .nav-links {
                 display: none;
@@ -2278,10 +2349,10 @@
     <nav class="navbar" id="navbar">
         <div class="nav-inner">
             <a class="logo" href="#">
-                <div class="logo-icon">💕</div>
+                <div class="logo-icon">📖</div>
                 <div>
-                    <div class="logo-text">缘分故事屋</div>
-                    <div class="logo-sub">DATING STORIES</div>
+                    <div class="logo-text">人间故事屋</div>
+                    <div class="logo-sub">LIFE STORIES</div>
                 </div>
             </a>
             <ul class="nav-links">
@@ -2302,10 +2373,10 @@
                 正在收集真实故事 · 无需注册登录
             </div>
             <h1>
-                每一次相遇<br>
-                都是<span class="highlight">一段缘分</span>
+                那些没处说的小事<br>
+                都值得<span class="highlight">记一笔</span>
             </h1>
-            <p>在这里分享你的相亲故事——甜蜜的、搞笑的、感动的、吐槽的。<br>让每一段经历都有被倾听的机会。</p>
+            <p>在这里写下你的人生小事——爱情、日常、搞笑、职场、家庭。<br>让每一件小事都有被倾听的机会。</p>
             <div class="hero-actions">
                 <a href="publish.html" class="btn btn-primary">✏️ 分享我的故事</a>
                 <a href="#stories" class="btn btn-secondary">📖 浏览故事</a>
@@ -2322,8 +2393,8 @@
                 </div>
                 <div class="stat-divider"></div>
                 <div class="stat-item">
-                    <div class="stat-number" id="stat-sweet">–</div>
-                    <div class="stat-label">段甜蜜故事</div>
+                    <div class="stat-number" id="stat-love">–</div>
+                    <div class="stat-label">个爱情故事</div>
                 </div>
             </div>
         </div>
@@ -2345,9 +2416,64 @@
                 </div>
                 <div class="feature-card animate-on-scroll">
                     <div class="feature-icon purple">💫</div>
-                    <h3>传递缘分</h3>
-                    <p>每一个故事都可能遇见同路人，让缘分在故事间流转</p>
+                    <h3>遇见同路人</h3>
+                    <p>你会发现，很多人和你经历过一样的时刻</p>
                 </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Channels Section：七个频道总览，点卡片直接筛选故事广场 -->
+    <section class="section" id="channels">
+        <div class="section-inner">
+            <div class="section-header">
+                <div class="section-tag">🗂️ CHANNELS</div>
+                <h2>七个频道</h2>
+                <p>想写什么写什么，总有一个装得下</p>
+            </div>
+            <div class="channel-grid">
+                <a class="channel-card animate-on-scroll" href="#stories" data-channel="love">
+                    <div class="channel-icon">💕</div>
+                    <h3>爱情故事</h3>
+                    <p>相亲、恋爱、婚姻里的甜与苦</p>
+                    <span class="channel-count" data-count="love">–</span>
+                </a>
+                <a class="channel-card animate-on-scroll" href="#stories" data-channel="daily">
+                    <div class="channel-icon">📝</div>
+                    <h3>日常分享</h3>
+                    <p>今天吃了什么、遇到谁、想了些啥</p>
+                    <span class="channel-count" data-count="daily">–</span>
+                </a>
+                <a class="channel-card animate-on-scroll" href="#stories" data-channel="funny">
+                    <div class="channel-icon">😂</div>
+                    <h3>搞笑故事</h3>
+                    <p>那些当时想死、事后想笑的事</p>
+                    <span class="channel-count" data-count="funny">–</span>
+                </a>
+                <a class="channel-card animate-on-scroll" href="#stories" data-channel="work">
+                    <div class="channel-icon">💼</div>
+                    <h3>职场见闻</h3>
+                    <p>同事、老板、甲方和加班的夜</p>
+                    <span class="channel-count" data-count="work">–</span>
+                </a>
+                <a class="channel-card animate-on-scroll" href="#stories" data-channel="family">
+                    <div class="channel-icon">🏠</div>
+                    <h3>家庭生活</h3>
+                    <p>父母、孩子、亲戚和家里的琐碎</p>
+                    <span class="channel-count" data-count="family">–</span>
+                </a>
+                <a class="channel-card animate-on-scroll" href="#stories" data-channel="growth">
+                    <div class="channel-icon">🌱</div>
+                    <h3>成长感悟</h3>
+                    <p>某个瞬间突然想通的事</p>
+                    <span class="channel-count" data-count="growth">–</span>
+                </a>
+                <a class="channel-card animate-on-scroll" href="#stories" data-channel="rant">
+                    <div class="channel-icon">💬</div>
+                    <h3>吐槽树洞</h3>
+                    <p>憋在心里的话，说出来会好受点</p>
+                    <span class="channel-count" data-count="rant">–</span>
+                </a>
             </div>
         </div>
     </section>
@@ -2358,7 +2484,7 @@
             <div class="section-header">
                 <div class="section-tag">📖 STORY PLAZA</div>
                 <h2>故事广场</h2>
-                <p>每一段相亲经历，都值得被认真讲述</p>
+                <p>每一件小事，都值得被认真讲述</p>
             </div>
 
             <div class="main-layout">
@@ -2367,28 +2493,22 @@
                     <div class="filter-bar" id="filter-bar">
                         <button class="filter-tab active" data-filter="new">🕐 最新</button>
                         <button class="filter-tab" data-filter="hot">🔥 热门</button>
+                        <button class="filter-tab" data-filter="love">💕 爱情</button>
                         <button class="filter-tab" data-filter="daily">📝 日常</button>
-                        <button class="filter-tab" data-filter="sweet">💕 甜蜜</button>
                         <button class="filter-tab" data-filter="funny">😂 搞笑</button>
-                        <button class="filter-tab" data-filter="touching">💖 感动</button>
-                        <button class="filter-tab" data-filter="complain">💔 吐槽</button>
-                        <button class="filter-tab" data-filter="yidi">🌊 异地相亲</button>
-                        <button class="filter-tab" data-filter="chujian">👋 初次见面</button>
-                        <button class="filter-tab" data-filter="liaotian">💬 聊天记录</button>
-                        <button class="filter-tab" data-filter="jiaolv">😰 年龄焦虑</button>
-                        <button class="filter-tab" data-filter="cuihun">📞 父母催婚</button>
-                        <button class="filter-tab" data-filter="jianjia">🏠 见家长</button>
-                        <button class="filter-tab" data-filter="yilian">🌙 异地恋</button>
-                        <button class="filter-tab" data-filter="shanhun">💍 闪婚</button>
+                        <button class="filter-tab" data-filter="work">💼 职场</button>
+                        <button class="filter-tab" data-filter="family">🏠 家庭</button>
+                        <button class="filter-tab" data-filter="growth">🌱 成长</button>
+                        <button class="filter-tab" data-filter="rant">💬 吐槽</button>
                     </div>
                     <!-- Stories Grid（动态渲染） -->
                     <div class="stories-grid" id="stories-grid"></div>
 
                     <!-- Empty State -->
                     <div class="empty-state" id="empty-state">
-                        <div class="emoji">💌</div>
+                        <div class="emoji">📖</div>
                         <h3>这里还没有故事</h3>
-                        <p>成为第一个分享缘分的人吧～</p>
+                        <p>成为第一个在这里留下故事的人吧～</p>
                     </div>
 
                     <!-- Load More -->
@@ -2407,7 +2527,7 @@
 
                     <!-- Tag Cloud（动态渲染，可点击筛选） -->
                     <div class="sidebar-card">
-                        <h3><span class="icon">🏷️</span> 热门标签</h3>
+                        <h3><span class="icon">🗂️</span> 频道导航</h3>
                         <div class="tag-cloud" id="tag-cloud"></div>
                     </div>
 
@@ -2432,24 +2552,24 @@
         <div class="section-inner">
             <div class="section-header">
                 <div class="section-tag">💫 ABOUT US</div>
-                <h2>关于缘分故事屋</h2>
-                <p>一个真诚分享相亲经历的温暖小站</p>
+                <h2>关于人间故事屋</h2>
+                <p>一个匿名记录人生小事的温暖小站</p>
             </div>
             <div class="features">
                 <div class="feature-card animate-on-scroll">
                     <div class="feature-icon pink">🌸</div>
                     <h3>我们是谁</h3>
-                    <p>「缘分故事屋」是一个匿名的相亲故事分享社区。在这里，每一段相遇——无论结局如何——都值得被认真讲述、被温柔倾听。</p>
+                    <p>「人间故事屋」是一个匿名的故事记录社区。每一件小事——无论大小、无论结局——都值得被认真讲述、被温柔倾听。这里最早只收相亲故事，现在爱情、日常、搞笑、职场、家庭都收。</p>
                 </div>
                 <div class="feature-card animate-on-scroll">
                     <div class="feature-icon orange">💌</div>
                     <h3>分享什么</h3>
-                    <p>甜蜜的、搞笑的、感动的、吐槽的……真实的相亲经历与感悟。无需注册登录，写下即可发布，支持纯文本与 HTML 排版。</p>
+                    <p>爱情里的甜与苦、今天的荒唐小事、职场里憋着的话、某个突然想通的瞬间……真实的经历与感悟。无需注册登录，写下即可发布，支持纯文本与 HTML 排版。</p>
                 </div>
                 <div class="feature-card animate-on-scroll">
                     <div class="feature-icon purple">🤝</div>
                     <h3>温馨约定</h3>
-                    <p>请尊重每一位讲述者：不辱骂攻击、不传播他人隐私、不发布广告引流。让这里始终保持温柔与真诚 🌷</p>
+                    <p>请尊重每一位讲述者：不辱骂攻击、不曝光他人隐私（真实姓名、照片、单位）、不发布广告引流。让这里始终保持温柔与真诚 🌷</p>
                 </div>
             </div>
         </div>
@@ -2460,13 +2580,13 @@
         <div class="footer-inner">
             <div class="footer-brand">
                 <a class="logo" href="#top">
-                    <div class="logo-icon">💕</div>
+                    <div class="logo-icon">📖</div>
                     <div>
-                        <div class="logo-text">缘分故事屋</div>
-                        <div class="logo-sub">DATING STORIES</div>
+                        <div class="logo-text">人间故事屋</div>
+                        <div class="logo-sub">LIFE STORIES</div>
                     </div>
                 </a>
-                <p>每一段缘分都值得被记录。在这里分享你的相亲故事，让后来的人知道，爱情有很多种样子。</p>
+                <p>每个人的日子都值得记一笔。在这里写下你的小事，让后来的人知道，生活有很多种样子。</p>
             </div>
             <div class="footer-links">
                 <a class="footer-link" href="feedback.html">💌 反馈建议</a>
@@ -2482,7 +2602,7 @@
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>© 2026 缘分故事屋 · Made with <span class="heart">❤</span> · 每一个故事都值得被听见</p>
+                <p>© 2026 人间故事屋 · Made with <span class="heart">❤</span> · 每一个故事都值得被听见</p>
             </div>
         </div>
     </footer>
@@ -2641,27 +2761,32 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         try { realSet = new Set(JSON.parse(localStorage.getItem('fs_real_ids') || '[]')); } catch (e) { /* 读失败沿用内存值 */ }
     }
 
+    // 频道元数据（2026-11 改版：原 13 个相亲标签收敛成 7 个频道）
     const TAG_META = {
-        sweet:    { label: '💕 甜蜜脱单', cls: 'tag-success' },
-        funny:    { label: '😂 搞笑经历', cls: 'tag-funny' },
-        touching: { label: '💖 感人故事', cls: 'tag-touching' },
-        complain: { label: '💔 心酸吐槽', cls: 'tag-complain' },
-        daily:    { label: '📝 日常记录', cls: 'tag-regular' },
-        yidi:     { label: '🌊 异地相亲', cls: 'tag-blue' },
-        chujian:  { label: '👋 初次见面', cls: 'tag-teal' },
-        liaotian: { label: '💬 聊天记录', cls: 'tag-orange' },
-        jiaolv:   { label: '😰 年龄焦虑', cls: 'tag-gray' },
-        cuihun:   { label: '📞 父母催婚', cls: 'tag-brown' },
-        jianjia:  { label: '🏠 见家长', cls: 'tag-gold' },
-        yilian:   { label: '🌙 异地恋', cls: 'tag-sky' },
-        shanhun:  { label: '💍 闪婚', cls: 'tag-rose' },
+        love:   { label: '💕 爱情故事', cls: 'tag-rose' },
+        daily:  { label: '📝 日常分享', cls: 'tag-regular' },
+        funny:  { label: '😂 搞笑故事', cls: 'tag-funny' },
+        work:   { label: '💼 职场见闻', cls: 'tag-teal' },
+        family: { label: '🏠 家庭生活', cls: 'tag-brown' },
+        growth: { label: '🌱 成长感悟', cls: 'tag-success' },
+        rant:   { label: '💬 吐槽树洞', cls: 'tag-complain' },
+    };
+
+    // 旧标签 → 新频道（与后端 LEGACY_TAG_MAP 一致）。
+    // 数据没迁移、或浏览器缓存了旧页面时，靠它把 sweet 这类旧值折到新频道，
+    // 不然卡片会全部兜底成「日常分享」。
+    const TAG_ALIAS = {
+        sweet: 'love', touching: 'love', chujian: 'love', liaotian: 'love',
+        jianjia: 'love', yilian: 'love', shanhun: 'love', yidi: 'love',
+        complain: 'rant', cuihun: 'family', jiaolv: 'growth',
     };
 
     /* ==================== 故事卡片渲染 ==================== */
     function tagHtml(tags) {
-        const first = (tags && tags.length) ? TAG_META[tags[0]] : null;
-        if (!first) return '<span class="story-tag tag-regular">📝 日常记录</span>';
-        return `<span class="story-tag ${first.cls}">${first.label}</span>`;
+        const raw = (tags && tags.length) ? String(tags[0]) : '';
+        const meta = TAG_META[TAG_ALIAS[raw] || raw];
+        if (!meta) return '<span class="story-tag tag-regular">📝 日常分享</span>';
+        return `<span class="story-tag ${meta.cls}">${meta.label}</span>`;
     }
 
     function renderCard(story, idx) {
@@ -2887,7 +3012,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             const d = await api('like', null, { id, undo });
             syncLikeUI(id, Number(d.likes) || 0, !undo);
             if (undo) { likedSet.delete(id); toast('已取消点赞'); }
-            else { likedSet.add(id); heartBurst(e); toast('💕 点赞成功，为缘分加油！'); }
+            else { likedSet.add(id); heartBurst(e); toast('💕 点赞成功，谢谢你的喜欢！'); }
             saveLiked();
             loadStats();
         } catch (err) {
@@ -3422,26 +3547,32 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         });
     });
 
+    // 频道卡片：点一下等于筛到该频道，并滚到故事广场
+    $$('.channel-card').forEach(card => {
+        card.addEventListener('click', e => {
+            e.preventDefault();
+            const ch = card.dataset.channel;
+            if (!ch) return;
+            setFilter(ch);
+            document.getElementById('stories').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+
     $('#load-more-btn').addEventListener('click', () => {
         if (!state.hasMore) return;
         loadStories(false);   // 页码在 loadStories 成功后才提交：失败重试同页、连点不跳页
     });
 
     /* ==================== 侧边栏热门 & 统计 ==================== */
-    const TAG_CLOUD = [
-        { label: '甜蜜脱单', filter: 'sweet' },
-        { label: '搞笑经历', filter: 'funny' },
-        { label: '感人故事', filter: 'touching' },
-        { label: '相亲吐槽', filter: 'complain' },
-        { label: '日常记录', filter: 'daily' },
-        { label: '异地相亲', filter: 'yidi' },
-        { label: '初次见面', filter: 'chujian' },
-        { label: '聊天记录', filter: 'liaotian' },
-        { label: '年龄焦虑', filter: 'jiaolv' },
-        { label: '父母催婚', filter: 'cuihun' },
-        { label: '见家长', filter: 'jianjia' },
-        { label: '异地恋', filter: 'yilian' },
-        { label: '闪婚', filter: 'shanhun' },
+    // 侧边栏频道云（顺序与首页「七个频道」卡片一致）
+    const CHANNEL_CLOUD = [
+        { key: 'love',   label: '爱情故事' },
+        { key: 'daily',  label: '日常分享' },
+        { key: 'funny',  label: '搞笑故事' },
+        { key: 'work',   label: '职场见闻' },
+        { key: 'family', label: '家庭生活' },
+        { key: 'growth', label: '成长感悟' },
+        { key: 'rant',   label: '吐槽树洞' },
     ];
 
     async function loadTags() {
@@ -3450,13 +3581,18 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             const d = await api('tags');
             (d.tags || []).forEach(t => { counts[t.tag] = t.count; });
         } catch (e) { /* 计数获取失败不影响标签展示 */ }
+        // 频道卡片右下角的「N 篇故事」
+        $$('.channel-count').forEach(el => {
+            const n = counts[el.dataset.count] || 0;
+            el.textContent = n > 0 ? n + ' 篇故事' : '还没有故事';
+        });
         const cloud = $('#tag-cloud');
         if (!cloud) return;
-        cloud.innerHTML = TAG_CLOUD.map(t => {
-            const count = t.filter ? (counts[t.filter] || 0) : 0;
-            const hot = t.filter && count > 0;
-            const num = t.filter ? `<span style="font-size:11px;opacity:.75;">${count}</span>` : '';
-            return `<span class="cloud-tag${hot ? ' hot' : ''}" data-filter="${t.filter || ''}" data-label="${t.label}" title="${t.filter ? '筛选「' + t.label + '」故事' : '该话题暂无故事'}">#${t.label}${num}</span>`;
+        cloud.innerHTML = CHANNEL_CLOUD.map(t => {
+            const count = counts[t.key] || 0;
+            const hot = count > 0;
+            const num = `<span style="font-size:11px;opacity:.75;">${count}</span>`;
+            return `<span class="cloud-tag${hot ? ' hot' : ''}" data-filter="${t.key}" data-label="${t.label}" title="${hot ? '筛选「' + t.label + '」故事' : '该频道暂无故事'}">#${t.label}${num}</span>`;
         }).join('');
         cloud.querySelectorAll('.cloud-tag').forEach(el => {
             el.addEventListener('click', () => {
@@ -3493,7 +3629,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             const d = await api('stats');
             $('#stat-stories').textContent = fmtNum(d.stats.stories);
             $('#stat-likes').textContent = fmtNum(d.stats.likes);
-            $('#stat-sweet').textContent = fmtNum(d.stats.sweet);
+            $('#stat-love').textContent = fmtNum(d.stats.love);
         } catch (e) { /* 统计失败静默 */ }
     }
 
@@ -3603,9 +3739,10 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
     $$('.animate-on-scroll').forEach(el => observer.observe(el));
 
     // 支持 ?filter=xxx 直达分类（发布页跳回时使用）
-    const URL_FILTERS = ['hot', 'new', 'sweet', 'funny', 'touching', 'complain', 'daily',
-        'yidi', 'chujian', 'liaotian', 'jiaolv', 'cuihun', 'jianjia', 'yilian', 'shanhun'];
-    const urlFilter = new URLSearchParams(location.search).get('filter');
+    const URL_FILTERS = ['hot', 'new', 'love', 'daily', 'funny', 'work', 'family', 'growth', 'rant'];
+    const urlFilterRaw = new URLSearchParams(location.search).get('filter');
+    // 旧链接 ?filter=sweet / complain … 折成新频道，改版前分享出去的链接不会失效
+    const urlFilter = urlFilterRaw ? (TAG_ALIAS[urlFilterRaw] || urlFilterRaw) : '';
     if (urlFilter && URL_FILTERS.includes(urlFilter)) {
         state.filter = urlFilter;
         $$('.filter-tab').forEach(t => t.classList.toggle('active', t.dataset.filter === urlFilter));

@@ -35,6 +35,8 @@ data/uploads/
 data/*.lock
 data/*.tmp
 *.tmp
+# 数据迁移/手工改动前的临时备份
+data/*.bak-*
 
 # 密钥与安全记录：绝不能进仓库（admin_key.txt 是管理页密码）
 data/admin_key.txt

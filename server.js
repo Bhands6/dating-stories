@@ -1,5 +1,5 @@
 /**
- * 缘分故事屋 - 零依赖 Node 本地开发服务器
+ * 人间故事屋 - 零依赖 Node 本地开发服务器
  *
  * 接口行为与 api.php 完全对齐（同一份 data/stories.json 数据文件），
  * 本机未装 PHP 时用这个做本地测试：node server.js
@@ -199,21 +199,30 @@ function rateGuard(req, res, action) {
   return true;
 }
 
+/**
+ * 频道（原「标签」）：一篇故事归属一个频道。
+ * 2026-11-05 从「相亲故事屋」转为「人间故事屋」时重构：原 13 个相亲专属标签
+ * 收敛成 7 个频道，旧标签由 LEGACY_TAG_MAP 映射。tags 仍是数组（不用改数据结构），
+ * 但只存一个 key —— 留数组是给以后加「情绪副标签」留余地。
+ * ⚠️ 必须与 api.php 的 VALID_TAGS / LEGACY_TAG_MAP 完全一致。
+ */
 const VALID_TAGS = [
-  'sweet',     // 甜蜜脱单
-  'funny',     // 搞笑经历
-  'touching',  // 感人故事
-  'complain',  // 心酸吐槽
-  'daily',     // 日常记录
-  'yidi',      // 异地相亲
-  'chujian',   // 初次见面
-  'liaotian',  // 聊天记录
-  'jiaolv',    // 年龄焦虑
-  'cuihun',    // 父母催婚
-  'jianjia',   // 见家长
-  'yilian',    // 异地恋
-  'shanhun',   // 闪婚
+  'love',    // 💕 爱情故事（含相亲、恋爱、婚姻）
+  'daily',   // 📝 日常分享
+  'funny',   // 😂 搞笑故事
+  'work',    // 💼 职场见闻
+  'family',  // 🏠 家庭生活
+  'growth',  // 🌱 成长感悟
+  'rant',    // 💬 吐槽树洞
 ];
+
+/** 旧标签 → 新频道（历史链接 ?filter=sweet 与数据迁移共用） */
+const LEGACY_TAG_MAP = {
+  sweet: 'love', touching: 'love', chujian: 'love', liaotian: 'love',
+  jianjia: 'love', yilian: 'love', shanhun: 'love', yidi: 'love',
+  complain: 'rant', cuihun: 'family', jiaolv: 'growth',
+  daily: 'daily', funny: 'funny',
+};
 
 /* ================= 工具 ================= */
 
@@ -1100,8 +1109,10 @@ function handleApi(req, res, url, body) {
         if (Array.from(nickname).length > 20) return fail(res, '昵称最多 20 个字符');
         if (!nickname) nickname = randomNickname();
 
-        const tags = [...new Set(tagsIn.filter(t => VALID_TAGS.includes(t)))].slice(0, 4);
-        // 一个标签都没选时，默认归为「日常记录」，保证每篇故事都有归属分类
+        // 频道单选：缓存的旧发布页可能还在传 sweet 之类，先映射再只保留第一个
+        const mappedTags = tagsIn.map(t => LEGACY_TAG_MAP[t] || t);
+        const tags = [...new Set(mappedTags.filter(t => VALID_TAGS.includes(t)))].slice(0, 1);
+        // 一个频道都没选时，默认归为「日常分享」，保证每篇故事都有归属
         if (!tags.length) tags.push('daily');
 
         // 校验通过后才计数：正常用户填错重试不会被罚，只有真正落库的提交才消耗额度
@@ -1141,8 +1152,10 @@ function handleApi(req, res, url, body) {
         arr.sort((a, b) => hotScore(b) - hotScore(a));
       } else if (filter === 'new') {
         arr.sort((a, b) => b.createdAt - a.createdAt);
-      } else if (VALID_TAGS.includes(filter)) {
-        arr = arr.filter(s => (s.tags || []).includes(filter));
+      } else if (VALID_TAGS.includes(filter) || LEGACY_TAG_MAP[filter]) {
+        // 旧标签链接（?filter=sweet / complain …）自动映射到新频道，改版不产生死链
+        const ch = LEGACY_TAG_MAP[filter] || filter;
+        arr = arr.filter(s => (s.tags || []).includes(ch));
         arr.sort((a, b) => b.createdAt - a.createdAt);
       } else {
         return fail(res, '未知的筛选类型');
@@ -1448,7 +1461,8 @@ function handleApi(req, res, url, body) {
         target.title = title;
         target.content = newBody;
         if (Array.isArray(tagsIn)) {
-          let tags = [...new Set(tagsIn.filter(t => VALID_TAGS.includes(t)))].slice(0, 4);
+          const mapped = tagsIn.map(t => LEGACY_TAG_MAP[t] || t);
+          let tags = [...new Set(mapped.filter(t => VALID_TAGS.includes(t)))].slice(0, 1);
           if (!tags.length) tags = ['daily'];
           target.tags = tags;
         }
@@ -1859,13 +1873,14 @@ function handleApi(req, res, url, body) {
     /* ---- 站点统计 ---- */
     case 'stats': {
       const db = dbLoad();
-      let likes = 0, views = 0, sweet = 0;
+      let likes = 0, views = 0, love = 0;
       for (const s of db.stories) {
         likes += s.likes;
         views += s.views;
-        if ((s.tags || []).includes('sweet')) sweet++;
+        // 首页「N 个爱情故事」用：2026-11 改版后由旧 sweet 标签改为 love 频道
+        if ((s.tags || []).includes('love')) love++;
       }
-      return json(res, { ok: true, stats: { stories: db.stories.length, likes, views, sweet } });
+      return json(res, { ok: true, stats: { stories: db.stories.length, likes, views, love } });
     }
 
     /* ---- 热门精选（按全时段热度排序，没有时间窗口） ---- */
@@ -2032,7 +2047,7 @@ function listen(port, attemptsLeft) {
   });
   server.listen(port, () => {
     console.log('');
-    console.log('  💕 缘分故事屋 本地服务已启动');
+    console.log('  💕 人间故事屋 本地服务已启动');
     console.log(`  👉 http://localhost:${port}`);
     console.log('  按 Ctrl+C 停止');
     console.log('');

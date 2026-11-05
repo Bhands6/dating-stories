@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💕</text></svg>">
-    <title>站长管理 - 反馈箱 | 缘分故事屋</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📖</text></svg>">
+    <title>站长管理 - 反馈箱 | 人间故事屋</title>
     <!-- 全站主题层：变量 + 四套主题 + 切换器样式；脚本负责防闪、注入菜单、Alt+1~4 -->
     <link rel="stylesheet" href="theme.css">
     <script src="theme.js"></script>
@@ -439,10 +439,10 @@
     <nav class="navbar">
         <div class="nav-inner">
             <a class="logo" href="index.html">
-                <div class="logo-icon">💕</div>
+                <div class="logo-icon">📖</div>
                 <div>
-                    <div class="logo-text">缘分故事屋</div>
-                    <div class="logo-sub">DATING STORIES</div>
+                    <div class="logo-text">人间故事屋</div>
+                    <div class="logo-sub">LIFE STORIES</div>
                 </div>
             </a>
             <div class="nav-right">
@@ -556,7 +556,7 @@
             <div class="edit-body">
                 <label class="edit-label">标题</label>
                 <input class="edit-input" id="edit-title" maxlength="60" placeholder="故事标题">
-                <label class="edit-label">标签（最多 4 个，不选则默认「日常记录」）</label>
+                <label class="edit-label">频道（单选，不选则默认「日常分享」）</label>
                 <div class="edit-tags" id="edit-tags"></div>
                 <label class="edit-label">正文</label>
                 <textarea class="edit-textarea" id="edit-content" placeholder="故事正文"></textarea>
@@ -725,9 +725,8 @@
     }
 
     const TAG_NAMES = {
-        sweet: '甜蜜脱单', funny: '搞笑经历', touching: '感人故事', complain: '心酸吐槽',
-        daily: '日常记录', yidi: '异地相亲', chujian: '初次见面', liaotian: '聊天记录',
-        jiaolv: '年龄焦虑', cuihun: '父母催婚', jianjia: '见家长', yilian: '异地恋', shanhun: '闪婚'
+        love: '💕 爱情故事', daily: '📝 日常分享', funny: '😂 搞笑故事', work: '💼 职场见闻',
+        family: '🏠 家庭生活', growth: '🌱 成长感悟', rant: '💬 吐槽树洞'
     };
 
     function renderStoryTagFilter() {
@@ -1190,7 +1189,8 @@
             const d = await r.json();
             if (!d.ok) throw new Error(d.error || '加载失败');
             const s = d.story;
-            editingTags = (s.tags || []).slice();
+            // 只保留一个频道；旧数据里无法识别的 key 直接丢掉，让用户重新选
+            editingTags = (s.tags || []).filter(t => TAG_NAMES[t]).slice(0, 1);
             $('#edit-title').value = s.title || '';
             $('#edit-content').value = s.content || '';
             editingOriginalContent = String(s.content || '').trim();
@@ -1210,13 +1210,9 @@
             `<button class="edit-tag${editingTags.includes(v) ? ' on' : ''}" data-tag="${v}">${label}</button>`).join('');
         wrap.querySelectorAll('.edit-tag').forEach(btn => {
             btn.addEventListener('click', () => {
+                // 频道单选：点另一个就替换，再点已选中的则取消（取消后后端兜底成「日常分享」）
                 const t = btn.dataset.tag;
-                if (editingTags.includes(t)) {
-                    editingTags = editingTags.filter(x => x !== t);
-                } else {
-                    if (editingTags.length >= 4) { toast('最多选 4 个标签', 'error'); return; }
-                    editingTags.push(t);
-                }
+                editingTags = editingTags.includes(t) ? [] : [t];
                 renderEditTags();
             });
         });

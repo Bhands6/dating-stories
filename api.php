@@ -1,6 +1,6 @@
 <?php
 /**
- * 缘分故事屋 - 单文件 PHP 后端（零依赖，JSON 文件存储，无需 MySQL）
+ * 人间故事屋 - 单文件 PHP 后端（零依赖，JSON 文件存储，无需 MySQL）
  *
  * 接口与 server.js（本地 Node 开发服务器）完全对齐。
  * 前端统一请求：api.php?route=xxx
@@ -36,20 +36,43 @@ define('FRIENDIMG_MAX_BYTES', 307200);                    // 单张友链图片�
 define('VIEW_WINDOW', 43200);   // 浏览量去重窗口（秒）= 12 小时
 define('VIEW_IP_MAX', 20);      // 同 IP 对同一故事在窗口内的计数上限（防清 localStorage 刷量）
 
+/**
+ * 频道（原「标签」）：一篇故事归属一个频道。
+ *
+ * 2026-11-05 从「相亲故事屋」转为「人间故事屋」时重构：
+ * 原 13 个相亲专属标签收敛成 7 个频道，旧标签由 LEGACY_TAG_MAP 映射过来。
+ * tags 仍是数组（沿用原数据结构，不用改 stories.json 的字段），但只存一个 key ——
+ * 留数组是给以后加「情绪副标签」留的余地。
+ */
 const VALID_TAGS = [
-    'sweet',     // 甜蜜脱单
-    'funny',     // 搞笑经历
-    'touching',  // 感人故事
-    'complain',  // 心酸吐槽
-    'daily',     // 日常记录
-    'yidi',      // 异地相亲
-    'chujian',   // 初次见面
-    'liaotian',  // 聊天记录
-    'jiaolv',    // 年龄焦虑
-    'cuihun',    // 父母催婚
-    'jianjia',   // 见家长
-    'yilian',    // 异地恋
-    'shanhun',   // 闪婚
+    'love',    // 💕 爱情故事（含相亲、恋爱、婚姻）
+    'daily',   // 📝 日常分享
+    'funny',   // 😂 搞笑故事
+    'work',    // 💼 职场见闻
+    'family',  // 🏠 家庭生活
+    'growth',  // 🌱 成长感悟
+    'rant',    // 💬 吐槽树洞
+];
+
+/**
+ * 旧标签 → 新频道。两个用途：
+ * ① 历史链接 `?filter=sweet` 仍然能筛出「爱情故事」，不会因为改版变成 400；
+ * ② 数据迁移脚本（tools/migrate_channels.php）照这份映射改历史故事。
+ */
+const LEGACY_TAG_MAP = [
+    'sweet'    => 'love',
+    'touching' => 'love',
+    'chujian'  => 'love',
+    'liaotian' => 'love',
+    'jianjia'  => 'love',
+    'yilian'   => 'love',
+    'shanhun'  => 'love',
+    'yidi'     => 'love',
+    'complain' => 'rant',
+    'cuihun'   => 'family',
+    'jiaolv'   => 'growth',
+    'daily'    => 'daily',
+    'funny'    => 'funny',
 ];
 
 /* ================= 工具函数 ================= */
@@ -1124,7 +1147,7 @@ function admin_key(): string
         $key = bin2hex(random_bytes(6)); // 12 位随机密码
         if (atomic_write(ADMIN_KEY_FILE, $key)) {
             @chmod(ADMIN_KEY_FILE, 0600);
-            error_log('[缘分故事屋] 首次运行已自动生成管理密码，见 data/admin_key.txt');
+            error_log('[人间故事屋] 首次运行已自动生成管理密码，见 data/admin_key.txt');
         }
     }
     unlock_guard($lock);
@@ -1327,9 +1350,12 @@ switch ($route) {
             if (mb_strlen($nickname) > 20) { fail('昵称最多 20 个字符'); }
             if ($nickname === '') { $nickname = random_nickname(); }
 
+            // 频道单选：浏览器缓存的旧发布页可能还在传 sweet 之类，先按映射表转成新频道，
+            // 再只保留第一个 —— 一篇故事只挂一个频道，否则筛选时会出现重复条目
+            $tagsIn = array_map(static fn($t): string => LEGACY_TAG_MAP[(string)$t] ?? (string)$t, $tagsIn);
             $tags = array_values(array_unique(array_intersect($tagsIn, VALID_TAGS)));
-            if (count($tags) > 4) { $tags = array_slice($tags, 0, 4); }
-            // 一个标签都没选时，默认归为「日常记录」，保证每篇故事都有归属分类
+            if (count($tags) > 1) { $tags = array_slice($tags, 0, 1); }
+            // 一个频道都没选时，默认归为「日常分享」，保证每篇故事都有归属
             if (empty($tags)) { $tags = ['daily']; }
 
             // 校验通过后才计数：正常用户填错重试不会被罚，只有真正落库的提交才消耗额度
@@ -1376,7 +1402,9 @@ switch ($route) {
             usort($arr, fn($a, $b) => hot_score($b) <=> hot_score($a));
         } elseif ($filter === 'new') {
             usort($arr, fn($a, $b) => $b['createdAt'] <=> $a['createdAt']);
-        } elseif (in_array($filter, VALID_TAGS, true)) {
+        } elseif (in_array($filter, VALID_TAGS, true) || isset(LEGACY_TAG_MAP[$filter])) {
+            // 旧标签链接（?filter=sweet / complain …）自动映射到新频道，改版不产生死链
+            $filter = LEGACY_TAG_MAP[$filter] ?? $filter;
             $arr = array_values(array_filter($arr, fn($s) => in_array($filter, (array)($s['tags'] ?? []), true)));
             usort($arr, fn($a, $b) => $b['createdAt'] <=> $a['createdAt']);
         } else {
@@ -1805,8 +1833,10 @@ switch ($route) {
                     $db['stories'][$i]['title']   = $title;
                     $db['stories'][$i]['content'] = $newBody;
                     if (is_array($tagsIn)) {
-                        $tags = array_values(array_unique(array_intersect($tagsIn, VALID_TAGS)));
-                        if (count($tags) > 4) { $tags = array_slice($tags, 0, 4); }
+                        // 频道单选（管理页也可能传入旧标签值，先映射）
+                        $mapped = array_map(static fn($t): string => LEGACY_TAG_MAP[(string)$t] ?? (string)$t, $tagsIn);
+                        $tags = array_values(array_unique(array_intersect($mapped, VALID_TAGS)));
+                        if (count($tags) > 1) { $tags = array_slice($tags, 0, 1); }
                         if (empty($tags)) { $tags = ['daily']; }
                         $db['stories'][$i]['tags'] = $tags;
                     }
@@ -2314,17 +2344,18 @@ switch ($route) {
     /* ---- 站点统计 ---- */
     case 'stats': {
         $db = db_load();
-        $likes = 0; $views = 0; $sweet = 0;
+        $likes = 0; $views = 0; $love = 0;
         foreach ($db['stories'] as $s) {
             $likes += (int)$s['likes'];
             $views += (int)$s['views'];
-            if (in_array('sweet', (array)($s['tags'] ?? []), true)) { $sweet++; }
+            // 首页「N 个爱情故事」用：2026-11 改版后由旧 sweet 标签改为 love 频道
+            if (in_array('love', (array)($s['tags'] ?? []), true)) { $love++; }
         }
         respond(['ok' => true, 'stats' => [
             'stories' => count($db['stories']),
             'likes'   => $likes,
             'views'   => $views,
-            'sweet'   => $sweet,
+            'love'    => $love,
         ]]);
     }
 
