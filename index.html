@@ -4279,6 +4279,8 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
     }
     const spyTargets = [
         { href: '#top', el: document.getElementById('top') },
+        // #channels 是 v1.8 新加的区块，当初没登记进列表，滚到频道时高亮一直停在「首页」
+        { href: '#channels', el: document.getElementById('channels') },
         { href: '#stories', el: document.getElementById('stories') },
         { href: '#hot', el: document.getElementById('hot') },
         { href: '#about', el: document.getElementById('about') },
