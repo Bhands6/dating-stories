@@ -20,6 +20,8 @@ data/feedback.json
 data/views_log.json
 data/rate_guard.json
 data/deletions.json
+data/friends.json
+data/friendimg/
 data/fontcache/
 data/uploads/
 data/admin_key.txt

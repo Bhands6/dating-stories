@@ -348,6 +348,114 @@ function deletionsLoad() {
   return { nextId: 1, readUpTo: 0, items: [] };
 }
 
+/* ================= 友情链接（管理页维护，页脚展示） ================= */
+
+const FRIENDS_FILE = path.join(DATA_DIR, 'friends.json');
+const FRIENDIMG_DIR = path.join(DATA_DIR, 'friendimg');
+const FRIENDS_MAX = 30;                 // 条数上限
+const FRIENDIMG_MAX_BYTES = 307200;     // 单张图片上限 300KB
+
+/**
+ * 默认友链：data/friends.json 还不存在时用它兜底。
+ * 只在「文件读不出来」时生效 —— 文件存在且 items 为空数组时不回落，
+ * 因为那是站长主动清空的结果，再塞回默认值就成了「删不掉的友链」。
+ */
+const DEFAULT_FRIENDS = [
+  { id: 1, name: '解压小站', url: 'https://wangzhy.top/', img: '', desc: '' },
+];
+
+const FRIEND_IMG_NAME_RE = /^f[a-f0-9]{16}\.(?:png|jpg|gif|webp)$/;
+const FRIEND_IMG_MIME = { png: 'image/png', jpg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
+
+/** 对外字段（白名单） */
+function friendsItem(it) {
+  return {
+    id: Number(it && it.id) || 0,
+    name: String((it && it.name) || ''),
+    url: String((it && it.url) || ''),
+    img: String((it && it.img) || ''),
+    desc: String((it && it.desc) || ''),
+  };
+}
+
+/** 读取友链配置（文件不存在/损坏 → 默认值，不写盘） */
+function friendsLoad() {
+  try {
+    const j = JSON.parse(fs.readFileSync(FRIENDS_FILE, 'utf8'));
+    if (j && Array.isArray(j.items)) {
+      return {
+        nextId: Number.isInteger(j.nextId) ? j.nextId : j.items.length + 1,
+        items: j.items,
+      };
+    }
+  } catch (e) { /* 不存在或损坏 → 走默认值 */ }
+  return { nextId: DEFAULT_FRIENDS.length + 1, items: DEFAULT_FRIENDS.map(x => ({ ...x })) };
+}
+
+/**
+ * 校验友链地址：只放行 http(s) 绝对地址与站内相对地址。
+ * 拦掉 javascript: / data: 之类伪协议 —— 友链直接进 <a href> 和 <img src>。
+ */
+function friendUrlOk(url) {
+  if (!url || Array.from(url).length > 500) return false;
+  if (/^https?:\/\/[^\s<>"']+$/i.test(url)) return true;
+  if (/^\/(?!\/)[^\s<>"']*$/.test(url)) return true;                    // /xxx
+  return /^[a-z0-9_-]+\.(?:html|php)(?:\?[^\s<>"']*)?$/i.test(url);    // privacy.html / api.php?...
+}
+
+/** 按文件魔数判真实图片类型；不认识就返回 null */
+function friendImgExt(buf) {
+  if (buf.length >= 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'png';
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpg';
+  const head6 = buf.subarray(0, 6).toString('latin1');
+  if (head6 === 'GIF87a' || head6 === 'GIF89a') return 'gif';
+  if (buf.length > 12 && buf.subarray(0, 4).toString('latin1') === 'RIFF' && buf.subarray(8, 12).toString('latin1') === 'WEBP') return 'webp';
+  return null;
+}
+
+/** 输出一张友链图片（文件名随机且不可变 → 可以放心强缓存） */
+function serveFriendImg(res, url) {
+  const name = String(url.searchParams.get('f') || '');
+  if (!FRIEND_IMG_NAME_RE.test(name)) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('404 Not Found');
+    return;
+  }
+  fs.readFile(path.join(FRIENDIMG_DIR, name), (err, data) => {
+    if (err) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('404 Not Found');
+      return;
+    }
+    const ext = path.extname(name).slice(1).toLowerCase();
+    res.writeHead(200, {
+      'Content-Type': FRIEND_IMG_MIME[ext] || 'application/octet-stream',
+      'Content-Length': String(data.length),
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.end(data);
+  });
+}
+
+/**
+ * 清理没被任何友链引用的上传图片（换图/删行后的孤儿文件）。
+ * 只删自己命名规则内的文件，绝不碰别的。
+ */
+function friendImgGc(items) {
+  let names;
+  try { names = fs.readdirSync(FRIENDIMG_DIR); } catch (e) { return; }
+  const keep = new Set();
+  for (const it of items) {
+    const m = /route=friend_img&(?:amp;)?f=(f[a-f0-9]{16}\.(?:png|jpg|gif|webp))/.exec(String((it && it.img) || ''));
+    if (m) keep.add(m[1]);
+  }
+  for (const name of names) {
+    if (!FRIEND_IMG_NAME_RE.test(name) || keep.has(name)) continue;
+    try { fs.unlinkSync(path.join(FRIENDIMG_DIR, name)); } catch (e) { /* 删不掉就等下次 */ }
+  }
+}
+
 /**
  * 把 <link rel="stylesheet"> 转成 <style>@import url("...")</style>。
  *
@@ -1605,6 +1713,74 @@ function handleApi(req, res, url, body) {
       });
     }
 
+    /* ---- 管理页：友情链接维护（列表 / 保存 / 上传图片） ---- */
+    case 'admin_friends': {
+      if (method !== 'POST') return fail(res, '请使用 POST', 405);
+      if (!adminAuth(req, res, body)) return;
+      const op = String(body.op || 'list');
+
+      // 上传一张图片 → 落 data/friendimg/，返回可以直接填进 img 字段的地址
+      if (op === 'upload_img') {
+        const raw = String(body.data || '');
+        const m = /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,/i.exec(raw);
+        if (!m) return fail(res, '请上传 PNG / JPG / GIF / WEBP 格式的图片');
+        let buf = null;
+        try { buf = Buffer.from(raw.slice(m[0].length), 'base64'); } catch (e) { buf = null; }
+        if (!buf || !buf.length) return fail(res, '图片数据解析失败，请重新选择文件');
+        if (buf.length > FRIENDIMG_MAX_BYTES) {
+          return fail(res, `图片太大啦，最多 ${FRIENDIMG_MAX_BYTES / 1024}KB（图标级别就够）`);
+        }
+        const ext = friendImgExt(buf);
+        if (!ext) return fail(res, '这个文件不像图片，请换一张试试');
+        try {
+          if (!fs.existsSync(FRIENDIMG_DIR)) fs.mkdirSync(FRIENDIMG_DIR, { recursive: true });
+          const name = 'f' + crypto.randomBytes(8).toString('hex') + '.' + ext;
+          fs.writeFileSync(path.join(FRIENDIMG_DIR, name), buf);
+          return json(res, { ok: true, url: 'api.php?route=friend_img&f=' + name });
+        } catch (e) {
+          return fail(res, '图片写入失败，请检查 data/friendimg 目录权限', 500);
+        }
+      }
+
+      // 保存整份列表（顺序即页脚显示顺序）
+      if (op === 'save') {
+        const itemsIn = Array.isArray(body.items) ? body.items : [];
+        if (itemsIn.length > FRIENDS_MAX) return fail(res, `友情链接最多 ${FRIENDS_MAX} 条`);
+
+        const items = [];
+        let nextId = 1;
+        for (const raw of itemsIn) {
+          if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+          const name = String(raw.name || '').trim();
+          const link = String(raw.url || '').trim();
+          const img = String(raw.img || '').trim();
+          const desc = String(raw.desc || '').trim();
+          if (!name && !link && !img) continue;      // 空行直接忽略
+
+          if (!name) return fail(res, '每条友情链接都要填站点名称');
+          if (Array.from(name).length > 30) return fail(res, '名称最多 30 个字');
+          if (!link) return fail(res, `「${name}」还没填跳转链接`);
+          if (!friendUrlOk(link)) return fail(res, `「${name}」的跳转链接不合法，请以 http:// 或 https:// 开头`);
+          if (img && !friendUrlOk(img)) return fail(res, `「${name}」的图片地址不合法`);
+          if (Array.from(desc).length > 60) return fail(res, '描述最多 60 个字');
+
+          items.push({ id: nextId++, name, url: link, img, desc });
+        }
+
+        try {
+          writeJsonAtomic(FRIENDS_FILE, { nextId, items });
+        } catch (e) {
+          return fail(res, '保存失败，请检查 data/ 目录是否可写', 500);
+        }
+        friendImgGc(items);   // 换图/删行留下的孤儿图片一并清掉
+        return json(res, { ok: true, message: '友情链接已保存', items });
+      }
+
+      // 列表
+      const db = friendsLoad();
+      return json(res, { ok: true, items: db.items.map(friendsItem) });
+    }
+
     /* ---- 管理页：数据概览（故事/赞/浏览/评论总数 + 今日新增 + 未读反馈） ---- */
     case 'admin_stats': {
       if (method !== 'POST') return fail(res, '请使用 POST', 405);
@@ -1658,6 +1834,26 @@ function handleApi(req, res, url, body) {
           today: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`,
         },
       });
+    }
+
+    /* ---- 友情链接（公开读取，首页页脚渲染） ---- */
+    case 'friends': {
+      const db = friendsLoad();
+      const items = [];
+      for (const it of db.items) {
+        const one = friendsItem(it);
+        // 名称和链接缺一不可：脏数据（比如手改过 friends.json）直接不展示
+        if (!one.name || !one.url) continue;
+        items.push(one);
+      }
+      res.setHeader('Cache-Control', 'no-cache');
+      return json(res, { ok: true, items });
+    }
+
+    /* ---- 友链图片（上传图标站内输出，不直接暴露 data/） ---- */
+    case 'friend_img': {
+      serveFriendImg(res, url);
+      return;
     }
 
     /* ---- 站点统计 ---- */

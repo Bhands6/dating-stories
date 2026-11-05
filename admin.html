@@ -244,6 +244,46 @@
         .mini-btn.danger { border-color: var(--danger-border); color: var(--danger-text); }
         .mini-btn.danger:hover { background: var(--danger-soft); border-color: var(--danger-text); color: var(--danger-text); }
 
+        /* ===== 友情链接弹窗 ===== */
+        .fr-rows { display: flex; flex-direction: column; gap: 12px; }
+        .fr-row {
+            display: flex; gap: 12px; align-items: flex-start;
+            padding: 12px; border: 1.5px solid var(--border); border-radius: 14px;
+            background: var(--surface-5);
+        }
+        .fr-thumb {
+            width: 56px; height: 56px; border-radius: 12px; flex-shrink: 0;
+            background: var(--surface-3); border: 1.5px dashed var(--border);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; color: var(--text-lighter); overflow: hidden;
+        }
+        .fr-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .fr-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+        .fr-fields input {
+            width: 100%; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 10px;
+            font-size: 13px; font-family: inherit; color: var(--text); background: var(--surface);
+        }
+        .fr-fields input:focus { outline: none; border-color: var(--primary-light); }
+        .fr-line { display: flex; gap: 8px; }
+        .fr-line input { flex: 1; min-width: 0; }
+        .fr-side { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+        .fr-mini {
+            width: 30px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center;
+            border: 1px solid var(--border); border-radius: 9px; background: var(--surface);
+            color: var(--text-light); font-size: 12px; cursor: pointer; font-family: inherit;
+            transition: all 0.2s ease;
+        }
+        .fr-mini:hover:not(:disabled) { border-color: var(--primary-light); color: var(--primary); }
+        .fr-mini.danger:hover:not(:disabled) { border-color: var(--danger-border); color: var(--danger-text); background: var(--danger-soft); }
+        .fr-mini:disabled { opacity: 0.5; cursor: not-allowed; }
+        .fr-add {
+            width: 100%; padding: 10px; border: 1.5px dashed var(--border); border-radius: 12px;
+            background: transparent; color: var(--text-light); font-size: 13px; font-weight: 600;
+            cursor: pointer; font-family: inherit; transition: all 0.2s ease;
+        }
+        .fr-add:hover { border-color: var(--primary-light); color: var(--primary); }
+        .fr-empty { font-size: 13px; color: var(--text-lighter); text-align: center; padding: 12px 0; }
+
         /* ===== 导出选项卡片 ===== */
         .export-choices { display: flex; flex-direction: column; gap: 10px; padding: 4px 0 8px; }
         .export-choice {
@@ -388,6 +428,10 @@
             .list-header { flex-direction: column; align-items: stretch; gap: 12px; }
             .list-actions { justify-content: flex-start; margin-left: 0; }
             .ov-panel { gap: 8px; padding: 12px; }
+            /* 友链弹窗：窄屏把缩略图和间距收一收，给输入框留宽度 */
+            .fr-row { gap: 10px; padding: 10px; }
+            .fr-thumb { width: 44px; height: 44px; border-radius: 10px; }
+            .fr-fields input { font-size: 12.5px; padding: 7px 10px; }
         }
     </style>
 </head>
@@ -456,6 +500,7 @@
                         <button class="mini-btn" id="readall-btn" style="display:none;">✅ 全部标为已读</button>
                         <button class="mini-btn" id="refresh-btn">🔄 刷新</button>
                         <button class="mini-btn" id="export-btn">⬇️ 导出数据</button>
+                        <button class="mini-btn" id="friends-btn">🔗 友情链接</button>
                         <button class="mini-btn" id="passwd-btn">🔑 改密码</button>
                         <button class="mini-btn logout" id="logout-btn">🚪 退出</button>
                     </div>
@@ -577,6 +622,31 @@
             </div>
             <div class="edit-foot">
                 <button class="mini-btn" id="export-cancel">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 友情链接弹窗（首页页脚展示，支持图片 + 跳转链接） -->
+    <div class="edit-overlay" id="friends-overlay">
+        <div class="edit-modal">
+            <div class="edit-head">
+                <span>🔗 友情链接</span>
+                <button class="view-close" id="friends-close" title="关闭">✕</button>
+            </div>
+            <div class="edit-body">
+                <p class="edit-hint" style="margin-bottom: 14px;">
+                    显示在首页页脚。填了图片就是「图标 + 名称」，图片留空则只显示文字。
+                    图片可以直接上传（PNG / JPG / GIF / WEBP，≤300KB），也可以填外链地址。
+                </p>
+                <div class="fr-rows" id="friends-rows"></div>
+                <div style="margin-top: 12px;">
+                    <button class="fr-add" id="friends-add">＋ 添加一条</button>
+                </div>
+                <input type="file" id="friends-file" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none;">
+            </div>
+            <div class="edit-foot">
+                <button class="mini-btn" id="friends-cancel">取消</button>
+                <button class="mini-btn primary" id="friends-save">💾 保存</button>
             </div>
         </div>
     </div>
@@ -1218,6 +1288,159 @@
         }
     }
 
+    /* ==================== 友情链接 ==================== */
+    // 编辑中的整份列表（顺序即首页页脚显示顺序），保存时一次性提交
+    let friendsItems = [];
+    let friendsUploadIdx = -1;   // 正在上传图片的行号
+
+    async function openFriends() {
+        const rows = $('#friends-rows');
+        rows.innerHTML = '<div class="loading-tip">加载中…</div>';
+        $('#friends-overlay').classList.add('open');
+        try {
+            const d = await api({ key: getKey(), op: 'list' }, 'admin_friends');
+            friendsItems = (d.items || []).map(it => ({
+                name: it.name || '', url: it.url || '', img: it.img || '', desc: it.desc || ''
+            }));
+            renderFriends();
+        } catch (e) {
+            rows.innerHTML = '<div class="fr-empty">😢 ' + esc(e.message) + '</div>';
+        }
+    }
+
+    function renderFriends() {
+        const rows = $('#friends-rows');
+        if (!friendsItems.length) {
+            rows.innerHTML = '<div class="fr-empty">还没有友情链接，点下面「＋ 添加一条」开始</div>';
+            return;
+        }
+        rows.innerHTML = friendsItems.map((it, i) => `
+            <div class="fr-row">
+                <div class="fr-thumb" data-thumb="${i}">${it.img ? '<img src="' + esc(it.img) + '" alt="">' : '🖼️'}</div>
+                <div class="fr-fields">
+                    <div class="fr-line">
+                        <input type="text" data-f="name" data-i="${i}" maxlength="30" placeholder="站点名称（必填）" value="${esc(it.name)}">
+                    </div>
+                    <div class="fr-line">
+                        <input type="text" data-f="url" data-i="${i}" maxlength="500" placeholder="跳转链接 https://…（必填）" value="${esc(it.url)}">
+                    </div>
+                    <div class="fr-line">
+                        <input type="text" data-f="img" data-i="${i}" maxlength="500" placeholder="图片地址（可留空，只显示文字）" value="${esc(it.img)}">
+                        <button class="fr-mini" data-act="upload" data-i="${i}" title="上传本地图片">📁</button>
+                    </div>
+                </div>
+                <div class="fr-side">
+                    <button class="fr-mini" data-act="up" data-i="${i}" title="上移"${i === 0 ? ' disabled' : ''}>↑</button>
+                    <button class="fr-mini" data-act="down" data-i="${i}" title="下移"${i === friendsItems.length - 1 ? ' disabled' : ''}>↓</button>
+                    <button class="fr-mini danger" data-act="del" data-i="${i}" title="删除">✕</button>
+                </div>
+            </div>`).join('');
+    }
+
+    /** 只重绘某一行的缩略图（不整行重排，避免输入框丢焦点） */
+    function renderFriendThumb(i) {
+        const el = document.querySelector('.fr-thumb[data-thumb="' + i + '"]');
+        if (!el) return;
+        const src = ((friendsItems[i] || {}).img || '').trim();
+        el.innerHTML = src ? '<img src="' + esc(src) + '" alt="">' : '🖼️';
+    }
+
+    // 输入即同步到内存（重排/保存都以这里为准）
+    $('#friends-rows').addEventListener('input', e => {
+        const t = e.target;
+        if (!t.dataset || !t.dataset.f) return;
+        const i = Number(t.dataset.i);
+        if (!friendsItems[i]) return;
+        friendsItems[i][t.dataset.f] = t.value;
+        if (t.dataset.f === 'img') renderFriendThumb(i);
+    });
+
+    $('#friends-rows').addEventListener('click', e => {
+        const btn = e.target.closest('button[data-act]');
+        if (!btn) return;
+        const i = Number(btn.dataset.i);
+        const act = btn.dataset.act;
+        if (act === 'del') {
+            friendsItems.splice(i, 1);
+            renderFriends();
+        } else if (act === 'up' && i > 0) {
+            [friendsItems[i - 1], friendsItems[i]] = [friendsItems[i], friendsItems[i - 1]];
+            renderFriends();
+        } else if (act === 'down' && i < friendsItems.length - 1) {
+            [friendsItems[i + 1], friendsItems[i]] = [friendsItems[i], friendsItems[i + 1]];
+            renderFriends();
+        } else if (act === 'upload') {
+            friendsUploadIdx = i;
+            const f = $('#friends-file');
+            f.value = '';
+            f.click();
+        }
+    });
+
+    $('#friends-add').addEventListener('click', () => {
+        if (friendsItems.length >= 30) { toast('最多 30 条友情链接', 'error'); return; }
+        friendsItems.push({ name: '', url: '', img: '', desc: '' });
+        renderFriends();
+        const inp = document.querySelector('input[data-f="name"][data-i="' + (friendsItems.length - 1) + '"]');
+        if (inp) inp.focus();
+    });
+
+    // 选完本地图片 → 转 base64 上传，服务端落 data/friendimg/ 并回一个站内地址
+    $('#friends-file').addEventListener('change', async e => {
+        const file = e.target.files && e.target.files[0];
+        if (!file || friendsUploadIdx < 0) return;
+        if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type)) { toast('只支持 PNG / JPG / GIF / WEBP', 'error'); return; }
+        if (file.size > 300 * 1024) { toast('图片太大啦，最多 300KB', 'error'); return; }
+
+        const idx = friendsUploadIdx;
+        let dataUrl = '';
+        try {
+            dataUrl = await new Promise((resolve, reject) => {
+                const fr = new FileReader();
+                fr.onload = () => resolve(String(fr.result || ''));
+                fr.onerror = () => reject(new Error('读取文件失败'));
+                fr.readAsDataURL(file);
+            });
+        } catch (err) {
+            toast(err.message, 'error');
+            return;
+        }
+        try {
+            const d = await api({ key: getKey(), op: 'upload_img', data: dataUrl }, 'admin_friends');
+            if (!friendsItems[idx]) return;
+            friendsItems[idx].img = d.url || '';
+            const inp = document.querySelector('input[data-f="img"][data-i="' + idx + '"]');
+            if (inp) inp.value = friendsItems[idx].img;
+            renderFriendThumb(idx);
+            toast('🖼️ 图片已上传，记得点保存');
+        } catch (err) {
+            toast('上传失败：' + err.message, 'error');
+        }
+    });
+
+    async function saveFriends() {
+        const btn = $('#friends-save');
+        btn.disabled = true;
+        try {
+            const d = await api({ key: getKey(), op: 'save', items: friendsItems }, 'admin_friends');
+            toast('🔗 ' + (d.message || '已保存') + '，刷新首页即可看到');
+            $('#friends-overlay').classList.remove('open');
+        } catch (e) {
+            toast(e.message, 'error');
+        }
+        btn.disabled = false;
+    }
+
+    const closeFriends = () => {
+        $('#friends-overlay').classList.remove('open');
+        friendsUploadIdx = -1;
+    };
+    $('#friends-btn').addEventListener('click', openFriends);
+    $('#friends-close').addEventListener('click', closeFriends);
+    $('#friends-cancel').addEventListener('click', closeFriends);
+    $('#friends-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) closeFriends(); });
+    $('#friends-save').addEventListener('click', saveFriends);
+
     /* ==================== 修改密码 ==================== */
     async function savePassword() {
         const newKey = $('#pwd-new').value.trim();
@@ -1346,6 +1569,7 @@
         if ($('#edit-overlay').classList.contains('open')) closeEdit();
         if ($('#pwd-overlay').classList.contains('open')) $('#pwd-overlay').classList.remove('open');
         if ($('#export-overlay').classList.contains('open')) $('#export-overlay').classList.remove('open');
+        if ($('#friends-overlay').classList.contains('open')) $('#friends-overlay').classList.remove('open');
     });
 
     function getKey() { return localStorage.getItem(KEY_STORE) || ''; }

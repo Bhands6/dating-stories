@@ -1220,6 +1220,34 @@
             text-underline-offset: 3px;
         }
 
+        /* 多条友链横排，窄屏自动换行 */
+        .footer-friends-list {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px 16px;
+        }
+
+        /* 带图标的友链：小圆角方图 + 名称（图标尺寸由站长上传的图决定观感，这里统一裁成方形） */
+        .footer-friend.has-img {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .footer-friend.has-img img {
+            width: 22px;
+            height: 22px;
+            border-radius: 5px;
+            object-fit: cover;
+            display: block;
+            background: var(--surface-3);
+        }
+
+        .footer-friend.has-img:hover {
+            text-decoration: none;
+        }
+
         .footer-bottom {
             padding-top: 22px;
             border-top: 1px solid var(--border);
@@ -2446,9 +2474,12 @@
                 <a class="footer-link" href="privacy.html">🔒 隐私声明</a>
                 <a class="footer-link" href="disclaimer.html">📜 免责声明</a>
             </div>
-            <div class="footer-friends">
+            <div class="footer-friends" id="footer-friends">
                 <span class="footer-friends-label">友情链接</span>
-                <a class="footer-friend" href="https://wangzhy.top/" target="_blank" rel="noopener">解压小站</a>
+                <!-- 内容由 loadFriends() 按管理页配置渲染；这段静态链接是接口不可用时的兜底 -->
+                <div class="footer-friends-list" id="footer-friends-list">
+                    <a class="footer-friend" href="https://wangzhy.top/" target="_blank" rel="noopener">解压小站</a>
+                </div>
             </div>
             <div class="footer-bottom">
                 <p>© 2026 缘分故事屋 · Made with <span class="heart">❤</span> · 每一个故事都值得被听见</p>
@@ -3541,6 +3572,32 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
     });
     $('#new-stories-close').addEventListener('click', hideNewStoriesTip);
 
+    /* ==================== 友情链接（页脚，站长在管理页维护） ==================== */
+    async function loadFriends() {
+        const wrap = $('#footer-friends');
+        const list = $('#footer-friends-list');
+        if (!wrap || !list) return;
+        try {
+            const d = await api('friends');
+            const items = (d.items || []).filter(it => it && it.name && it.url);
+            if (!items.length) {
+                // 站长把友链清空了 → 整块（含静态兜底）一起隐藏
+                wrap.style.display = 'none';
+                return;
+            }
+            list.innerHTML = items.map(it => {
+                const img = String(it.img || '').trim();
+                const pic = img ? '<img src="' + esc(img) + '" alt="" loading="lazy">' : '';
+                const title = String(it.desc || it.name);
+                return '<a class="footer-friend' + (img ? ' has-img' : '') + '" href="' + esc(it.url) + '"'
+                    + ' title="' + esc(title) + '" target="_blank" rel="noopener">'
+                    + pic + '<span>' + esc(it.name) + '</span></a>';
+            }).join('');
+        } catch (e) {
+            // 接口不可用（例如本地没起后端）→ 保留 HTML 里的静态兜底，不让页脚空掉
+        }
+    }
+
     /* ==================== 启动 ==================== */
     // 静态滚动入场动画（特性卡 / 关于卡等）
     $$('.animate-on-scroll').forEach(el => observer.observe(el));
@@ -3558,6 +3615,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
     loadHot();
     loadTags();
     loadStats();
+    loadFriends();
 
     // 支持 ?story=ID：发布成功后自动打开自己刚发布的故事
     const urlStory = parseInt(new URLSearchParams(location.search).get('story'), 10);

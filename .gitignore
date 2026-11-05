@@ -21,6 +21,10 @@ data/rate_guard.json
 # 访客删除动态（含访客昵称与内容摘录，属隐私数据，不进仓库）
 data/deletions.json
 
+# 友情链接配置 + 站长上传的友链图标（运行时数据，进管理页维护即可；不进仓库）
+data/friends.json
+data/friendimg/
+
 # 字体代理的落盘缓存（Google Fonts 中转产物，可随时删除自动重建）
 data/fontcache/
 

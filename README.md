@@ -23,7 +23,7 @@
 | ✍️ **发布系统** | 匿名发布（随机昵称）、纯文本/HTML 双模式编辑、上传 HTML 文件、富文本粘贴、实时预览、**AI 排版引导弹窗**（三步指引 + 一键复制提示词模板 + DeepSeek/豆包/小米 MiMo 直达） |
 | 🎨 **HTML 排版故事** | 上传你排版的网页，**原件原样存档**（`data/uploads/`），阅读时以沙箱 iframe 呈现——`<header>`、CSS 变量、`@keyframes`、滚动动画 **100% 原样**；Google Fonts 经**站内代理**加载（国内不可达也能显示），还提供「原文阅读」全屏打开 |
 | 🛡️ **防刷机制** | 浏览量按 IP 24h 去重、点赞本地记忆防连点、**写接口按 IP 滑动窗口限流**（发布 5 篇/10 分钟、评论 15 条/5 分钟、反馈 3 条/30 分钟、删评 20 次/10 分钟、删故事 10 次/10 分钟、标记真实 30 次/10 分钟）、内容服务端净化、用户 CSS 沙箱隔离 |
-| 🔐 **站长管理** | 反馈箱（查看/删除网友反馈）、故事管理（最新排序/标签筛选/点击预览/删除），两个列表均支持分页；密码自动生成（`data/admin_key.txt`），连续输错 5 次锁定 15 分钟 |
+| 🔐 **站长管理** | 反馈箱（查看/删除网友反馈）、故事管理（最新排序/标签筛选/点击预览/删除）、**友情链接（名称 + 跳转链接 + 图标，可上传图片，排序即时生效于首页页脚）**，列表均支持分页；密码自动生成（`data/admin_key.txt`），连续输错 5 次锁定 15 分钟 |
 | 📮 **互动与合规** | 反馈建议页、内容规范、隐私声明、免责声明、标签云实时计数、站点统计 |
 
 ---
@@ -97,6 +97,7 @@ docker compose up -d --build
                 ▼  JSON 文件读写（独立 .lock 互斥 + 临时文件原子替换）
         data/stories.json   故事/评论/点赞/删除凭证
         data/feedback.json  网友反馈
+        data/friends.json   友情链接（管理页维护，首页页脚展示）
         data/views_log.json 浏览量防刷记录
         data/uploads/       上传的原始 HTML 源文件（原样阅读用，未净化）
         data/fontcache/     字体代理缓存（Google Fonts 中转产物）
@@ -134,6 +135,8 @@ docker compose up -d --build
 │   ├── admin_guard.json# 运行时生成：管理登录失败限流记录
 │   ├── rate_guard.json # 运行时生成：写接口（发布/评论/反馈）限流记录
 │   ├── deletions.json  # 运行时生成：访客删除动态（谁删了故事/评论，含昵称与摘录）
+│   ├── friends.json    # 运行时生成：友情链接配置（管理页「🔗 友情链接」维护）
+│   ├── friendimg/      # 运行时生成：友链图标（管理页上传，经 route=friend_img 输出）
 │   ├── uploads/        # 运行时生成：上传的原始 HTML 源文件（未净化，「原文阅读」直接读它）
 │   ├── fontcache/      # 运行时生成：字体代理缓存（Google Fonts 中转产物，删掉自动重建）
 │   ├── views_log.json  # 运行时生成：防刷记录
@@ -156,10 +159,12 @@ docker compose up -d --build
 | `delete_comment` | 评论者凭 `delKey` 删除自己的评论或回复（删一级连带其 `replies`；`delKey` 不出现在任何 GET 输出里） |
 | `delete_story` | 发布者凭凭证删除 |
 | `tags` / `stats` / `hot` | 标签计数 / 统计 / 热门榜 |
+| `friends` / `friend_img` | 友情链接列表（首页页脚渲染）/ 友链图标输出（管理页上传的图，不直接暴露 `data/`） |
 | `feedback` | 提交反馈 |
 | `admin_feedback` / `admin_stories` / `admin_comments` | 管理接口（密码为 `data/admin_key.txt` 中的值，连续错 5 次锁定 15 分钟）；`op=list` 支持 `page` / `pageSize`（默认 20、上限 100），返回 `total` / `page` / `pageSize` / `hasMore`；`admin_stories` 支持 `q` 搜索、`sort` 排序、`op=update` 编辑、`op=delete` 批量删（`ids` 数组）；`admin_feedback` 支持 `op=read` 标记已读 |
 | `admin_deletions` | 访客删除动态（`op=list` 默认 / `op=read` 推进已读水位）：记录谁删掉了自己的故事或评论，含删除前的赞/浏览/评论数；最多保留 200 条，管理页最多返回最近 100 条 |
 | `admin_stats` / `admin_export` / `admin_change_key` | 管理页数据概览 / 导出 JSON / 修改管理密码 |
+| `admin_friends` | 管理：友情链接（`op=list` / `op=save` 整份列表落盘 / `op=upload_img` 上传图标回站内地址）；首页页脚据此渲染，无需改代码 |
 
 **写接口限流**（按 IP 滑动窗口，超限返回 `429` + 友好提示，记录在 `data/rate_guard.json`）：
 

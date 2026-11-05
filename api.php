@@ -29,6 +29,10 @@ define('ADMIN_GUARD_FILE', DATA_DIR . '/admin_guard.json');
 define('RATE_GUARD_FILE', DATA_DIR . '/rate_guard.json');
 define('DELETIONS_FILE', DATA_DIR . '/deletions.json');   // 访客删除动态（管理页提示用）
 define('DELETIONS_MAX', 200);                             // 最多保留条数，防止文件无限增长
+define('FRIENDS_FILE', DATA_DIR . '/friends.json');       // 友情链接配置（站长在管理页维护）
+define('FRIENDIMG_DIR', DATA_DIR . '/friendimg');         // 友链图片（管理页上传，经 route=friend_img 输出）
+define('FRIENDS_MAX', 30);                                // 友链条数上限
+define('FRIENDIMG_MAX_BYTES', 307200);                    // 单张友链图片上限 300KB
 define('VIEW_WINDOW', 43200);   // 浏览量去重窗口（秒）= 12 小时
 define('VIEW_IP_MAX', 20);      // 同 IP 对同一故事在窗口内的计数上限（防清 localStorage 刷量）
 
@@ -147,6 +151,117 @@ function record_deletion(array $evt): void
         atomic_write(DELETIONS_FILE, json_encode($db, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
     } finally {
         unlock_guard($lock);
+    }
+}
+
+/* ================= 友情链接（管理页维护，页脚展示） ================= */
+
+/**
+ * 默认友链：data/friends.json 还不存在时用它兜底。
+ *
+ * 只在「文件读不出来」时生效 —— 文件存在且 items 为空数组时**不会**回落，
+ * 因为那是站长主动清空的结果，再塞回默认值就成了「删不掉的友链」。
+ */
+const DEFAULT_FRIENDS = [
+    ['id' => 1, 'name' => '解压小站', 'url' => 'https://wangzhy.top/', 'img' => '', 'desc' => ''],
+];
+
+/** 读取友链配置（文件损坏/不存在 → 默认值，不写盘） */
+function friends_load(): array
+{
+    $loaded = json_decode((string)@file_get_contents(FRIENDS_FILE) ?: '', true);
+    if (!is_array($loaded) || !isset($loaded['items']) || !is_array($loaded['items'])) {
+        return ['nextId' => count(DEFAULT_FRIENDS) + 1, 'items' => DEFAULT_FRIENDS];
+    }
+    return [
+        'nextId' => isset($loaded['nextId']) && is_numeric($loaded['nextId']) ? (int)$loaded['nextId'] : count($loaded['items']) + 1,
+        'items'  => array_values($loaded['items']),
+    ];
+}
+
+/** 对外字段（白名单，不给前端多余数据） */
+function friends_item(array $it): array
+{
+    return [
+        'id'   => (int)($it['id'] ?? 0),
+        'name' => (string)($it['name'] ?? ''),
+        'url'  => (string)($it['url'] ?? ''),
+        'img'  => (string)($it['img'] ?? ''),
+        'desc' => (string)($it['desc'] ?? ''),
+    ];
+}
+
+/**
+ * 校验友链地址：只放行 http(s) 绝对地址与站内相对地址。
+ *
+ * 拦掉 javascript: / data: 之类伪协议 —— 友链是 <a href> 与 <img src> 的来源，
+ * 管理密码虽然能进来才改得动，但一旦被写成 javascript: 就是给自己埋 XSS。
+ */
+function friend_url_ok(string $url): bool
+{
+    if ($url === '' || mb_strlen($url) > 500) { return false; }
+    if (preg_match('#^https?://[^\s<>"\']+$#i', $url)) { return true; }
+    // 站内相对地址：/xxx 或 xxx.html / api.php?route=...
+    if (preg_match('#^/(?!/)[^\s<>"\']*$#', $url)) { return true; }
+    return (bool)preg_match('#^[a-z0-9_\-]+\.(?:html|php)(?:\?[^\s<>"\']*)?$#i', $url);
+}
+
+/** 按文件魔数判真实图片类型；不认识就返回 null */
+function friend_img_ext(string $bin): ?string
+{
+    if (strncmp($bin, "\x89PNG\r\n\x1a\n", 8) === 0) { return 'png'; }
+    if (strncmp($bin, "\xFF\xD8\xFF", 3) === 0) { return 'jpg'; }
+    if (strncmp($bin, 'GIF87a', 6) === 0 || strncmp($bin, 'GIF89a', 6) === 0) { return 'gif'; }
+    if (strlen($bin) > 12 && substr($bin, 0, 4) === 'RIFF' && substr($bin, 8, 4) === 'WEBP') { return 'webp'; }
+    return null;
+}
+
+const FRIEND_IMG_NAME_RE = '#^f[a-f0-9]{16}\.(?:png|jpg|gif|webp)$#';
+const FRIEND_IMG_MIME = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp'];
+
+/** 输出一张友链图片（文件名随机且不可变 → 可以放心强缓存） */
+function serve_friend_img(string $name): void
+{
+    if (!preg_match(FRIEND_IMG_NAME_RE, $name)) {
+        http_response_code(404);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo '404 Not Found';
+        return;
+    }
+    $path = FRIENDIMG_DIR . '/' . $name;
+    if (!is_file($path)) {
+        http_response_code(404);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo '404 Not Found';
+        return;
+    }
+    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    header('Content-Type: ' . (FRIEND_IMG_MIME[$ext] ?? 'application/octet-stream'));
+    header('Content-Length: ' . (string)filesize($path));
+    header('Cache-Control: public, max-age=31536000, immutable');
+    header('X-Content-Type-Options: nosniff');
+    readfile($path);
+}
+
+/**
+ * 清理没被任何友链引用的上传图片。
+ *
+ * 站长在弹窗里上传完又删掉那一行、或者直接换图，旧文件就没人引用了；
+ * 不 GC 的话 data/friendimg 会一直堆垃圾。只删自己命名规则内的文件，绝不碰别的。
+ */
+function friend_img_gc(array $items): void
+{
+    if (!is_dir(FRIENDIMG_DIR)) { return; }
+    $keep = [];
+    foreach ($items as $it) {
+        if (preg_match('#route=friend_img&(?:amp;)?f=(f[a-f0-9]{16}\.(?:png|jpg|gif|webp))#', (string)($it['img'] ?? ''), $m)) {
+            $keep[$m[1]] = true;
+        }
+    }
+    foreach ((array)glob(FRIENDIMG_DIR . '/f*') as $path) {
+        if (!is_string($path)) { continue; }
+        $base = basename($path);
+        if (preg_match(FRIEND_IMG_NAME_RE, $base) && !isset($keep[$base])) { @unlink($path); }
     }
 }
 
@@ -1992,6 +2107,76 @@ switch ($route) {
         ]);
     }
 
+    /* ---- 管理页：友情链接维护（列表 / 保存 / 上传图片） ---- */
+    case 'admin_friends': {
+        if ($method !== 'POST') { fail('请使用 POST', 405); }
+        $in = body_json();
+        admin_auth($in);
+        $op = (string)($in['op'] ?? 'list');
+
+        // 上传一张图片 → 落 data/friendimg/，返回可以直接填进 img 字段的地址
+        if ($op === 'upload_img') {
+            $raw = (string)($in['data'] ?? '');
+            if (!preg_match('#^data:image/(?:png|jpeg|jpg|gif|webp);base64,#i', $raw, $m)) {
+                fail('请上传 PNG / JPG / GIF / WEBP 格式的图片');
+            }
+            $bin = base64_decode(substr($raw, strlen($m[0])), true);
+            if ($bin === false || $bin === '') { fail('图片数据解析失败，请重新选择文件'); }
+            if (strlen($bin) > FRIENDIMG_MAX_BYTES) {
+                fail('图片太大啦，最多 ' . (int)(FRIENDIMG_MAX_BYTES / 1024) . 'KB（图标级别就够）');
+            }
+            $ext = friend_img_ext($bin);
+            if ($ext === null) { fail('这个文件不像图片，请换一张试试'); }
+            if (!is_dir(FRIENDIMG_DIR) && !@mkdir(FRIENDIMG_DIR, 0775, true) && !is_dir(FRIENDIMG_DIR)) {
+                fail('图片目录创建失败，请检查 data/ 目录权限', 500);
+            }
+            $name = 'f' . bin2hex(random_bytes(8)) . '.' . $ext;
+            if (@file_put_contents(FRIENDIMG_DIR . '/' . $name, $bin) === false) {
+                fail('图片写入失败，请检查 data/friendimg 目录权限', 500);
+            }
+            @chmod(FRIENDIMG_DIR . '/' . $name, 0644);
+            respond(['ok' => true, 'url' => 'api.php?route=friend_img&f=' . $name]);
+        }
+
+        // 保存整份列表（顺序即页脚显示顺序）
+        if ($op === 'save') {
+            $itemsIn = $in['items'] ?? [];
+            if (!is_array($itemsIn)) { fail('数据格式不正确'); }
+            if (count($itemsIn) > FRIENDS_MAX) { fail('友情链接最多 ' . FRIENDS_MAX . ' 条'); }
+
+            $items = [];
+            $nextId = 1;
+            foreach ($itemsIn as $raw) {
+                if (!is_array($raw)) { continue; }
+                $name = trim((string)($raw['name'] ?? ''));
+                $url  = trim((string)($raw['url'] ?? ''));
+                $img  = trim((string)($raw['img'] ?? ''));
+                $desc = trim((string)($raw['desc'] ?? ''));
+                if ($name === '' && $url === '' && $img === '') { continue; }   // 空行直接忽略
+
+                if ($name === '') { fail('每条友情链接都要填站点名称'); }
+                if (mb_strlen($name) > 30) { fail('名称最多 30 个字'); }
+                if ($url === '') { fail('「' . $name . '」还没填跳转链接'); }
+                if (!friend_url_ok($url)) { fail('「' . $name . '」的跳转链接不合法，请以 http:// 或 https:// 开头'); }
+                if ($img !== '' && !friend_url_ok($img)) { fail('「' . $name . '」的图片地址不合法'); }
+                if (mb_strlen($desc) > 60) { fail('描述最多 60 个字'); }
+
+                $items[] = ['id' => $nextId++, 'name' => $name, 'url' => $url, 'img' => $img, 'desc' => $desc];
+            }
+
+            $db = ['nextId' => $nextId, 'items' => $items];
+            if (!atomic_write(FRIENDS_FILE, json_encode($db, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT))) {
+                fail('保存失败，请检查 data/ 目录是否可写', 500);
+            }
+            friend_img_gc($items);   // 换图/删行留下的孤儿图片一并清掉
+            respond(['ok' => true, 'message' => '友情链接已保存', 'items' => $items]);
+        }
+
+        // 列表
+        $db = friends_load();
+        respond(['ok' => true, 'items' => array_map('friends_item', $db['items'])]);
+    }
+
     /* ---- 管理页：查看/删除反馈 ---- */
     case 'admin_feedback': {
         if ($method !== 'POST') { fail('请使用 POST', 405); }
@@ -2104,6 +2289,26 @@ switch ($route) {
             'todayFeedback'  => $todayFb,
             'today'          => date('Y-m-d'),
         ]]);
+    }
+
+    /* ---- 友情链接（公开读取，首页页脚渲染） ---- */
+    case 'friends': {
+        $db = friends_load();
+        $items = [];
+        foreach ($db['items'] as $it) {
+            $one = friends_item($it);
+            // 名称和链接缺一不可：脏数据（比如手改过 friends.json）直接不展示
+            if ($one['name'] === '' || $one['url'] === '') { continue; }
+            $items[] = $one;
+        }
+        header('Cache-Control: no-cache');
+        respond(['ok' => true, 'items' => $items]);
+    }
+
+    /* ---- 友链图片（管理页上传的图标，站内输出，不直接暴露 data/） ---- */
+    case 'friend_img': {
+        serve_friend_img((string)($_GET['f'] ?? ''));
+        exit;
     }
 
     /* ---- 站点统计 ---- */
