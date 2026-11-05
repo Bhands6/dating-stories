@@ -1410,6 +1410,7 @@ const RATE_LIMITS = [
     'real'           => [30, 600, '标记真实故事'],
     'delete_story'   => [10, 600, '删除故事'],
     'story_img'      => [100, 3600, '上传图片'],
+    'admin_backup'   => [20,  3600, '完整备份'],
 ];
 
 /**
@@ -1470,6 +1471,141 @@ function rate_guard(string $action): void
         $label = RATE_LIMITS[$action][2] ?? '操作';
         fail($label . '太频繁啦，请 ' . $wait . ' 分钟后再试 💕', 429);
     }
+}
+
+/* ================= 一键完整备份（零依赖 ZIP 写出） =================
+ * 站点没有数据库，全部资产就是 data/ 下的 JSON 与上传文件。
+ * 这里用 STORE（不压缩）方式直接拼 ZIP：PHP 不需要 zip 扩展，Node 侧也不需要第三方库，
+ * 两端各写一份但输出格式完全一致。图片本来就是 JPG/PNG，压缩没有收益，STORE 反而更快。
+ * ==================================================================== */
+
+/** 收集要打包的文件：核心 JSON + 原始 HTML + 故事/评论插图 + 友链图标 */
+function backup_collect(): array
+{
+    $files = [];
+    foreach (['stories.json', 'feedback.json', 'friends.json', 'deletions.json', 'seed.json'] as $f) {
+        $p = DATA_DIR . '/' . $f;
+        if (is_file($p)) { $files['data/' . $f] = $p; }
+    }
+    foreach (['uploads', 'storyimg', 'friendimg'] as $dir) {
+        $base = DATA_DIR . '/' . $dir;
+        if (!is_dir($base)) { continue; }
+        foreach ((array)@scandir($base) as $f) {
+            // 跳过 .lock / .tmp / 各种 .bak-* 残留，别把运行时垃圾一起打包
+            if ($f === '.' || $f === '..' || preg_match('/\.(?:lock|tmp|bak.*)$/i', $f)) { continue; }
+            $p = $base . '/' . $f;
+            if (is_file($p)) { $files['data/' . $dir . '/' . $f] = $p; }
+        }
+    }
+    ksort($files);
+    return $files;
+}
+
+/** DOS 时间和日期（ZIP 头里的固定格式） */
+function zip_dos_datetime(): array
+{
+    $d = getdate();
+    return [
+        ($d['hours'] << 11) | ($d['minutes'] << 5) | (int)($d['seconds'] / 2),
+        (($d['year'] - 1980) << 9) | ($d['mon'] << 5) | $d['mday'],
+    ];
+}
+
+function zip_local_header(string $name, int $crc, int $size, int $time, int $date): string
+{
+    // 0x0800 = 文件名用 UTF-8；method 0 = STORE
+    return pack('VvvvvvVVVvv', 0x04034b50, 20, 0x0800, 0, $time, $date,
+        $crc, $size, $size, strlen($name), 0) . $name;
+}
+
+function zip_central_header(string $name, int $crc, int $size, int $time, int $date, int $offset): string
+{
+    return pack('VvvvvvvVVVvvvvvVV', 0x02014b50, 20, 20, 0x0800, 0, $time, $date,
+        $crc, $size, $size, strlen($name), 0, 0, 0, 0, 0, $offset) . $name;
+}
+
+function zip_eocd(int $count, int $cdSize, int $cdOffset): string
+{
+    return pack('VvvvvVVv', 0x06054b50, 0, 0, $count, $count, $cdSize, $cdOffset, 0);
+}
+
+/** 输出完整备份 ZIP；边生成边 echo，内存里始终只有一个文件的体积 */
+function serve_full_backup(): void
+{
+    $files = backup_collect();
+    if (!$files) { fail('没有找到可备份的数据文件', 404); }
+
+    $stamp = date('Ymd-His');
+    $root  = 'life-stories-backup-' . $stamp . '/';
+
+    $bytes = 0;
+    foreach ($files as $p) { $bytes += (int)@filesize($p); }
+    $storyCount = 0;
+    $raw = @file_get_contents(DATA_FILE);
+    if (is_string($raw)) {
+        $db = json_decode($raw, true);
+        if (is_array($db) && isset($db['stories']) && is_array($db['stories'])) { $storyCount = count($db['stories']); }
+    }
+
+    $readme = "人生故事屋 · 完整备份\n"
+        . "生成时间：" . date('Y-m-d H:i:s') . "\n"
+        . "故事数量：" . $storyCount . " 篇，附带文件 " . count($files) . " 个\n\n"
+        . "【里面有什么】\n"
+        . "  data/stories.json     所有故事、评论、点赞、浏览、删除凭证\n"
+        . "  data/feedback.json    网友反馈\n"
+        . "  data/friends.json     友情链接配置\n"
+        . "  data/deletions.json   访客删除留痕\n"
+        . "  data/seed.json        种子数据\n"
+        . "  data/uploads/         作者上传的原始 HTML 文件（未净化）\n"
+        . "  data/storyimg/        故事插图与评论配图\n"
+        . "  data/friendimg/       友链图标\n"
+        . "  manifest.json         本次备份的清单\n\n"
+        . "【怎么恢复】\n"
+        . "  解压后把 data/ 目录里的文件复制回站点的 data/ 目录，覆盖同名文件即可。\n"
+        . "  建议先停掉容器或先备份当前 data/，避免写入过程中被接口改动。\n\n"
+        . "【刻意不包含】\n"
+        . "  admin_key.txt（管理密码）、admin_guard.json / rate_guard.json（限流状态）、\n"
+        . "  views_log.json（浏览去重记录）、fontcache/（字体缓存）、*.lock / *.bak-*。\n"
+        . "  这些是运行时状态或敏感信息，不是内容，恢复时也不该覆盖。\n";
+
+    $manifest = json_encode([
+        'site' => '人生故事屋',
+        'createdAt' => time(),
+        'createdAtText' => date('Y-m-d H:i:s'),
+        'storyCount' => $storyCount,
+        'fileCount' => count($files),
+        'dataBytes' => $bytes,
+        'files' => array_keys($files),
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '{}';
+
+    $entries = [
+        ['name' => $root . 'README.txt',     'data' => $readme],
+        ['name' => $root . 'manifest.json',  'data' => $manifest],
+    ];
+    foreach ($files as $name => $path) { $entries[] = ['name' => $root . $name, 'path' => $path]; }
+
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="life-stories-backup-' . $stamp . '.zip"');
+    header('Cache-Control: no-store');
+    header('X-Content-Type-Options: nosniff');
+
+    [$time, $date] = zip_dos_datetime();
+    $offset = 0;
+    $central = '';
+    $count = 0;
+    foreach ($entries as $e) {
+        $data = isset($e['data']) ? $e['data'] : (string)@file_get_contents($e['path']);
+        $size = strlen($data);
+        $crc  = (int)hexdec(hash('crc32b', $data));
+        $local = zip_local_header($e['name'], $crc, $size, $time, $date) . $data;
+        echo $local;
+        $central .= zip_central_header($e['name'], $crc, $size, $time, $date, $offset);
+        $offset += strlen($local);
+        $count++;
+    }
+    echo $central;
+    echo zip_eocd($count, strlen($central), $offset);
+    exit;
 }
 
 /* ================= 路由处理 ================= */
@@ -2266,6 +2402,17 @@ switch ($route) {
     }
 
     /* ---- 管理页：导出数据（直接下载 JSON 文件） ---- */
+    /* ---- 管理页：一键完整备份（全部故事 + 评论 + 插图 + 原件，打包 ZIP） ---- */
+    case 'admin_backup': {
+        if ($method !== 'POST') { fail('请使用 POST', 405); }
+        $in = body_json();
+        admin_auth($in);
+        rate_guard('admin_backup');
+        serve_full_backup();
+        exit;
+    }
+
+    /* ---- 管理页：导出单份 JSON ---- */
     case 'admin_export': {
         if ($method !== 'POST') { fail('请使用 POST', 405); }
         $in = body_json();

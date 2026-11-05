@@ -377,6 +377,22 @@ input[type=checkbox]{
 }
 .switch-row p{font-size:11.5px;color:var(--muted);margin-top:4px}
 .switch-row strong{font-size:13.5px;font-weight:500}
+/* 一键备份：设置页里最显眼的一块 */
+.backup-card{
+  border:1px solid var(--line);border-radius:16px;padding:18px;
+  background:linear-gradient(135deg,var(--rose-wash),var(--paper-3));margin-bottom:2px;
+}
+[data-theme="dark"] .backup-card{background:linear-gradient(135deg,var(--rose-wash),var(--paper-2))}
+.backup-top{display:flex;gap:14px;align-items:flex-start}
+.backup-ic{
+  width:40px;height:40px;border-radius:12px;flex:none;display:grid;place-items:center;
+  background:linear-gradient(150deg,var(--rose),var(--rose-2));box-shadow:0 12px 22px -12px rgba(189,74,65,.7);
+}
+.backup-ic svg{width:18px;height:18px;color:#fff}
+.backup-card strong{font-size:14px;font-weight:700;font-family:"Noto Serif SC",serif}
+.backup-card p{font-size:11.5px;color:var(--ink-2);margin-top:6px;line-height:1.75}
+.backup-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;flex-wrap:wrap}
+.backup-foot span{font-family:"DM Mono",monospace;font-size:10px;color:var(--muted);letter-spacing:.04em}
 
 /* toast */
 .toast-wrap{position:fixed;right:26px;bottom:26px;display:flex;flex-direction:column;gap:10px;z-index:9998}
@@ -785,6 +801,19 @@ input[type=checkbox]{
         <div class="panel">
           <div class="panel-head"><div class="panel-title">数据与站点</div><div class="panel-note">Data</div></div>
           <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="backup-card">
+              <div class="backup-top">
+                <div class="backup-ic"><svg><use href="#i-download"/></svg></div>
+                <div>
+                  <strong>一键备份全部</strong>
+                  <p>故事、评论、插图、原始 HTML、反馈、友链与删除留痕，打包成一个 ZIP 下载到本机。<br>零数据库站点，备份就是复制数据，这一份就够了。</p>
+                </div>
+              </div>
+              <div class="backup-foot">
+                <span id="backup-note">建议每周备份一次 · 不含管理密码</span>
+                <button class="btn btn-primary btn-sm" id="backup-btn">开始备份</button>
+              </div>
+            </div>
             <div class="switch-row">
               <div><strong>导出故事数据</strong><p>stories.json · 含故事、评论、点赞与删除凭证</p></div>
               <button class="btn btn-sm" data-export="stories"><svg><use href="#i-download"/></svg>导出</button>
@@ -1663,6 +1692,55 @@ async function exportData(what) {
     } catch (e) { toast('导出失败：' + e.message, 'error'); }
 }
 $$('[data-export]').forEach(b => b.addEventListener('click', () => exportData(b.dataset.export)));
+
+/* ---------------- 一键完整备份 ---------------- */
+const BACKUP_STORE = 'yf_admin_last_backup';
+function paintLastBackup() {
+    const el = $('#backup-note');
+    if (!el) return;
+    try {
+        const t = Number(localStorage.getItem(BACKUP_STORE) || 0);
+        if (t) el.textContent = '上次备份：' + new Date(t).toLocaleString('zh-CN');
+    } catch (e) { /* 隐私模式忽略 */ }
+}
+async function backupAll() {
+    const btn = $('#backup-btn');
+    if (!btn) return;
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '打包中…';
+    try {
+        const r = await fetch('api.php?route=admin_backup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: getKey() })
+        });
+        if (!r.ok) {
+            let msg = '备份失败';
+            try { msg = (await r.json()).error || msg; } catch (e) {}
+            throw new Error(msg);
+        }
+        const blob = await r.blob();
+        const cd = r.headers.get('Content-Disposition') || '';
+        const m = cd.match(/filename="?([^"]+)"?/);
+        const name = m ? m[1] : 'life-stories-backup.zip';
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        const mb = (blob.size / 1024 / 1024).toFixed(1);
+        toast('已下载 ' + name + '（' + mb + ' MB）');
+        try { localStorage.setItem(BACKUP_STORE, String(Date.now())); } catch (e) {}
+        paintLastBackup();
+    } catch (e) {
+        toast('备份失败：' + e.message, 'error');
+    }
+    btn.disabled = false;
+    btn.textContent = label;
+}
+$('#backup-btn').addEventListener('click', backupAll);
+paintLastBackup();
 
 /* ---------------- 友情链接 ---------------- */
 let friendsItems = [];

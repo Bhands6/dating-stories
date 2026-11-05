@@ -5,7 +5,7 @@
 **一个零数据库依赖的匿名人生故事分享社区**
 —— 爱情、日常、搞笑、职场、家庭，每一件小事都值得记一笔。
 
-![PHP](https://img.shields.io/badge/PHP-7.4%2B-777bb4) ![Database](https://img.shields.io/badge/数据库-无-orange) ![Node](https://img.shields.io/badge/Node-开发服务器-green) ![Docker](https://img.shields.io/badge/Docker-支持-2496ed) ![Version](https://img.shields.io/badge/version-v1.12-pink) ![License](https://img.shields.io/badge/用途-个人项目-pink)
+![PHP](https://img.shields.io/badge/PHP-7.4%2B-777bb4) ![Database](https://img.shields.io/badge/数据库-无-orange) ![Node](https://img.shields.io/badge/Node-开发服务器-green) ![Docker](https://img.shields.io/badge/Docker-支持-2496ed) ![Version](https://img.shields.io/badge/version-v1.13-pink) ![License](https://img.shields.io/badge/用途-个人项目-pink)
 
 **在线访问**：[bhands.me](https://bhands.me)
 </div>
@@ -23,7 +23,7 @@
 | ✍️ **发布系统** | 匿名发布（随机昵称）、纯文本/HTML 双模式编辑、**插入图片（按钮选图或直接 Ctrl+V 粘贴，自动压缩到长边 1600px 并剥掉 EXIF 定位）**、上传 HTML 文件、富文本粘贴、实时预览、**AI 排版引导弹窗**（三步指引 + 一键复制提示词模板 + DeepSeek/豆包/小米 MiMo 直达） |
 | 🎨 **HTML 排版故事** | 上传你排版的网页，**原件原样存档**（`data/uploads/`），阅读时以沙箱 iframe 呈现——`<header>`、CSS 变量、`@keyframes`、滚动动画 **100% 原样**；Google Fonts 经**站内代理**加载（国内不可达也能显示），还提供「原文阅读」全屏打开 |
 | 🛡️ **防刷机制** | 浏览量按 IP 24h 去重、点赞本地记忆防连点、**写接口按 IP 滑动窗口限流**（发布 5 篇/10 分钟、评论 15 条/5 分钟、反馈 3 条/30 分钟、删评 20 次/10 分钟、删故事 10 次/10 分钟、标记真实 30 次/10 分钟、上传图片 30 张/小时）、内容服务端净化、用户 CSS 沙箱隔离 |
-| 🔐 **站长管理** | 侧边栏六视图管理台（总览 / 故事管理 / 反馈箱 / 频道管理 / 访客删除 / 站点设置），自带浅色与夜间皮肤；真实数据驱动（统计、频道分布、最近故事、删除留痕），支持故事搜索/排序/频道筛选/分页/批量删除/置顶/编辑/评论管理/预览，反馈单条标已读，友情链接可视化配置，数据导出与修改密码；密码自动生成（`data/admin_key.txt`），连续输错 5 次锁定 15 分钟 |
+| 🔐 **站长管理** | 侧边栏六视图管理台（总览 / 故事管理 / 反馈箱 / 频道管理 / 访客删除 / 站点设置），自带浅色与夜间皮肤；真实数据驱动（统计、频道分布、最近故事、删除留痕），支持故事搜索/排序/频道筛选/分页/批量删除/置顶/编辑/评论管理/预览，反馈单条标已读，友情链接可视化配置，数据导出与**一键完整备份**（ZIP），修改密码；密码自动生成（`data/admin_key.txt`），连续输错 5 次锁定 15 分钟 |
 | 📮 **互动与合规** | 反馈建议页、内容规范、隐私声明、免责声明、频道云实时计数、站点统计 |
 
 ---
@@ -165,7 +165,8 @@ docker compose up -d --build
 | `feedback` | 提交反馈 |
 | `admin_feedback` / `admin_stories` / `admin_comments` | 管理接口（密码为 `data/admin_key.txt` 中的值，连续错 5 次锁定 15 分钟）；`op=list` 支持 `page` / `pageSize`（默认 20、上限 100），返回 `total` / `page` / `pageSize` / `hasMore`；`admin_stories` 支持 `q` 搜索、`sort` 排序、`op=update` 编辑、`op=delete` 批量删（`ids` 数组）；`admin_feedback` 支持 `op=read` 标记已读 |
 | `admin_deletions` | 访客删除动态（`op=list` 默认 / `op=read` 推进已读水位）：记录谁删掉了自己的故事或评论，含删除前的赞/浏览/评论数；最多保留 200 条，管理页最多返回最近 100 条 |
-| `admin_stats` / `admin_export` / `admin_change_key` | 管理页数据概览 / 导出 JSON / 修改管理密码 |
+| `admin_stats` / `admin_export` / `admin_change_key` | 管理页数据概览 / 导出单份 JSON / 修改管理密码 |
+| `admin_backup` | 管理：**一键完整备份**，把 `data/` 下所有故事、评论、插图、原始 HTML、反馈、友链与删除留痕打包成 ZIP 下载（零依赖 STORE 方式写 ZIP，不含管理密码） |
 | `admin_friends` | 管理：友情链接（`op=list` / `op=save` 整份列表落盘 / `op=upload_img` 上传图标回站内地址）；首页页脚据此渲染，无需改代码 |
 
 **写接口限流**（按 IP 滑动窗口，超限返回 `429` + 友好提示，记录在 `data/rate_guard.json`）：

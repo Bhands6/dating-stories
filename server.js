@@ -143,6 +143,7 @@ const RATE_LIMITS = {
   real: { max: 30, window: 600, label: '标记真实故事' },
   delete_story: { max: 10, window: 600, label: '删除故事' },
   story_img: { max: 100, window: 3600, label: '上传图片' },
+  admin_backup: { max: 20, window: 3600, label: '完整备份' },
 };
 
 /** 滑动窗口计数。放行返回 null；超限返回还需等待的分钟数 */
@@ -1226,6 +1227,155 @@ function storyFull(s) {
   };
 }
 
+/* ================= 一键完整备份（零依赖 ZIP 写出，与 api.php 对齐） =================
+ * 站点没有数据库，全部资产就是 data/ 下的 JSON 与上传文件。
+ * 用 STORE（不压缩）方式直接拼 ZIP：图片本来就是 JPG/PNG，压缩没有收益。
+ * ================================================================================ */
+
+function zipCrc32(buf) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) {
+    if (!CRC_TABLE) {
+      CRC_TABLE = new Uint32Array(256);
+      for (let j = 0; j < 256; j++) {
+        let x = j;
+        for (let k = 0; k < 8; k++) x = (x & 1) ? (0xEDB88320 ^ (x >>> 1)) : (x >>> 1);
+        CRC_TABLE[j] = x >>> 0;
+      }
+    }
+    c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+  }
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+let CRC_TABLE = null;
+
+const u16 = v => { const b = Buffer.alloc(2); b.writeUInt16LE(v >>> 0, 0); return b; };
+const u32 = v => { const b = Buffer.alloc(4); b.writeUInt32LE(v >>> 0, 0); return b; };
+
+function zipDosDateTime() {
+  const d = new Date();
+  return [
+    (d.getHours() << 11) | (d.getMinutes() << 5) | Math.floor(d.getSeconds() / 2),
+    ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate(),
+  ];
+}
+
+function zipLocalHeader(name, crc, size, time, date) {
+  const nm = Buffer.from(name, 'utf8');
+  // 0x0800 = 文件名用 UTF-8；method 0 = STORE
+  return Buffer.concat([u32(0x04034b50), u16(20), u16(0x0800), u16(0), u16(time), u16(date),
+    u32(crc), u32(size), u32(size), u16(nm.length), u16(0), nm]);
+}
+
+function zipCentralHeader(name, crc, size, time, date, offset) {
+  const nm = Buffer.from(name, 'utf8');
+  return Buffer.concat([u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0), u16(time), u16(date),
+    u32(crc), u32(size), u32(size), u16(nm.length), u16(0), u16(0), u16(0), u16(0),
+    u32(0), u32(offset), nm]);
+}
+
+function zipEocd(count, cdSize, cdOffset) {
+  return Buffer.concat([u32(0x06054b50), u16(0), u16(0), u16(count), u16(count),
+    u32(cdSize), u32(cdOffset), u16(0)]);
+}
+
+function backupCollect() {
+  const files = new Map();
+  for (const f of ['stories.json', 'feedback.json', 'friends.json', 'deletions.json', 'seed.json']) {
+    const p = path.join(DATA_DIR, f);
+    try { if (fs.statSync(p).isFile()) files.set('data/' + f, p); } catch (e) { /* 不存在 */ }
+  }
+  for (const dir of ['uploads', 'storyimg', 'friendimg']) {
+    const base = path.join(DATA_DIR, dir);
+    let names = [];
+    try { names = fs.readdirSync(base); } catch (e) { continue; }
+    for (const f of names) {
+      // 跳过 .lock / .tmp / 各种 .bak-* 残留
+      if (/\.(?:lock|tmp|bak.*)$/i.test(f)) continue;
+      const p = path.join(base, f);
+      try { if (fs.statSync(p).isFile()) files.set('data/' + dir + '/' + f, p); } catch (e) { /* 跳过 */ }
+    }
+  }
+  return new Map([...files.entries()].sort((a, b) => a[0].localeCompare(b[0])));
+}
+
+function serveFullBackup(res) {
+  const files = backupCollect();
+  if (!files.size) return fail(res, '没有找到可备份的数据文件', 404);
+
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  const root = 'life-stories-backup-' + stamp + '/';
+
+  let bytes = 0;
+  for (const fp of files.values()) { try { bytes += fs.statSync(fp).size; } catch (e) { /* 跳过 */ } }
+  let storyCount = 0;
+  try {
+    const db = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    if (Array.isArray(db.stories)) storyCount = db.stories.length;
+  } catch (e) { /* 数据文件坏了也不影响打包 */ }
+
+  const readme = '人生故事屋 · 完整备份\n'
+    + '生成时间：' + d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + '\n'
+    + '故事数量：' + storyCount + ' 篇，附带文件 ' + files.size + ' 个\n\n'
+    + '【里面有什么】\n'
+    + '  data/stories.json     所有故事、评论、点赞、浏览、删除凭证\n'
+    + '  data/feedback.json    网友反馈\n'
+    + '  data/friends.json     友情链接配置\n'
+    + '  data/deletions.json   访客删除留痕\n'
+    + '  data/seed.json        种子数据\n'
+    + '  data/uploads/         作者上传的原始 HTML 文件（未净化）\n'
+    + '  data/storyimg/        故事插图与评论配图\n'
+    + '  data/friendimg/       友链图标\n'
+    + '  manifest.json         本次备份的清单\n\n'
+    + '【怎么恢复】\n'
+    + '  解压后把 data/ 目录里的文件复制回站点的 data/ 目录，覆盖同名文件即可。\n'
+    + '  建议先停掉容器或先备份当前 data/，避免写入过程中被接口改动。\n\n'
+    + '【刻意不包含】\n'
+    + '  admin_key.txt（管理密码）、admin_guard.json / rate_guard.json（限流状态）、\n'
+    + '  views_log.json（浏览去重记录）、fontcache/（字体缓存）、*.lock / *.bak-*。\n'
+    + '  这些是运行时状态或敏感信息，不是内容，恢复时也不该覆盖。\n';
+
+  const manifest = JSON.stringify({
+    site: '人生故事屋',
+    createdAt: Math.floor(Date.now() / 1000),
+    createdAtText: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`,
+    storyCount, fileCount: files.size, dataBytes: bytes, files: [...files.keys()],
+  }, null, 2);
+
+  const entries = [
+    { name: root + 'README.txt', data: Buffer.from(readme, 'utf8') },
+    { name: root + 'manifest.json', data: Buffer.from(manifest, 'utf8') },
+  ];
+  for (const [name, fp] of files) entries.push({ name: root + name, path: fp });
+
+  res.writeHead(200, {
+    'Content-Type': 'application/zip',
+    'Content-Disposition': 'attachment; filename="life-stories-backup-' + stamp + '.zip"',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  });
+
+  const [time, date] = zipDosDateTime();
+  let offset = 0;
+  const central = [];
+  let cdSize = 0;
+  for (const e of entries) {
+    const data = e.data || fs.readFileSync(e.path);
+    const crc = zipCrc32(data);
+    const local = zipLocalHeader(e.name, crc, data.length, time, date);
+    res.write(local);
+    res.write(data);
+    const c = zipCentralHeader(e.name, crc, data.length, time, date, offset);
+    central.push(c);
+    cdSize += c.length;
+    offset += local.length + data.length;
+  }
+  for (const c of central) res.write(c);
+  res.end(zipEocd(entries.length, cdSize, offset));
+}
+
 /* ================= API 路由（与 api.php 对齐） ================= */
 
 function handleApi(req, res, url, body) {
@@ -1823,6 +1973,16 @@ function handleApi(req, res, url, body) {
     }
 
     /* ---- 管理页：导出数据（直接下载 JSON 文件） ---- */
+    /* ---- 管理页：一键完整备份（全部故事 + 评论 + 插图 + 原件，打包 ZIP） ---- */
+    case 'admin_backup': {
+      if (method !== 'POST') return fail(res, '请使用 POST', 405);
+      if (!adminAuth(req, res, body)) return;
+      if (!rateGuard(req, res, 'admin_backup')) return;
+      serveFullBackup(res);
+      return;
+    }
+
+    /* ---- 管理页：导出单份 JSON ---- */
     case 'admin_export': {
       if (method !== 'POST') return fail(res, '请使用 POST', 405);
       if (!adminAuth(req, res, body)) return;
