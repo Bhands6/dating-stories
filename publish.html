@@ -681,12 +681,26 @@
         }, 2600);
     }
 
-    async function api(route, params, body) {
+    async function api(route, params, body, timeoutMs) {
         const qs = params ? '&' + new URLSearchParams(params).toString() : '';
         const opt = body !== undefined
             ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-            : undefined;
-        const r = await fetch('api.php?route=' + encodeURIComponent(route) + qs, opt);
+            : {};
+        // 可选超时：上传图片在弱网（手机流量）下会慢，给 90 秒；其他请求保持不超时
+        let timer = null;
+        if (timeoutMs) {
+            const ctrl = new AbortController();
+            opt.signal = ctrl.signal;
+            timer = setTimeout(() => ctrl.abort(), timeoutMs);
+        }
+        let r;
+        try {
+            r = await fetch('api.php?route=' + encodeURIComponent(route) + qs, opt);
+        } catch (e) {
+            throw new Error(e.name === 'AbortError' ? '上传超时，请检查网络后重试' : '网络请求失败，请稍后重试');
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
         const data = await r.json();
         if (!data.ok) throw new Error(data.error || '请求失败');
         return data;
@@ -750,18 +764,16 @@
      * canvas 重新编码会**顺带剥掉 EXIF**（含 GPS 定位）—— 这是隐私上的必须项，
      * 否则用户发张照片就等于把拍摄地点公开了。GIF 不压缩（保留动画）。
      */
-    async function compressImage(file) {
-        if (file.type === 'image/gif') {
-            if (file.size > 2 * 1024 * 1024) throw new Error('GIF 太大啦，最多 2MB');
-            return fileToDataUrl(file);
-        }
-        const dataUrl = await fileToDataUrl(file);
-        const img = await loadImage(dataUrl);
-        const MAX = 1600;
+    const IMG_SIDE = 1600;                          // 压缩后长边上限
+    const IMG_TARGET_BYTES = 1.8 * 1024 * 1024;     // 压缩后目标上限（服务端 2MB 兜底）
+    const IMG_MAX_SOURCE = 30 * 1024 * 1024;        // 原图上限，再大基本是 RAW / 全景
+
+    /** 画到 canvas 再导出 JPEG：顺带把 EXIF（含 GPS）洗掉 */
+    function renderToJpeg(img, maxSide, quality) {
         let w = img.naturalWidth || img.width;
         let h = img.naturalHeight || img.height;
-        if (w > MAX || h > MAX) {
-            const r = Math.min(MAX / w, MAX / h);
+        if (w > maxSide || h > maxSide) {
+            const r = Math.min(maxSide / w, maxSide / h);
             w = Math.max(1, Math.round(w * r));
             h = Math.max(1, Math.round(h * r));
         }
@@ -772,10 +784,56 @@
         ctx.fillStyle = '#fff';          // 透明 PNG 转 JPEG 时铺白底，避免出现黑块
         ctx.fillRect(0, 0, w, h);
         ctx.drawImage(img, 0, 0, w, h);
-        let out = canvas.toDataURL('image/jpeg', 0.82);
-        // 小图重编码可能反而更大 → 原图不超 800KB 就用原图
-        if (out.length > dataUrl.length && file.size <= 800 * 1024) out = dataUrl;
-        return out;
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        // base64 长度换算成原始字节数（4 个字符 ≈ 3 字节）
+        const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+        return { dataUrl, bytes: Math.floor(base64.length * 3 / 4) };
+    }
+
+    /**
+     * 把手机原图（通常 3~10MB、4000×3000）压到几百 KB。
+     *
+     * 关键点：**压缩在浏览器里完成**，服务器收到的是压缩后的图，
+     * 所以手机拍的 10MB 照片不会因为「服务端 2MB 限制」而被拒。
+     * 始终重编码（不用原图），顺带剥掉 EXIF 里的拍摄地点。
+     */
+    async function compressImage(file) {
+        const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+        if (file.size > IMG_MAX_SOURCE) {
+            throw new Error('这张图有 ' + sizeMB + 'MB，太大了，请先在相册里裁剪或缩小再试');
+        }
+        // iPhone 默认拍 HEIC，浏览器 canvas 解不了 → 给明确指引，别让它看起来像"格式不支持"
+        if (/heic|heif/i.test(file.type || '') || /\.hei[cf]$/i.test(file.name || '')) {
+            throw new Error('这是 iPhone 的 HEIC 格式，浏览器解不了。请从「相册」里选照片（会自动转成 JPG），'
+                + '或到 设置 → 相机 → 格式 改成「兼容性最佳」');
+        }
+        // GIF 保留动画：压缩会变静态图，所以不压，只做大小兜底
+        if (file.type === 'image/gif') {
+            if (file.size > 2 * 1024 * 1024) throw new Error('GIF 动图最多 2MB（压缩会丢动画，所以没压）');
+            return fileToDataUrl(file);
+        }
+
+        const dataUrl = await fileToDataUrl(file);
+        let img;
+        try {
+            img = await loadImage(dataUrl);
+        } catch (e) {
+            throw new Error('这张图浏览器打不开（可能是特殊格式），换一张或直接截图粘贴试试');
+        }
+
+        // 两轮：先 1600px / 0.82，还是太大就降到 1200px / 0.75
+        let last = null;
+        for (const [side, q] of [[IMG_SIDE, 0.82], [1200, 0.75]]) {
+            try {
+                last = renderToJpeg(img, side, q);
+            } catch (e) {
+                throw new Error('图片处理失败（可能内存不足），请换一张试试');
+            }
+            if (last.bytes <= IMG_TARGET_BYTES) return last.dataUrl;
+        }
+        // 两轮都超目标但仍在服务端 2MB 上限内 → 放行（别为了省一点体积把用户挡回去）
+        if (last.bytes <= 2 * 1024 * 1024) return last.dataUrl;
+        throw new Error('这张图压缩后仍有 ' + (last.bytes / 1024 / 1024).toFixed(1) + 'MB，换一张试试');
     }
 
     /** 在光标处插入文本（保持焦点与光标位置） */
@@ -792,6 +850,7 @@
     async function handleImageFiles(files) {
         const el = document.getElementById('story-content');
         const btn = document.getElementById('img-btn');
+        const submitBtn = document.getElementById('submit-btn');
         const isHtml = el.classList.contains('html-mode');
         const list = Array.from(files || []);
         if (!list.length) return;
@@ -800,17 +859,19 @@
             return;
         }
         btn.disabled = true;
+        // 上传期间禁掉发布：否则用户在图片还没插进正文时就点了发布，图会漏掉
+        if (submitBtn) submitBtn.disabled = true;
         const oldLabel = btn.innerHTML;
-        btn.innerHTML = '上传中…';
         let ok = 0;
+        let idx = 0;
         for (const file of list) {
-            if (!/^image\/(png|jpeg|jpg|gif|webp)$/.test(file.type)) {
-                toast('只支持 PNG / JPG / GIF / WEBP 图片', 'error');
-                continue;
-            }
+            idx++;
+            btn.innerHTML = list.length > 1 ? '上传 ' + idx + '/' + list.length + '…' : '上传中…';
+            // 格式校验放在压缩里统一做（HEIC 等会给专门提示）
             try {
                 const dataUrl = await compressImage(file);
-                const d = await api('story_img_upload', null, { data: dataUrl });
+                // 弱网（手机流量）下 400KB 也可能慢，给 90 秒
+                const d = await api('story_img_upload', null, { data: dataUrl }, 90000);
                 const f = d.f;
                 storyImages.push(f);
                 const token = isHtml
@@ -819,10 +880,11 @@
                 insertAtCursor(el, token);
                 ok++;
             } catch (err) {
-                toast('图片上传失败：' + err.message, 'error');
+                toast(err.message, 'error');
             }
         }
         btn.disabled = false;
+        if (submitBtn) submitBtn.disabled = false;
         btn.innerHTML = oldLabel;
         if (ok) toast('🖼️ 已插入 ' + ok + ' 张图片');
     }
