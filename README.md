@@ -5,7 +5,7 @@
 **一个零数据库依赖的匿名人生故事分享社区**
 —— 爱情、日常、搞笑、职场、家庭，每一件小事都值得记一笔。
 
-![PHP](https://img.shields.io/badge/PHP-7.4%2B-777bb4) ![Database](https://img.shields.io/badge/数据库-无-orange) ![Node](https://img.shields.io/badge/Node-开发服务器-green) ![Docker](https://img.shields.io/badge/Docker-支持-2496ed) ![Version](https://img.shields.io/badge/version-v1.10-pink) ![License](https://img.shields.io/badge/用途-个人项目-pink)
+![PHP](https://img.shields.io/badge/PHP-7.4%2B-777bb4) ![Database](https://img.shields.io/badge/数据库-无-orange) ![Node](https://img.shields.io/badge/Node-开发服务器-green) ![Docker](https://img.shields.io/badge/Docker-支持-2496ed) ![Version](https://img.shields.io/badge/version-v1.11-pink) ![License](https://img.shields.io/badge/用途-个人项目-pink)
 
 **在线访问**：[bhands.me](https://bhands.me)
 </div>
@@ -18,7 +18,7 @@
 
 | 模块 | 能力 |
 |------|------|
-| 🏠 **故事广场** | 热门/最新排序、**7 个频道筛选**（爱情/日常/搞笑/职场/家庭/成长/吐槽）、分页、详情弹窗、匿名评论、点赞（本地记忆） |
+| 🏠 **故事广场** | 热门/最新排序、**7 个频道筛选**（爱情/日常/搞笑/职场/家庭/成长/吐槽）、分页、详情弹窗（HTML 故事可切换「跟随主题 / 作者原样」）、匿名评论、点赞（本地记忆） |
 | 💬 **评论楼中楼** | 评论回复（「回复 @昵称」标注）、**表情面板 + 配图（选图或直接粘贴，单图 ≤2MB）**、≥3 条自动折叠/展开、发评论/回复局部刷新不跳顶并高亮新内容、**删除自己的评论/回复**（凭证仅存本机，删一级评论连带其回复与附图） |
 | ✍️ **发布系统** | 匿名发布（随机昵称）、纯文本/HTML 双模式编辑、**插入图片（按钮选图或直接 Ctrl+V 粘贴，自动压缩到长边 1600px 并剥掉 EXIF 定位）**、上传 HTML 文件、富文本粘贴、实时预览、**AI 排版引导弹窗**（三步指引 + 一键复制提示词模板 + DeepSeek/豆包/小米 MiMo 直达） |
 | 🎨 **HTML 排版故事** | 上传你排版的网页，**原件原样存档**（`data/uploads/`），阅读时以沙箱 iframe 呈现——`<header>`、CSS 变量、`@keyframes`、滚动动画 **100% 原样**；Google Fonts 经**站内代理**加载（国内不可达也能显示），还提供「原文阅读」全屏打开 |
@@ -154,7 +154,7 @@ docker compose up -d --build
 | route | 说明 |
 |-------|------|
 | `stories` | 列表（筛选/分页）/ 发布（返回一次性删除凭证） |
-| `story` / `raw` | 详情（防刷计数）/ 原文沙箱渲染（**有原始文件存档时直接读原件**，未净化、不受 5 万字符限制） |
+| `story` / `raw` | 详情（防刷计数）/ 原文沙箱渲染（**有原始文件存档时直接读原件**，未净化、不受 5 万字符限制）；`raw` 支持 `theme=` 注入主题桥接样式（详情弹窗「跟随主题」，原文阅读不传） |
 | `font` | 字体代理：服务端抓取 Google Fonts 的 CSS/woff2 并落盘缓存，让国内浏览器也能加载网络字体（仅放行 `googleapis`/`gstatic`，不跟随重定向） |
 | `like` / `comments` | 点赞 / 评论与楼中楼回复（replyTo，发表成功随响应下发删除凭证 `delKey`） |
 | `delete_comment` | 评论者凭 `delKey` 删除自己的评论或回复（删一级连带其 `replies`；`delKey` 不出现在任何 GET 输出里） |

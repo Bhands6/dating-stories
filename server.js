@@ -941,7 +941,44 @@ function shimOrphanFontRules(html) {
 
 /** 输出故事的原始 HTML（沙箱隔离，供 iframe/新窗口阅读）
  *  rawSource 不为 null 时用原始文件（未净化），否则回落到净化后的 content */
-function serveRawStory(res, story, rawSource) {
+/* ================= 故事页主题桥接（详情弹窗「跟随主题」用） ================= */
+
+// 四套主题的阅读面配色，与 theme.css 的 :root 保持一致。
+// 浅色主题刻意统一用白底：作者的设计稿本来就是照着白纸做的，换色只会变味；
+// 只有 code（深色）需要真正改写底色，否则白底弹窗在夜里刺眼。
+const STORY_THEME_PALETTE = {
+  pink:  { bg: '#ffffff', text: '#2d2d3a', thumb: '#f0e0e5', dark: false },
+  excel: { bg: '#ffffff', text: '#1f2328', thumb: '#d6d9dd', dark: false },
+  word:  { bg: '#ffffff', text: '#323130', thumb: '#e1dfdd', dark: false },
+  code:  { bg: '#1e1e2e', text: '#cdd6f4', thumb: '#45475a', dark: true },
+};
+
+/**
+ * 主题桥接样式：注入在 <head> 最前面，所以**作者自己的规则永远盖得住它**
+ * （同权重靠后者胜出、inline style 更强）。这样即使作者写死了配色，
+ * 我们也只是给"没指定颜色的页面"补一层主题底色，不会篡改设计稿。
+ * 深色主题额外压一层半透明暗幕：作者写死白底时也能降下亮度，不至于夜里刺眼。
+ */
+function themeBridgeCss(theme) {
+  const p = STORY_THEME_PALETTE[theme];
+  if (!p) return '';
+  let css = 'html{background-color:' + p.bg + ';color-scheme:' + (p.dark ? 'dark' : 'light') + ';}' +
+    'body{background-color:' + p.bg + ';color:' + p.text + ';}' +
+    '::-webkit-scrollbar{width:10px;height:10px;}' +
+    '::-webkit-scrollbar-thumb{background:' + p.thumb + ';border-radius:6px;}' +
+    '::-webkit-scrollbar-track{background:transparent;}';
+  if (p.dark) {
+    // 半透明暗幕而非 filter：不产生新的包含块，不会打乱作者的 fixed/百分比布局
+    css += 'html::after{content:"";position:fixed;inset:0;pointer-events:none;' +
+      'z-index:2147483647;background:rgba(30,30,46,.24);}';
+  }
+  return '<style id="site-theme-bridge">\n' + css + '\n</style>\n';
+}
+
+/** 输出故事的原始 HTML（沙箱隔离，供 iframe/新窗口阅读）
+ *  rawSource 不为 null 时用原始文件（未净化），否则回落到净化后的 content
+ *  theme 非空时注入主题桥接样式（详情弹窗用）；「原文阅读」不传，保证原件一字不改 */
+function serveRawStory(res, story, rawSource, theme) {
   const title = String(story.title || '故事').replace(/[<>&"]/g, '');
   // 存量内容里可能残留 Google 字体地址（新发布会转成 @import），统一改写成站内代理
   let body = rewriteGoogleFontUrls(rawSource != null ? rawSource : String(story.content || ''));
@@ -951,7 +988,8 @@ function serveRawStory(res, story, rawSource) {
   // CSS 选择器与 DOM 结构对不上时（AI 生成的 HTML 常见），把标题字体规则补到位
   body = shimOrphanFontRules(body);
   // 垫片在前（本机字体兜底），Google CSS 在后（真字体覆盖同名定义，src 已带 local 前缀）
-  const shim = '<style>\n' + FONT_SHIM_CSS + '\n</style>\n' + fontLinkTags(body);
+  // 主题桥接再往前放一节：它在最前面，作者样式表随后就能盖住它
+  const shim = themeBridgeCss(theme) + '<style>\n' + FONT_SHIM_CSS + '\n</style>\n' + fontLinkTags(body);
   let html;
 
   // 作者上传的可能是完整网页（<!DOCTYPE html> / <html>）。这种情况原样输出，
@@ -1316,10 +1354,12 @@ function handleApi(req, res, url, body) {
 
     /* ---- 故事原文（沙箱隔离渲染，供 iframe/新窗口阅读） ---- */
     case 'raw': {
+      // 只有详情弹窗的 iframe 会带 theme；「原文阅读」不带，原件保持作者原样
+      const rawTheme = STORY_THEME_PALETTE[url.searchParams.get('theme') || ''] ? url.searchParams.get('theme') : '';
       const db = dbLoad();
       const s = db.stories.find(x => x.id === id);
       if (!s) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('404 Not Found'); return; }
-      if (s.mode === 'html') { serveRawStory(res, s, uploadSourceRead(s.id)); return; }
+      if (s.mode === 'html') { serveRawStory(res, s, uploadSourceRead(s.id), rawTheme); return; }
       // 纯文本故事：简单排版输出
       const escText = storyTextHtml(
         String(s.content || '')
@@ -1328,10 +1368,14 @@ function handleApi(req, res, url, body) {
         s.images
       );
       const escTitle = String(s.title || '故事').replace(/[<>&"]/g, '');
+      // 默认是米色纸张；跟随深色主题时换成深纸 + 浅字
+      const palette = STORY_THEME_PALETTE[rawTheme];
+      const paperBg = palette && palette.dark ? palette.bg : '#faf6ef';
+      const paperFg = palette && palette.dark ? palette.text : '#2c2416';
       const html = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n' +
         '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
         '<title>' + escTitle + '</title>\n' +
-        '<style>body{font-family:"Noto Serif SC","STSong",serif;background:#faf6ef;color:#2c2416;line-height:2;max-width:720px;margin:0 auto;padding:48px 24px;font-size:16px;}h1{font-size:1.6rem;margin:0 0 1.5rem;}</style>\n' +
+        '<style>html{background:' + paperBg + ';}body{font-family:"Noto Serif SC","STSong",serif;background:' + paperBg + ';color:' + paperFg + ';line-height:2;max-width:720px;margin:0 auto;padding:48px 24px;font-size:16px;}h1{font-size:1.6rem;margin:0 0 1.5rem;}</style>\n' +
         '</head>\n<body>\n<h1>' + escTitle + '</h1>\n' + escText + '\n</body>\n</html>';
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',

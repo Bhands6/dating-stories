@@ -981,9 +981,49 @@ function shim_orphan_font_rules(string $html): string
     return substr($html, 0, $pos) . $extra . "\n" . substr($html, $pos);
 }
 
+/* ================= 故事页主题桥接（详情弹窗「跟随主题」用） ================= */
+
+/**
+ * 四套主题的阅读面配色，与 theme.css 的 :root 保持一致。
+ * 浅色主题刻意统一用白底：作者的设计稿本来就是照着白纸做的，换色只会变味；
+ * 只有 code（深色）需要真正改写底色，否则白底弹窗在夜里刺眼。
+ */
+const STORY_THEME_PALETTE = [
+    'pink'  => ['bg' => '#ffffff', 'text' => '#2d2d3a', 'thumb' => '#f0e0e5', 'dark' => false],
+    'excel' => ['bg' => '#ffffff', 'text' => '#1f2328', 'thumb' => '#d6d9dd', 'dark' => false],
+    'word'  => ['bg' => '#ffffff', 'text' => '#323130', 'thumb' => '#e1dfdd', 'dark' => false],
+    'code'  => ['bg' => '#1e1e2e', 'text' => '#cdd6f4', 'thumb' => '#45475a', 'dark' => true],
+];
+
+/**
+ * 主题桥接样式：注入在 <head> 最前面，所以**作者自己的规则永远盖得住它**
+ * （同权重靠后者胜出、inline style 更强）。这样即使作者写死了配色，
+ * 我们也只是给"没指定颜色的页面"补一层主题底色，不会篡改设计稿。
+ * 深色主题额外压一层半透明暗幕：作者写死白底时也能降下亮度，不至于夜里刺眼。
+ */
+function theme_bridge_css(string $theme): string
+{
+    $p = STORY_THEME_PALETTE[$theme] ?? null;
+    if ($p === null) { return ''; }
+
+    $css = 'html{background-color:' . $p['bg'] . ';color-scheme:' . ($p['dark'] ? 'dark' : 'light') . ';}'
+        . 'body{background-color:' . $p['bg'] . ';color:' . $p['text'] . ';}'
+        . '::-webkit-scrollbar{width:10px;height:10px;}'
+        . '::-webkit-scrollbar-thumb{background:' . $p['thumb'] . ';border-radius:6px;}'
+        . '::-webkit-scrollbar-track{background:transparent;}';
+
+    if ($p['dark']) {
+        // 半透明暗幕而非 filter：不产生新的包含块，不会打乱作者的 fixed/百分比布局
+        $css .= 'html::after{content:"";position:fixed;inset:0;pointer-events:none;'
+            . 'z-index:2147483647;background:rgba(30,30,46,.24);}';
+    }
+    return "<style id=\"site-theme-bridge\">\n" . $css . "\n</style>\n";
+}
+
 /** 输出故事的原始 HTML（沙箱隔离，供 iframe/新窗口阅读）
- *  $rawSource 不为 null 时用原始文件（未净化），否则回落到净化后的 content */
-function serve_raw_story(array $story, ?string $rawSource = null): void
+ *  $rawSource 不为 null 时用原始文件（未净化），否则回落到净化后的 content
+ *  $theme 非空时注入主题桥接样式（详情弹窗用）；「原文阅读」不传，保证原件一字不改 */
+function serve_raw_story(array $story, ?string $rawSource = null, string $theme = ''): void
 {
     $title = preg_replace('/[<>&"]/', '', (string)($story['title'] ?? '故事')) ?: '故事';
     $body = $rawSource !== null ? $rawSource : (string)($story['content'] ?? '');
@@ -995,7 +1035,9 @@ function serve_raw_story(array $story, ?string $rawSource = null): void
     // CSS 选择器与 DOM 结构对不上时（AI 生成的 HTML 常见），把标题字体规则补到位
     $body = shim_orphan_font_rules($body);
     // 垫片在前（本机字体兜底），Google CSS 在后（真字体覆盖同名定义，src 已带 local 前缀）
-    $shim = "<style>\n" . FONT_SHIM_CSS . "\n</style>\n" . font_link_tags($body);
+    // 主题桥接再往前放一节：它在最前面，作者样式表随后就能盖住它
+    $shim = theme_bridge_css($theme)
+        . "<style>\n" . FONT_SHIM_CSS . "\n</style>\n" . font_link_tags($body);
 
     // 作者上传的可能是完整网页（<!DOCTYPE html> / <html>）。这种情况原样输出，
     // 不再套一层壳 —— 否则 <head> 里的 viewport、样式表顺序、<base> 全被打乱，
@@ -1568,12 +1610,15 @@ switch ($route) {
 
     /* ---- 故事原文（沙箱隔离渲染，供 iframe/新窗口阅读） ---- */
     case 'raw': {
+        // 只有详情弹窗的 iframe 会带 theme；「原文阅读」不带，原件保持作者原样
+        $rawTheme = (string)($_GET['theme'] ?? '');
+        if (!isset(STORY_THEME_PALETTE[$rawTheme])) { $rawTheme = ''; }
         $db = db_load();
         foreach ($db['stories'] as $s) {
             if ((int)$s['id'] === $id) {
                 if (($s['mode'] ?? 'text') === 'html') {
                     // 优先读原始源文件（未净化，作者写什么就显示什么）；没有才回落到净化版
-                    serve_raw_story($s, upload_source_read((int)$s['id']));
+                    serve_raw_story($s, upload_source_read((int)$s['id']), $rawTheme);
                     exit;
                 }
                 // 纯文本故事：简单排版输出
@@ -1581,13 +1626,20 @@ switch ($route) {
                 $text = htmlspecialchars((string)($s['content'] ?? ''), ENT_QUOTES, 'UTF-8');
                 // 先 nl2br 再替换插图 token（正则会把 token 两侧的 <br /> 一起吃掉）
                 $text = story_text_html(nl2br($text), (array)($s['images'] ?? []));
+                // 默认是米色纸张；跟随深色主题时换成深纸 + 浅字
+                $paperBg = '#faf6ef';
+                $paperFg = '#2c2416';
+                if ($rawTheme !== '' && STORY_THEME_PALETTE[$rawTheme]['dark']) {
+                    $paperBg = STORY_THEME_PALETTE[$rawTheme]['bg'];
+                    $paperFg = STORY_THEME_PALETTE[$rawTheme]['text'];
+                }
                 header('Content-Type: text/html; charset=utf-8');
                 header("Content-Security-Policy: sandbox");
                 header('Cache-Control: no-cache');
                 echo "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"UTF-8\">\n"
                     . "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
                     . "<title>" . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . "</title>\n"
-                    . "<style>body{font-family:'Noto Serif SC','STSong',serif;background:#faf6ef;color:#2c2416;line-height:2;max-width:720px;margin:0 auto;padding:48px 24px;font-size:16px;}h1{font-size:1.6rem;margin:0 0 1.5rem;}</style>\n"
+                    . "<style>html{background:$paperBg;}body{font-family:'Noto Serif SC','STSong',serif;background:$paperBg;color:$paperFg;line-height:2;max-width:720px;margin:0 auto;padding:48px 24px;font-size:16px;}h1{font-size:1.6rem;margin:0 0 1.5rem;}</style>\n"
                     . "</head>\n<body>\n<h1>" . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . "</h1>\n" . $text . "\n</body>\n</html>";
                 exit;
             }

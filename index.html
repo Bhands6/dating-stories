@@ -1638,6 +1638,19 @@
             transform: translateY(-1px);
         }
 
+        /* 主题开关：用 <button> 而不是 <a>，所以要把浏览器默认样式抹掉 */
+        .meta-theme-btn {
+            cursor: pointer;
+            font-family: inherit;
+            line-height: 1.2;
+        }
+
+        .meta-theme-btn.on {
+            background: var(--gradient);
+            border-color: transparent;
+            color: var(--on-primary, #fff);
+        }
+
         .modal-author {
             display: flex;
             align-items: center;
@@ -1734,8 +1747,8 @@
             height: 68vh;
             border: 1.5px solid var(--border);
             border-radius: 12px;
-            /* 保持白底：里面是访客自己的 HTML 页面，深色主题下也要保证正文可读 */
-            background: #ffffff;
+            /* 加载中的空白底色跟随主题：深色主题下不再闪一块白 */
+            background: var(--card-bg);
             display: block;
         }
         .modal-content img {
@@ -1769,6 +1782,8 @@
             margin-top: 8px;
             border-top: 1px solid var(--border);
             border-bottom: 1px solid var(--border);
+            /* 窄屏允许换行：三个按钮的最小宽度加起来会撑破弹窗卡片 */
+            flex-wrap: wrap;
         }
 
         .modal-action-btn {
@@ -2553,6 +2568,14 @@
             }
             .modal-body h2.story-modal-title {
                 font-size: 21px;
+            }
+            /* 作者信息独占一行，两个按钮并排落在下一行，不会被挤成三行 */
+            .modal-meta .modal-author {
+                flex-basis: 100%;
+            }
+            .modal-meta .meta-read-btn {
+                padding: 6px 13px;
+                font-size: 12px;
             }
             .toast-container {
                 right: 12px;
@@ -3453,6 +3476,59 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         }
     }
 
+    /* ==================== 故事页主题（跟随主题 / 作者原样） ==================== */
+    const STORY_FOLLOW_KEY = 'yst-story-follow';
+
+    /** 详情弹窗里的 HTML 故事是否跟随站点主题（读者可切换，默认跟随） */
+    function storyFollowTheme() {
+        try { return localStorage.getItem(STORY_FOLLOW_KEY) !== '0'; } catch (e) { return true; }
+    }
+
+    function currentSiteTheme() {
+        try {
+            if (window.SiteTheme && typeof window.SiteTheme.current === 'function') {
+                return window.SiteTheme.current() || 'pink';
+            }
+        } catch (e) { /* 读不到就退回 DOM 属性 */ }
+        return document.documentElement.getAttribute('data-theme') || 'pink';
+    }
+
+    /** iframe 地址：跟随主题时带 theme，否则就是纯净的 raw（作者原样） */
+    function storyFrameUrl(s) {
+        const base = 'api.php?route=raw&id=' + s.id + '&t=' + (s.createdAt || 0);
+        return storyFollowTheme() ? base + '&theme=' + encodeURIComponent(currentSiteTheme()) : base;
+    }
+
+    function syncStoryThemeBtn(btn) {
+        if (!btn) return;
+        const on = storyFollowTheme();
+        btn.classList.toggle('on', on);
+        btn.innerHTML = on ? '🎨 跟随主题' : '🖼️ 作者原样';
+        btn.title = on ? '当前跟随站点主题；点一下看作者原始配色' : '当前显示作者原始配色；点一下跟随站点主题';
+    }
+
+    function bindStoryThemeBtn(s) {
+        const btn = modalBody.querySelector('#story-theme-btn');
+        const frame = modalBody.querySelector('#story-frame');
+        if (!btn || !frame) return;
+        syncStoryThemeBtn(btn);
+        btn.addEventListener('click', () => {
+            try { localStorage.setItem(STORY_FOLLOW_KEY, storyFollowTheme() ? '0' : '1'); } catch (e) { /* 隐私模式忽略 */ }
+            syncStoryThemeBtn(btn);
+            frame.src = storyFrameUrl(s);
+            toast(storyFollowTheme() ? '🎨 已跟随站点主题' : '🖼️ 已切回作者原样');
+        });
+    }
+
+    // 切主题时让详情弹窗里的 iframe 同步换色（只影响弹窗，「原文阅读」始终是原件）
+    document.addEventListener('site-theme-change', () => {
+        if (!overlay.classList.contains('open')) return;
+        if (!currentStory || currentStory.mode !== 'html') return;
+        if (!storyFollowTheme()) return;
+        const frame = modalBody.querySelector('#story-frame');
+        if (frame) frame.src = storyFrameUrl(currentStory);
+    });
+
     function renderStoryModal(s) {
         syncLocalSets();   // 弹窗按钮的已赞/已鉴定状态以 localStorage 当前值为准
         const liked = likedSet.has(s.id);
@@ -3465,11 +3541,13 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         // 原文阅读：有原始源文件时直接打开静态原件 /uploads/{id}.html
         // （Apache 原样吐文件、零加工，只补 CSP sandbox 头），
         // 早期没有源文件的存量故事才回落到 raw 接口（净化版 + 字体垫片）。
+        // 注意：这里**不带 theme**，原件就该是作者原样
         const srcUrl = s.hasSource ? ('uploads/' + s.id + '.html') : rawUrl;
+        const themeFollow = storyFollowTheme();
         // HTML 沙箱故事：关闭弹窗背景模糊，减轻用户滤镜叠加导致的卡顿
         overlay.classList.toggle('no-blur', isHtmlMode);
         const contentHtml = isHtmlMode
-            ? '<iframe class="story-iframe" src="' + esc(rawUrl) + '" sandbox="allow-scripts" loading="lazy" title="故事原文"></iframe>'
+            ? '<iframe id="story-frame" class="story-iframe" src="' + esc(storyFrameUrl(s)) + '" sandbox="allow-scripts" loading="lazy" title="故事原文"></iframe>'
             : renderBodyText(s);
         // 楼中楼回复：两级结构（一级评论 + 扁平回复列表，支持折叠），渲染函数为模块级
         currentStory = s;
@@ -3485,6 +3563,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
                         <div class="story-author-info">${esc(s.author.info || '匿名分享')} · ${timeAgo(s.createdAt)}</div>
                     </div>
                 </div>
+                ${isHtmlMode ? '<button type="button" class="meta-read-btn meta-theme-btn' + (themeFollow ? ' on' : '') + '" id="story-theme-btn" title="' + (themeFollow ? '当前跟随站点主题；点一下看作者原始配色' : '当前显示作者原始配色；点一下跟随站点主题') + '">' + (themeFollow ? '🎨 跟随主题' : '🖼️ 作者原样') + '</button>' : ''}
                 ${isHtmlMode ? '<a class="meta-read-btn" href="' + esc(srcUrl) + '" target="_blank" rel="noopener" title="在新标签页打开你上传的原始 HTML 文件">📖 原文阅读</a>' : ''}
                 <div class="story-time">👁️ ${fmtNum(s.views)} 阅读</div>
             </div>
@@ -3547,6 +3626,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             });
         }
         modalBody.querySelector('#comment-submit').addEventListener('click', () => submitComment(s.id));
+        bindStoryThemeBtn(s);   // 「跟随主题 / 作者原样」开关
         bindCommentForm();   // 表情面板 / 选图 / 粘贴（DOM 每次重建，必须重绑）
         bindImageZoom();     // 正文与评论里的图点击放大
 

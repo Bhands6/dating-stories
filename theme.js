@@ -93,6 +93,11 @@
                 items[i].classList.toggle('active', items[i].getAttribute('data-theme') === key);
             }
         }
+
+        /* 通知页面里的其它模块（例如故事详情弹窗里的 iframe 要跟着换主题） */
+        try {
+            document.dispatchEvent(new CustomEvent('site-theme-change', { detail: { theme: key } }));
+        } catch (e) { /* 老浏览器没有 CustomEvent 构造器，忽略 */ }
     }
 
     /* ---------- 3) 注入切换器 ---------- */
