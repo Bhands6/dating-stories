@@ -33,6 +33,9 @@ define('FRIENDS_FILE', DATA_DIR . '/friends.json');       // 友情链接配置�
 define('FRIENDIMG_DIR', DATA_DIR . '/friendimg');         // 友链图片（管理页上传，经 route=friend_img 输出）
 define('FRIENDS_MAX', 30);                                // 友链条数上限
 define('FRIENDIMG_MAX_BYTES', 307200);                    // 单张友链图片上限 300KB
+define('STORYIMG_DIR', DATA_DIR . '/storyimg');           // 故事插图（发布页上传，经 route=story_img 输出）
+define('STORYIMG_MAX_BYTES', 2097152);                    // 单张插图上限 2MB（前端已压到长边 1600px）
+define('STORY_IMG_MAX', 12);                              // 单篇故事最多 12 张图
 define('VIEW_WINDOW', 43200);   // 浏览量去重窗口（秒）= 12 小时
 define('VIEW_IP_MAX', 20);      // 同 IP 对同一故事在窗口内的计数上限（防清 localStorage 刷量）
 
@@ -286,6 +289,108 @@ function friend_img_gc(array $items): void
         $base = basename($path);
         if (preg_match(FRIEND_IMG_NAME_RE, $base) && !isset($keep[$base])) { @unlink($path); }
     }
+}
+
+/* ================= 故事插图（发布页上传，正文用【图N】占位） ================= */
+
+const STORY_IMG_NAME_RE = '#^[a-f0-9]{16}\.(?:jpg|png|gif|webp)$#';
+
+/**
+ * 保存一张插图（data URI）→ 返回文件名，失败返回 null 并通过 $err 带出原因。
+ * 类型按文件魔数判断（不信任前端给的 MIME），复用 friend_img_ext()。
+ */
+function story_img_save(string $dataUri, ?string &$err = null): ?string
+{
+    if (!preg_match('#^data:image/(?:png|jpeg|jpg|gif|webp);base64,#i', $dataUri, $m)) {
+        $err = '只支持 PNG / JPG / GIF / WEBP 图片';
+        return null;
+    }
+    $bin = base64_decode(substr($dataUri, strlen($m[0])), true);
+    if ($bin === false || $bin === '') { $err = '图片数据解析失败，请重新选择'; return null; }
+    if (strlen($bin) > STORYIMG_MAX_BYTES) {
+        $err = '图片太大啦，最多 ' . (int)(STORYIMG_MAX_BYTES / 1024) . 'KB';
+        return null;
+    }
+    $ext = friend_img_ext($bin);
+    if ($ext === null) { $err = '这个文件不像图片，请换一张试试'; return null; }
+
+    if (!is_dir(STORYIMG_DIR) && !@mkdir(STORYIMG_DIR, 0775, true) && !is_dir(STORYIMG_DIR)) {
+        $err = '图片目录创建失败，请检查 data/ 目录权限';
+        return null;
+    }
+    $name = bin2hex(random_bytes(8)) . '.' . $ext;
+    if (@file_put_contents(STORYIMG_DIR . '/' . $name, $bin) === false) {
+        $err = '图片写入失败，请检查 data/storyimg 目录权限';
+        return null;
+    }
+    @chmod(STORYIMG_DIR . '/' . $name, 0644);
+    return $name;
+}
+
+/** 输出一张插图（文件名随机不可变 → 1 年强缓存） */
+function serve_story_img(string $name): void
+{
+    if (!preg_match(STORY_IMG_NAME_RE, $name) || !is_file(STORYIMG_DIR . '/' . $name)) {
+        http_response_code(404);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo '404 Not Found';
+        return;
+    }
+    $path = STORYIMG_DIR . '/' . $name;
+    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    header('Content-Type: ' . (FRIEND_IMG_MIME[$ext] ?? 'application/octet-stream'));
+    header('Content-Length: ' . (string)filesize($path));
+    header('Cache-Control: public, max-age=31536000, immutable');
+    header('X-Content-Type-Options: nosniff');
+    readfile($path);
+}
+
+/** 删故事时连带删掉它的插图 */
+function story_img_delete(array $names): void
+{
+    foreach ($names as $f) {
+        $f = (string)$f;
+        if (preg_match(STORY_IMG_NAME_RE, $f)) { @unlink(STORYIMG_DIR . '/' . $f); }
+    }
+}
+
+/**
+ * 清理孤儿插图：既不被任何故事引用、且落盘超过 2 小时的才删。
+ *
+ * 2 小时窗口是为了避开「正在编辑、还没发布」的图 —— 它们此刻确实没被引用，
+ * 但用户可能正在写。GC 在每次发布成功后跑，开销可忽略（几十个文件）。
+ */
+function story_img_gc(array $db): void
+{
+    if (!is_dir(STORYIMG_DIR)) { return; }
+    $keep = [];
+    foreach ($db['stories'] as $s) {
+        foreach ((array)($s['images'] ?? []) as $f) { $keep[(string)$f] = true; }
+    }
+    $deadline = time() - 7200;
+    foreach ((array)glob(STORYIMG_DIR . '/*') as $path) {
+        if (!is_string($path)) { continue; }
+        $base = basename($path);
+        if (!preg_match(STORY_IMG_NAME_RE, $base) || isset($keep[$base])) { continue; }
+        if ((int)@filemtime($path) < $deadline) { @unlink($path); }
+    }
+}
+
+/**
+ * 把正文里的 【图N】 换成图片标签（$escaped 必须是已 htmlspecialchars 的文本，
+ * 调用前请先 nl2br —— 这里会把 token 两侧的 <br /> 一并吃掉，免得图片前后多出空行）。
+ * raw 原文页是独立文档，没有站点样式，所以用内联样式。
+ */
+function story_text_html(string $escaped, array $images): string
+{
+    if (!$images) { return $escaped; }
+    return preg_replace_callback('/(?:<br\s*\/?>)?【图(\d+)】(?:<br\s*\/?>)?/', static function (array $m) use ($images): string {
+        $f = $images[((int)$m[1]) - 1] ?? '';
+        if (!is_string($f) || !preg_match(STORY_IMG_NAME_RE, $f)) { return $m[0]; }
+        return '<figure style="margin:26px 0;text-align:center;">'
+            . '<img src="api.php?route=story_img&amp;f=' . $f . '" alt="" loading="lazy"'
+            . ' style="max-width:100%;height:auto;border-radius:12px;display:block;margin:0 auto;"></figure>';
+    }, $escaped) ?? $escaped;
 }
 
 /**
@@ -940,6 +1045,8 @@ function make_excerpt(string $content, string $mode): string
         $text = strip_tags($text);
     }
     $text = html_entity_decode($text, ENT_QUOTES, 'UTF-8');
+    // 去掉插图占位符，否则卡片摘要里会出现「【图1】【图2】」
+    $text = preg_replace('/【图\d+】/u', ' ', $text) ?? '';
     $text = preg_replace('/\s+/u', ' ', trim($text)) ?? '';
     return mb_strlen($text) > 90 ? mb_substr($text, 0, 90) . '…' : $text;
 }
@@ -1116,6 +1223,8 @@ function story_full(array $s): array
 {
     return array_merge(story_card($s), [
         'content'  => (string)$s['content'],
+        // 插图文件名（正文里用【图N】按顺序引用），无图时不返回该字段
+        'images'   => array_values((array)($s['images'] ?? [])),
         'comments' => array_map('comment_out', array_values($s['comments'] ?? [])),
     ]);
 }
@@ -1245,6 +1354,7 @@ const RATE_LIMITS = [
     'delete_comment' => [20, 600, '删除评论'],
     'real'           => [30, 600, '标记真实故事'],
     'delete_story'   => [10, 600, '删除故事'],
+    'story_img'      => [30, 3600, '上传图片'],
 ];
 
 /**
@@ -1358,18 +1468,27 @@ switch ($route) {
             // 一个频道都没选时，默认归为「日常分享」，保证每篇故事都有归属
             if (empty($tags)) { $tags = ['daily']; }
 
+            // 插图：只收本站真实存在过的文件名（正则 + 文件存在双重校验），最多 12 张
+            $images = [];
+            foreach ((array)($in['images'] ?? []) as $f) {
+                $f = (string)$f;
+                if (!preg_match(STORY_IMG_NAME_RE, $f) || !is_file(STORYIMG_DIR . '/' . $f)) { continue; }
+                $images[] = $f;
+                if (count($images) >= STORY_IMG_MAX) { break; }
+            }
+
             // 校验通过后才计数：正常用户填错重试不会被罚，只有真正落库的提交才消耗额度
             rate_guard('stories');
 
             // 事务内完成「分配 id → 插入 → 写盘」：并发发布不会拿到重复 id，也不会互相覆盖
-            $created = db_transaction(static function (array &$db) use ($title, $content, $mode, $nickname, $tags): array {
+            $created = db_transaction(static function (array &$db) use ($title, $content, $mode, $nickname, $tags, $images): array {
                 $story = [
                     'id'           => (int)$db['nextId']++,
                     'title'        => $title,
                     'content'      => $mode === 'html' ? sanitize_html($content) : $content,
                     'mode'         => $mode,
                     'tags'         => $tags,
-                    'author'       => ['nickname' => $nickname, 'info' => '缘分旅人 · 匿名分享'],
+                    'author'       => ['nickname' => $nickname, 'info' => '人生旅人 · 匿名分享'],
                     'likes'        => 0,
                     'views'        => 0,
                     'comments'     => [],
@@ -1377,6 +1496,7 @@ switch ($route) {
                 ];
                 // 生成发布者删除凭证（仅本次响应返回，存储在发布者浏览器里）
                 $story['editKey'] = substr(bin2hex(random_bytes(5)), 0, 8);
+                if ($images) { $story['images'] = $images; }
                 array_unshift($db['stories'], $story);
                 return $story;
             });
@@ -1385,6 +1505,8 @@ switch ($route) {
             if ($keepSource) {
                 $sourceSaved = upload_source_write((int)$created['id'], $source);
             }
+            // 顺手清掉「传了图但没发布」的孤儿插图（2 小时内的保留，可能正在写）
+            story_img_gc(db_load());
             $full = story_full($created);
             $full['editKey'] = $created['editKey'];
             $full['sourceSaved'] = $sourceSaved;
@@ -1447,7 +1569,8 @@ switch ($route) {
                 // 纯文本故事：简单排版输出
                 $title = preg_replace('/[<>&"]/', '', (string)($s['title'] ?? '故事')) ?: '故事';
                 $text = htmlspecialchars((string)($s['content'] ?? ''), ENT_QUOTES, 'UTF-8');
-                $text = nl2br($text);
+                // 先 nl2br 再替换插图 token（正则会把 token 两侧的 <br /> 一起吃掉）
+                $text = story_text_html(nl2br($text), (array)($s['images'] ?? []));
                 header('Content-Type: text/html; charset=utf-8');
                 header("Content-Security-Policy: sandbox");
                 header('Cache-Control: no-cache');
@@ -1758,8 +1881,9 @@ switch ($route) {
                 'comments' => comments_count($gone),
             ]);
         }
-        // 原始 HTML 文件随故事一起清理，避免 data/uploads 里留下孤儿文件
+        // 原始 HTML 文件 + 插图随故事一起清理，避免 data/uploads、data/storyimg 里留下孤儿文件
         upload_source_delete($id);
+        if (is_array($gone)) { story_img_delete((array)($gone['images'] ?? [])); }
         respond(['ok' => true, 'message' => '故事已删除']);
     }
 
@@ -1780,18 +1904,25 @@ switch ($route) {
             $ids = array_values(array_filter($ids, static fn(int $v): bool => $v > 0));
             if (!$ids) { fail('没有指定要删除的故事'); }
 
-            $removed = db_transaction(static function (array &$db) use ($ids): int {
+            // 被删故事的插图要在事务内收集（出事务后列表里就没有它们了）
+            $goneImages = [];
+            $removed = db_transaction(static function (array &$db) use ($ids, &$goneImages): int {
                 $before = count($db['stories']);
-                $db['stories'] = array_values(array_filter(
-                    $db['stories'],
-                    static fn(array $s): bool => !in_array((int)$s['id'], $ids, true)
-                ));
-                return $before - count($db['stories']);
+                $keep = [];
+                foreach ($db['stories'] as $s) {
+                    if (in_array((int)$s['id'], $ids, true)) {
+                        $goneImages = array_merge($goneImages, (array)($s['images'] ?? []));
+                    } else {
+                        $keep[] = $s;
+                    }
+                }
+                $db['stories'] = $keep;
+                return $before - count($keep);
             });
             if ($removed === 0) { fail('未找到这些故事，可能已被删除'); }
-
-            // 原始 HTML 文件随故事一起清理
+            // 原始 HTML 文件 + 插图随故事一起清理
             foreach ($ids as $one) { upload_source_delete((int)$one); }
+            story_img_delete($goneImages);
 
             // 批量删除直接返回，不用再拉列表
             if (count($ids) > 1) {
@@ -2339,6 +2470,23 @@ switch ($route) {
     case 'friend_img': {
         serve_friend_img((string)($_GET['f'] ?? ''));
         exit;
+    }
+
+    /* ---- 故事插图（发布页上传，站内输出，不直接暴露 data/） ---- */
+    case 'story_img': {
+        serve_story_img((string)($_GET['f'] ?? ''));
+        exit;
+    }
+
+    /* ---- 发布页：上传一张插图（编辑器粘贴或选择图片时调用） ---- */
+    case 'story_img_upload': {
+        if ($method !== 'POST') { fail('请使用 POST', 405); }
+        $in = body_json();
+        rate_guard('story_img');   // 30 张/小时/IP，防刷存储
+        $err = null;
+        $name = story_img_save((string)($in['data'] ?? ''), $err);
+        if ($name === null) { fail($err ?: '图片保存失败'); }
+        respond(['ok' => true, 'f' => $name, 'url' => 'api.php?route=story_img&f=' . $name]);
     }
 
     /* ---- 站点统计 ---- */

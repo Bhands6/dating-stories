@@ -24,6 +24,7 @@ data/friends.json
 data/friendimg/
 data/fontcache/
 data/uploads/
+data/storyimg/
 data/admin_key.txt
 data/admin_guard.json
 data/*.lock

@@ -5,7 +5,7 @@
 **一个零数据库依赖的匿名人生故事分享社区**
 —— 爱情、日常、搞笑、职场、家庭，每一件小事都值得记一笔。
 
-![PHP](https://img.shields.io/badge/PHP-7.4%2B-777bb4) ![Database](https://img.shields.io/badge/数据库-无-orange) ![Node](https://img.shields.io/badge/Node-开发服务器-green) ![Docker](https://img.shields.io/badge/Docker-支持-2496ed) ![Version](https://img.shields.io/badge/version-v1.8-pink) ![License](https://img.shields.io/badge/用途-个人项目-pink)
+![PHP](https://img.shields.io/badge/PHP-7.4%2B-777bb4) ![Database](https://img.shields.io/badge/数据库-无-orange) ![Node](https://img.shields.io/badge/Node-开发服务器-green) ![Docker](https://img.shields.io/badge/Docker-支持-2496ed) ![Version](https://img.shields.io/badge/version-v1.9-pink) ![License](https://img.shields.io/badge/用途-个人项目-pink)
 
 **在线访问**：[bhands.me](https://bhands.me)
 </div>
@@ -20,9 +20,9 @@
 |------|------|
 | 🏠 **故事广场** | 热门/最新排序、**7 个频道筛选**（爱情/日常/搞笑/职场/家庭/成长/吐槽）、分页、详情弹窗、匿名评论、点赞（本地记忆） |
 | 💬 **评论楼中楼** | 评论回复（「回复 @昵称」标注）、≥3 条自动折叠/展开、发评论/回复局部刷新不跳顶并高亮新内容、**删除自己的评论/回复**（凭证仅存本机，删一级评论连带其回复） |
-| ✍️ **发布系统** | 匿名发布（随机昵称）、纯文本/HTML 双模式编辑、上传 HTML 文件、富文本粘贴、实时预览、**AI 排版引导弹窗**（三步指引 + 一键复制提示词模板 + DeepSeek/豆包/小米 MiMo 直达） |
+| ✍️ **发布系统** | 匿名发布（随机昵称）、纯文本/HTML 双模式编辑、**插入图片（按钮选图或直接 Ctrl+V 粘贴，自动压缩到长边 1600px 并剥掉 EXIF 定位）**、上传 HTML 文件、富文本粘贴、实时预览、**AI 排版引导弹窗**（三步指引 + 一键复制提示词模板 + DeepSeek/豆包/小米 MiMo 直达） |
 | 🎨 **HTML 排版故事** | 上传你排版的网页，**原件原样存档**（`data/uploads/`），阅读时以沙箱 iframe 呈现——`<header>`、CSS 变量、`@keyframes`、滚动动画 **100% 原样**；Google Fonts 经**站内代理**加载（国内不可达也能显示），还提供「原文阅读」全屏打开 |
-| 🛡️ **防刷机制** | 浏览量按 IP 24h 去重、点赞本地记忆防连点、**写接口按 IP 滑动窗口限流**（发布 5 篇/10 分钟、评论 15 条/5 分钟、反馈 3 条/30 分钟、删评 20 次/10 分钟、删故事 10 次/10 分钟、标记真实 30 次/10 分钟）、内容服务端净化、用户 CSS 沙箱隔离 |
+| 🛡️ **防刷机制** | 浏览量按 IP 24h 去重、点赞本地记忆防连点、**写接口按 IP 滑动窗口限流**（发布 5 篇/10 分钟、评论 15 条/5 分钟、反馈 3 条/30 分钟、删评 20 次/10 分钟、删故事 10 次/10 分钟、标记真实 30 次/10 分钟、上传图片 30 张/小时）、内容服务端净化、用户 CSS 沙箱隔离 |
 | 🔐 **站长管理** | 反馈箱（查看/删除网友反馈）、故事管理（最新排序/标签筛选/点击预览/删除）、**友情链接（名称 + 跳转链接 + 图标，可上传图片，排序即时生效于首页页脚）**，列表均支持分页；密码自动生成（`data/admin_key.txt`），连续输错 5 次锁定 15 分钟 |
 | 📮 **互动与合规** | 反馈建议页、内容规范、隐私声明、免责声明、频道云实时计数、站点统计 |
 
@@ -138,6 +138,7 @@ docker compose up -d --build
 │   ├── friends.json    # 运行时生成：友情链接配置（管理页「🔗 友情链接」维护）
 │   ├── friendimg/      # 运行时生成：友链图标（管理页上传，经 route=friend_img 输出）
 │   ├── uploads/        # 运行时生成：上传的原始 HTML 源文件（未净化，「原文阅读」直接读它）
+│   ├── storyimg/       # 运行时生成：故事插图（发布页上传，经 route=story_img 输出）
 │   ├── fontcache/      # 运行时生成：字体代理缓存（Google Fonts 中转产物，删掉自动重建）
 │   ├── views_log.json  # 运行时生成：防刷记录
 │   └── *.lock          # 运行时生成：互斥锁（0 字节，删掉会自动重建）
@@ -159,6 +160,7 @@ docker compose up -d --build
 | `delete_comment` | 评论者凭 `delKey` 删除自己的评论或回复（删一级连带其 `replies`；`delKey` 不出现在任何 GET 输出里） |
 | `delete_story` | 发布者凭凭证删除 |
 | `tags` / `stats` / `hot` | 频道计数 / 统计 / 热门榜 |
+| `story_img` / `story_img_upload` | 故事插图输出 / 上传（发布页粘贴或选图，按魔数校验、单图 ≤2MB，经站内地址显示，不直接暴露 `data/`） |
 | `friends` / `friend_img` | 友情链接列表（首页页脚渲染）/ 友链图标输出（管理页上传的图，不直接暴露 `data/`） |
 | `feedback` | 提交反馈 |
 | `admin_feedback` / `admin_stories` / `admin_comments` | 管理接口（密码为 `data/admin_key.txt` 中的值，连续错 5 次锁定 15 分钟）；`op=list` 支持 `page` / `pageSize`（默认 20、上限 100），返回 `total` / `page` / `pageSize` / `hasMore`；`admin_stories` 支持 `q` 搜索、`sort` 排序、`op=update` 编辑、`op=delete` 批量删（`ids` 数组）；`admin_feedback` 支持 `op=read` 标记已读 |

@@ -142,6 +142,7 @@ const RATE_LIMITS = {
   delete_comment: { max: 20, window: 600, label: '删除评论' },
   real: { max: 30, window: 600, label: '标记真实故事' },
   delete_story: { max: 10, window: 600, label: '删除故事' },
+  story_img: { max: 30, window: 3600, label: '上传图片' },
 };
 
 /** 滑动窗口计数。放行返回 null；超限返回还需等待的分钟数 */
@@ -463,6 +464,110 @@ function friendImgGc(items) {
     if (!FRIEND_IMG_NAME_RE.test(name) || keep.has(name)) continue;
     try { fs.unlinkSync(path.join(FRIENDIMG_DIR, name)); } catch (e) { /* 删不掉就等下次 */ }
   }
+}
+
+/* ================= 故事插图（发布页上传，正文用【图N】占位） ================= */
+
+const STORYIMG_DIR = path.join(DATA_DIR, 'storyimg');
+const STORYIMG_MAX_BYTES = 2097152;   // 单张插图上限 2MB（前端已压到长边 1600px）
+const STORY_IMG_MAX = 12;             // 单篇最多 12 张
+const STORY_IMG_NAME_RE = /^[a-f0-9]{16}\.(?:jpg|png|gif|webp)$/;
+
+/**
+ * 保存一张插图（data URI）→ { f } 或 { err }。
+ * 类型按文件魔数判断（不信任前端给的 MIME），复用 friendImgExt()。
+ */
+function storyImgSave(dataUri) {
+  const m = /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,/i.exec(String(dataUri || ''));
+  if (!m) return { err: '只支持 PNG / JPG / GIF / WEBP 图片' };
+  let buf = null;
+  try { buf = Buffer.from(String(dataUri).slice(m[0].length), 'base64'); } catch (e) { buf = null; }
+  if (!buf || !buf.length) return { err: '图片数据解析失败，请重新选择' };
+  if (buf.length > STORYIMG_MAX_BYTES) {
+    return { err: `图片太大啦，最多 ${STORYIMG_MAX_BYTES / 1024}KB` };
+  }
+  const ext = friendImgExt(buf);
+  if (!ext) return { err: '这个文件不像图片，请换一张试试' };
+
+  try {
+    if (!fs.existsSync(STORYIMG_DIR)) fs.mkdirSync(STORYIMG_DIR, { recursive: true });
+    const name = crypto.randomBytes(8).toString('hex') + '.' + ext;
+    fs.writeFileSync(path.join(STORYIMG_DIR, name), buf);
+    return { f: name };
+  } catch (e) {
+    return { err: '图片写入失败，请检查 data/storyimg 目录权限' };
+  }
+}
+
+/** 输出一张插图（文件名随机不可变 → 1 年强缓存） */
+function serveStoryImg(res, url) {
+  const name = String(url.searchParams.get('f') || '');
+  if (!STORY_IMG_NAME_RE.test(name)) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('404 Not Found');
+    return;
+  }
+  fs.readFile(path.join(STORYIMG_DIR, name), (err, data) => {
+    if (err) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('404 Not Found');
+      return;
+    }
+    const ext = path.extname(name).slice(1).toLowerCase();
+    res.writeHead(200, {
+      'Content-Type': FRIEND_IMG_MIME[ext] || 'application/octet-stream',
+      'Content-Length': String(data.length),
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.end(data);
+  });
+}
+
+/** 删故事时连带删掉它的插图 */
+function storyImgDelete(names) {
+  for (const f of (Array.isArray(names) ? names : [])) {
+    const name = String(f);
+    if (!STORY_IMG_NAME_RE.test(name)) continue;
+    try { fs.unlinkSync(path.join(STORYIMG_DIR, name)); } catch (e) { /* 已删或不存在 */ }
+  }
+}
+
+/**
+ * 清理孤儿插图：既不被任何故事引用、且落盘超过 2 小时的才删
+ * （2 小时窗口避开「正在编辑、还没发布」的图）。发布成功后调用。
+ */
+function storyImgGc(db) {
+  let names;
+  try { names = fs.readdirSync(STORYIMG_DIR); } catch (e) { return; }
+  const keep = new Set();
+  for (const s of (db.stories || [])) {
+    for (const f of (Array.isArray(s.images) ? s.images : [])) keep.add(String(f));
+  }
+  const deadline = Math.floor(Date.now() / 1000) - 7200;
+  for (const name of names) {
+    if (!STORY_IMG_NAME_RE.test(name) || keep.has(name)) continue;
+    const p = path.join(STORYIMG_DIR, name);
+    try {
+      if (Math.floor(fs.statSync(p).mtimeMs / 1000) < deadline) fs.unlinkSync(p);
+    } catch (e) { /* 读不到就跳过 */ }
+  }
+}
+
+/**
+ * 把正文里的 【图N】 换成图片标签（$escaped 必须已做 HTML 转义，
+ * 调用前先 nl2br —— 这里会把 token 两侧的 <br> 一并吃掉）。
+ */
+function storyTextHtml(escaped, images) {
+  const imgs = Array.isArray(images) ? images : [];
+  if (!imgs.length) return escaped;
+  return escaped.replace(/(?:<br\s*\/?>)?【图(\d+)】(?:<br\s*\/?>)?/g, (m, n) => {
+    const f = imgs[Number(n) - 1];
+    if (!f || !STORY_IMG_NAME_RE.test(String(f))) return m;
+    return '<figure style="margin:26px 0;text-align:center;">'
+      + '<img src="api.php?route=story_img&amp;f=' + f + '" alt="" loading="lazy"'
+      + ' style="max-width:100%;height:auto;border-radius:12px;display:block;margin:0 auto;"></figure>';
+  });
 }
 
 /**
@@ -891,6 +996,8 @@ function makeExcerpt(content, mode) {
   let text = mode === 'html'
     ? content.replace(/<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]*>/g, ' ')
     : content;
+  // 去掉插图占位符，否则卡片摘要里会出现「【图1】【图2】」
+  text = text.replace(/【图\d+】/g, ' ');
   text = text
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
@@ -1062,6 +1169,8 @@ function storyFull(s) {
   return {
     ...storyCard(s),
     content: s.content,
+    // 插图文件名（正文里用【图N】按顺序引用），无图时为空数组
+    images: Array.isArray(s.images) ? s.images : [],
     comments: (s.comments || []).map(commentOut),
   };
 }
@@ -1115,6 +1224,16 @@ function handleApi(req, res, url, body) {
         // 一个频道都没选时，默认归为「日常分享」，保证每篇故事都有归属
         if (!tags.length) tags.push('daily');
 
+        // 插图：只收本站真实存在过的文件名（正则 + 文件存在双重校验），最多 12 张
+        const images = [];
+        for (const f of (Array.isArray(body.images) ? body.images : [])) {
+          const name = String(f);
+          if (!STORY_IMG_NAME_RE.test(name)) continue;
+          if (!fs.existsSync(path.join(STORYIMG_DIR, name))) continue;
+          images.push(name);
+          if (images.length >= STORY_IMG_MAX) break;
+        }
+
         // 校验通过后才计数：正常用户填错重试不会被罚，只有真正落库的提交才消耗额度
         if (!rateGuard(req, res, 'stories')) return;
 
@@ -1124,10 +1243,11 @@ function handleApi(req, res, url, body) {
           title,
           content: mode === 'html' ? sanitizeHtml(content) : content,
           mode, tags,
-          author: { nickname, info: '缘分旅人 · 匿名分享' },
+          author: { nickname, info: '人生旅人 · 匿名分享' },
           likes: 0, views: 0, comments: [],
           createdAt: Math.floor(Date.now() / 1000),
         };
+        if (images.length) story.images = images;
         // 生成发布者删除凭证（仅本次响应返回，存储在发布者浏览器里）
         const editKey = Math.random().toString(36).slice(2, 6) + Math.random().toString(36).slice(2, 6);
         story.editKey = editKey;
@@ -1135,6 +1255,8 @@ function handleApi(req, res, url, body) {
         dbSave(db);
         // 落盘原始文件：写失败不影响发布（raw 会退回净化版显示）
         const sourceSaved = keepSource ? uploadSourceWrite(story.id, source) : false;
+        // 顺手清掉「传了图但没发布」的孤儿插图（2 小时内的保留，可能正在写）
+        storyImgGc(dbLoad());
         const full = storyFull(story);
         full.editKey = editKey;
         full.sourceSaved = sourceSaved;
@@ -1189,9 +1311,12 @@ function handleApi(req, res, url, body) {
       if (!s) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('404 Not Found'); return; }
       if (s.mode === 'html') { serveRawStory(res, s, uploadSourceRead(s.id)); return; }
       // 纯文本故事：简单排版输出
-      const escText = String(s.content || '')
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/\n/g, '<br>');
+      const escText = storyTextHtml(
+        String(s.content || '')
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/\n/g, '<br>'),
+        s.images
+      );
       const escTitle = String(s.title || '故事').replace(/[<>&"]/g, '');
       const html = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8">\n' +
         '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
@@ -1386,8 +1511,9 @@ function handleApi(req, res, url, body) {
       }
       db.stories.splice(idx, 1);
       dbSave(db);
-      // 原始 HTML 文件随故事一起清理，避免 data/uploads 里留下孤儿文件
+      // 原始 HTML 文件 + 插图随故事一起清理，避免 data/uploads、data/storyimg 里留下孤儿文件
       uploadSourceDelete(s.id);
+      storyImgDelete(s.images);
       // 🔔 记录访客自发删除（管理页「删除动态」提示用）；记录失败不影响删除本身
       recordDeletion({
         type: 'story', storyId: s.id,
@@ -1414,12 +1540,18 @@ function handleApi(req, res, url, body) {
 
         const db = dbLoad();
         const before = db.stories.length;
+        // 被删故事的插图要先收集（filter 之后列表里就没有它们了）
+        const goneImages = [];
+        for (const s of db.stories) {
+          if (ids.includes(s.id)) goneImages.push(...(Array.isArray(s.images) ? s.images : []));
+        }
         db.stories = db.stories.filter(s => !ids.includes(s.id));
         const removed = before - db.stories.length;
         if (removed === 0) return fail(res, '未找到这些故事，可能已被删除');
         dbSave(db);
-        // 原始 HTML 文件随故事一起清理
+        // 原始 HTML 文件 + 插图随故事一起清理
         ids.forEach(uploadSourceDelete);
+        storyImgDelete(goneImages);
 
         if (ids.length > 1) {
           return json(res, { ok: true, message: `已删除 ${removed} 篇故事`, removed });
@@ -1870,6 +2002,21 @@ function handleApi(req, res, url, body) {
       return;
     }
 
+    /* ---- 故事插图（发布页上传，站内输出，不直接暴露 data/） ---- */
+    case 'story_img': {
+      serveStoryImg(res, url);
+      return;
+    }
+
+    /* ---- 发布页：上传一张插图（编辑器粘贴或选择图片时调用） ---- */
+    case 'story_img_upload': {
+      if (method !== 'POST') return fail(res, '请使用 POST', 405);
+      if (!rateGuard(req, res, 'story_img')) return;   // 30 张/小时/IP，防刷存储
+      const saved = storyImgSave(body.data);
+      if (saved.err) return fail(res, saved.err);
+      return json(res, { ok: true, f: saved.f, url: 'api.php?route=story_img&f=' + saved.f });
+    }
+
     /* ---- 站点统计 ---- */
     case 'stats': {
       const db = dbLoad();
@@ -1980,7 +2127,7 @@ function createServer() {
       let overflow = false;
       req.on('data', chunk => {
         raw += chunk;
-        if (raw.length > 1024 * 1024) { overflow = true; req.destroy(); }
+        if (raw.length > 6 * 1024 * 1024) { overflow = true; req.destroy(); }
       });
       req.on('end', () => {
         if (overflow) return;

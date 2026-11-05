@@ -31,6 +31,9 @@ data/fontcache/
 # 上传的原始 HTML 源文件（作者内容，属隐私数据；不进仓库但必须备份）
 data/uploads/
 
+# 故事插图（作者上传的图片；不进仓库但必须备份，丢了正文里的图会 404）
+data/storyimg/
+
 # 互斥锁与原子写的临时文件（运行时产物，不进仓库）
 data/*.lock
 data/*.tmp

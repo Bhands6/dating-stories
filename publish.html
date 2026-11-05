@@ -585,6 +585,8 @@
                             <button class="editor-tab active" onclick="switchEditor('text')">📝 纯文本</button>
                             <button class="editor-tab" onclick="switchEditor('html')">🌐 HTML</button>
                         </div>
+                        <button class="upload-btn show" id="img-btn" onclick="document.getElementById('img-file').click()" title="插入图片，也可以直接在编辑区 Ctrl+V 粘贴">📷 图片</button>
+                        <input type="file" id="img-file" accept="image/png,image/jpeg,image/gif,image/webp" multiple style="display:none;">
                         <button class="upload-btn" id="upload-btn" onclick="document.getElementById('html-file').click()" title="导入本地 HTML 文件">📄 上传 HTML 文件</button>
                         <input type="file" id="html-file" accept=".html,.htm,text/html" style="display:none;">
                     </div>
@@ -719,6 +721,132 @@
             }
         }
     }
+
+    /* ===== 插图：按钮选图 / 直接 Ctrl+V 粘贴 ===== */
+    // 已上传的插图（顺序即【图N】的序号），发布时随 payload 一起提交
+    const storyImages = [];
+    const MAX_IMAGES = 12;
+
+    function fileToDataUrl(file) {
+        return new Promise((resolve, reject) => {
+            const fr = new FileReader();
+            fr.onload = () => resolve(String(fr.result || ''));
+            fr.onerror = () => reject(new Error('读取文件失败'));
+            fr.readAsDataURL(file);
+        });
+    }
+
+    function loadImage(src) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = () => reject(new Error('图片解析失败'));
+            img.src = src;
+        });
+    }
+
+    /**
+     * 压缩到长边 ≤1600、JPEG 质量 0.82。
+     * canvas 重新编码会**顺带剥掉 EXIF**（含 GPS 定位）—— 这是隐私上的必须项，
+     * 否则用户发张照片就等于把拍摄地点公开了。GIF 不压缩（保留动画）。
+     */
+    async function compressImage(file) {
+        if (file.type === 'image/gif') {
+            if (file.size > 2 * 1024 * 1024) throw new Error('GIF 太大啦，最多 2MB');
+            return fileToDataUrl(file);
+        }
+        const dataUrl = await fileToDataUrl(file);
+        const img = await loadImage(dataUrl);
+        const MAX = 1600;
+        let w = img.naturalWidth || img.width;
+        let h = img.naturalHeight || img.height;
+        if (w > MAX || h > MAX) {
+            const r = Math.min(MAX / w, MAX / h);
+            w = Math.max(1, Math.round(w * r));
+            h = Math.max(1, Math.round(h * r));
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';          // 透明 PNG 转 JPEG 时铺白底，避免出现黑块
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        let out = canvas.toDataURL('image/jpeg', 0.82);
+        // 小图重编码可能反而更大 → 原图不超 800KB 就用原图
+        if (out.length > dataUrl.length && file.size <= 800 * 1024) out = dataUrl;
+        return out;
+    }
+
+    /** 在光标处插入文本（保持焦点与光标位置） */
+    function insertAtCursor(el, text) {
+        const start = typeof el.selectionStart === 'number' ? el.selectionStart : el.value.length;
+        const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : start;
+        el.value = el.value.slice(0, start) + text + el.value.slice(end);
+        const pos = start + text.length;
+        el.focus();
+        try { el.setSelectionRange(pos, pos); } catch (e) { /* 某些浏览器不支持 */ }
+        el.dispatchEvent(new Event('input', { bubbles: true }));   // 让字数统计刷新
+    }
+
+    async function handleImageFiles(files) {
+        const el = document.getElementById('story-content');
+        const btn = document.getElementById('img-btn');
+        const isHtml = el.classList.contains('html-mode');
+        const list = Array.from(files || []);
+        if (!list.length) return;
+        if (storyImages.length + list.length > MAX_IMAGES) {
+            toast('一篇故事最多 ' + MAX_IMAGES + ' 张图哦', 'error');
+            return;
+        }
+        btn.disabled = true;
+        const oldLabel = btn.innerHTML;
+        btn.innerHTML = '上传中…';
+        let ok = 0;
+        for (const file of list) {
+            if (!/^image\/(png|jpeg|jpg|gif|webp)$/.test(file.type)) {
+                toast('只支持 PNG / JPG / GIF / WEBP 图片', 'error');
+                continue;
+            }
+            try {
+                const dataUrl = await compressImage(file);
+                const d = await api('story_img_upload', null, { data: dataUrl });
+                const f = d.f;
+                storyImages.push(f);
+                const token = isHtml
+                    ? '<img src="api.php?route=story_img&f=' + f + '" alt="" style="max-width:100%;height:auto;display:block;margin:24px auto;border-radius:12px;">\n'
+                    : '\n【图' + storyImages.length + '】\n';
+                insertAtCursor(el, token);
+                ok++;
+            } catch (err) {
+                toast('图片上传失败：' + err.message, 'error');
+            }
+        }
+        btn.disabled = false;
+        btn.innerHTML = oldLabel;
+        if (ok) toast('🖼️ 已插入 ' + ok + ' 张图片');
+    }
+
+    // 直接在编辑区粘贴图片（截图 / 复制网页上的图）
+    document.getElementById('story-content').addEventListener('paste', e => {
+        const items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        const files = [];
+        for (const it of items) {
+            if (it.kind === 'file' && /^image\//.test(it.type || '')) {
+                const f = it.getAsFile();
+                if (f) files.push(f);
+            }
+        }
+        if (!files.length) return;   // 纯文本粘贴保持原样
+        e.preventDefault();
+        handleImageFiles(files);
+    });
+
+    document.getElementById('img-file').addEventListener('change', e => {
+        const files = e.target.files;
+        handleImageFiles(files).then(() => { e.target.value = ''; });
+    });
 
     /* ===== AI 排版引导弹窗 ===== */
     function showAiGuide() {
@@ -1028,6 +1156,9 @@
         btn.innerHTML = '发布中…';
         try {
             const payload = { title, content, mode, tags, nickname: nickEl.value.trim() };
+            // 插图按上传顺序提交（序号必须与正文里的【图N】对齐，不能按「是否被引用」过滤掉中间项，
+            // 否则【图3】会指向空位）；用户删掉 token 顶多留一张不被展示的图，无害
+            if (storyImages.length) payload.images = storyImages;
             // 来自上传且未被编辑 → 原样提交源文件，由服务端落盘（不受 5 万字符限制）
             // 比较前统一换行符，避免 CRLF/LF 差异导致误判为「编辑过」
             const norm = s => String(s).replace(/\r\n?/g, '\n');

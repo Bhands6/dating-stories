@@ -1645,6 +1645,21 @@
             word-break: break-word;
         }
 
+        /* 故事正文插图（【图N】渲染出来） */
+        .story-figure {
+            margin: 22px 0;
+            text-align: center;
+        }
+
+        .story-figure img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 12px;
+            display: block;
+            margin: 0 auto;
+            box-shadow: 0 4px 16px rgba(var(--primary-rgb), 0.08);
+        }
+
         /* ===== 用户自定义 HTML 的沙箱阅读容器 ===== */
         /* mode=html 的故事通过沙箱 iframe 渲染，样式与原文件 100% 一致 */
         .story-iframe {
@@ -2662,6 +2677,22 @@
 
     function nl2br(s) { return String(s).replace(/\n/g, '<br>'); }
 
+    /**
+     * 纯文本正文 → HTML：先转义再换行，最后把【图N】换成插图。
+     * 正则会把 token 两侧的 <br> 一起吃掉，免得图片前后多出空行。
+     */
+    function renderBodyText(s) {
+        const html = nl2br(esc(s.content));
+        const imgs = Array.isArray(s.images) ? s.images : [];
+        if (!imgs.length) return html;
+        return html.replace(/(?:<br\s*\/?>)?【图(\d+)】(?:<br\s*\/?>)?/g, (m, n) => {
+            const f = imgs[Number(n) - 1];
+            if (!f) return m;
+            return '<figure class="story-figure"><img src="api.php?route=story_img&f='
+                + encodeURIComponent(f) + '" alt="" loading="lazy"></figure>';
+        });
+    }
+
     function fmtNum(n) {
         n = Number(n) || 0;
         if (n >= 10000) return (n / 10000).toFixed(1).replace(/\.0$/, '') + 'w';
@@ -3168,7 +3199,7 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
         overlay.classList.toggle('no-blur', isHtmlMode);
         const contentHtml = isHtmlMode
             ? '<iframe class="story-iframe" src="' + esc(rawUrl) + '" sandbox="allow-scripts" loading="lazy" title="故事原文"></iframe>'
-            : nl2br(esc(s.content));
+            : renderBodyText(s);
         // 楼中楼回复：两级结构（一级评论 + 扁平回复列表，支持折叠），渲染函数为模块级
         currentStory = s;
 
