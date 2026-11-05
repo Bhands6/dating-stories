@@ -236,6 +236,33 @@
         .img-chip .x:hover { background: var(--primary); }
         .img-chip.unused { opacity: .45; }
         .img-chip.unused .n { background: rgba(0,0,0,.75); }
+
+        /* ===== 图片查看器：页面内放大，不跳新标签（与首页一致） ===== */
+        .img-viewer {
+            position: fixed; inset: 0; z-index: 2600; display: none;
+            align-items: center; justify-content: center; padding: 44px;
+            background: rgba(20, 20, 26, .86);
+            -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+            cursor: zoom-out;
+        }
+        .img-viewer.open { display: flex; }
+        .img-viewer img {
+            max-width: 100%; max-height: 100%; border-radius: 10px;
+            background: #fff; box-shadow: 0 20px 60px rgba(0, 0, 0, .5); cursor: default;
+        }
+        .img-viewer-close {
+            position: absolute; top: 16px; right: 16px; width: 40px; height: 40px;
+            border: 0; border-radius: 50%; background: rgba(255, 255, 255, .16);
+            color: #fff; font-size: 17px; line-height: 1; cursor: pointer;
+            transition: background .2s ease;
+        }
+        .img-viewer-close:hover { background: rgba(255, 255, 255, .3); }
+        .img-viewer-tip {
+            position: absolute; bottom: 18px; left: 0; right: 0; text-align: center;
+            font-size: 12px; color: rgba(255, 255, 255, .55); pointer-events: none;
+        }
+        @media (max-width: 600px) { .img-viewer { padding: 20px; } }
+
         /* 纯文本预览里把【图N】渲染成图片 */
         .preview-figure { margin: 18px 0; text-align: center; }
         .preview-figure img {
@@ -682,11 +709,11 @@
              textarea 始终作为纯文本数据源（发布/预览都读它），两边互相同步。 -->
         <div id="story-rich" class="story-rich" contenteditable="true" role="textbox" aria-multiline="true"
              aria-label="在这里写下你想记下来的事" data-placeholder="在这里写下你想记下来的事..." spellcheck="false"></div>
-        <!-- 未被引用的图片：删掉正文里的缩略图后，图会落到这里，可点一下重新插入 -->
+        <!-- 用 Backspace 整块删掉卡片时，图会暂存到这里（可插回 / 看大图 / 彻底删除） -->
         <div class="img-tray" id="img-tray">
             <div class="img-tray-head">
                 <span>未插入正文的图片 <b id="img-tray-count">0</b></span>
-                <span class="img-tray-hint">点缩略图可插回光标处 · 图片文件会保留</span>
+                <span class="img-tray-hint">点图片看大图 · 点底部「图N」插回 · 点 ✕ 彻底删除</span>
             </div>
             <div class="img-tray-list" id="img-tray-list"></div>
         </div>
@@ -746,6 +773,13 @@
 
     <!-- Back to Top -->
     <button class="back-top" id="back-top" title="返回顶部" aria-label="返回顶部">↑</button>
+
+    <!-- 图片查看器：点缩略图在当前页放大，不另起标签页 -->
+    <div class="img-viewer" id="img-viewer" role="dialog" aria-modal="true" aria-label="查看大图">
+        <button class="img-viewer-close" id="img-viewer-close" type="button" title="关闭">✕</button>
+        <img id="img-viewer-img" alt="大图预览">
+        <div class="img-viewer-tip">点空白处或按 Esc 关闭</div>
+    </div>
 
     <script>
     'use strict';
@@ -1049,8 +1083,9 @@
     }
 
     /* ===== 未引用图片的回收条 =====
-     * 正文里的缩略图卡片被删掉后，对应图片会出现在这里，点一下能插回光标处。
-     * ⚠️ 绝不 splice storyImages —— 序号必须和【图N】严格对齐，删中间项会让后面的图错位。
+     * 用 Backspace 整块删掉卡片时，图暂存到这里，可插回 / 看大图 / 彻底删除。
+     * ⚠️ 真删必须连同 storyImages 一起 splice，并把正文里所有 >n 的【图N】重编号，
+     *    否则后面的图会全部错位（序号 = 数组下标 + 1，发布时 payload.images 按这个顺序走）。
      */
     function imgTokenText(n) { return '【图' + n + '】'; }
 
@@ -1067,8 +1102,9 @@
         tray.classList.add('show');
         $('#img-tray-count').textContent = unused.length;
         list.innerHTML = unused.map(({ f, n }) =>
-            '<div class="img-chip" data-img="' + n + '" title="点一下把图' + n + '插回光标处">'
+            '<div class="img-chip" data-img="' + n + '" title="点图片看大图 · 点底部标签插回光标处">'
             + '<img src="api.php?route=story_img&amp;f=' + esc(f) + '" alt="图' + n + '">'
+            + '<button type="button" class="x" data-rm="' + n + '" aria-label="删除图' + n + '" title="彻底删除这张图">✕</button>'
             + '<span class="n">图' + n + '</span></div>').join('');
     }
 
@@ -1098,24 +1134,54 @@
         toast('已插入 ' + token);
     }
 
-    /** 移除正文里的某张图（卡片上的 ✕，或 Backspace 整体删掉卡片后由 input 事件同步） */
-    function removeImgToken(n) {
-        if (isRichMode()) {
-            const node = $('#story-rich .img-token[data-n="' + n + '"]');
-            if (!node) { toast('正文里没有图' + n, 'error'); return; }
-            node.remove();
-            syncTextareaFromRich();
-            toast('已移除图' + n + '，可在下方重新插入');
-            return;
+    /** 彻底删除某张图：正文标记 + storyImages 一起删，后面的序号自动重排。
+     *  卡片上的 ✕ / 回收条上的 ✕ 都走这里；服务端文件留给既有的孤儿图 GC 清理。
+     */
+    function deleteStoryImage(n) {
+        n = Number(n);
+        const idx = n - 1;
+        if (!Number.isInteger(n) || idx < 0 || idx >= storyImages.length) {
+            toast('图' + n + '不存在', 'error'); return;
         }
-        const el = $('#story-content');
-        const re = new RegExp('\\n?' + '【图' + n + '】' + '\\n?');
-        const next = el.value.replace(re, '\n');
-        if (next === el.value) { toast('正文里没有【图' + n + '】', 'error'); return; }
-        el.value = next;
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        toast('已移除【图' + n + '】，图片保留');
+        const ta = $('#story-content');
+        // rich 才是用户看到的最新内容，先落回 textarea 再统一改标记
+        if (isRichMode() && !isPreviewOpen()) ta.value = serializeRich();
+        const next = ta.value
+            .replace(/【图(\d+)】/g, (m, k) => {
+                const num = Number(k);
+                if (num === n) return '';                     // 被删的那张：标记直接抹掉
+                return num > n ? imgTokenText(num - 1) : m;   // 后面的图整体前移一位
+            })
+            .replace(/\n{3,}/g, '\n\n');                      // 别留一排空行
+        storyImages.splice(idx, 1);
+        ta.value = next;
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        if (isRichMode() && !isPreviewOpen()) syncRichFromTextarea();  // 内部会刷新回收条
+        else renderImgTray();
+        toast(storyImages.length > idx ? '已删除图' + n + '，后面的图已自动重新编号' : '已删除图' + n);
     }
+
+    /* ===== 图片查看器：当前页面放大，不跳新标签 ===== */
+    function openImageViewer(src) {
+        const v = $('#img-viewer');
+        const img = $('#img-viewer-img');
+        if (!v || !img || !src) return;
+        img.src = src;
+        v.classList.add('open');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeImageViewer() {
+        const v = $('#img-viewer');
+        if (!v || !v.classList.contains('open')) return;
+        v.classList.remove('open');
+        $('#img-viewer-img').removeAttribute('src');   // 断开引用，下次打开不闪旧图
+        const guide = document.getElementById('ai-guide-overlay');
+        if (!(guide && guide.classList.contains('open'))) document.body.style.overflow = '';
+    }
+    $('#img-viewer-close').addEventListener('click', closeImageViewer);
+    $('#img-viewer').addEventListener('click', e => {
+        if (e.target === e.currentTarget) closeImageViewer();   // 点图片本身不关，点空白才关
+    });
 
     /* ===== 富文本编辑区事件 ===== */
     const richEl = $('#story-rich');
@@ -1138,9 +1204,13 @@
         });
         richEl.addEventListener('click', e => {
             const x = e.target.closest('.tk-x');
-            if (!x) return;
-            const token = x.closest('.img-token');
-            if (token) removeImgToken(Number(token.dataset.n));
+            if (x) {   // ✕ = 彻底删除这张图（不再落到下面的回收条）
+                const token = x.closest('.img-token');
+                if (token) deleteStoryImage(Number(token.dataset.n));
+                return;
+            }
+            const pic = e.target.closest('.img-token img');
+            if (pic) { e.preventDefault(); openImageViewer(pic.getAttribute('src')); }
         });
     }
 
@@ -1148,11 +1218,18 @@
     if (trayList) {
         trayList.addEventListener('click', e => {
             const rm = e.target.closest('[data-rm]');
-            if (rm) { removeImgToken(Number(rm.dataset.rm)); return; }
+            if (rm) { deleteStoryImage(Number(rm.dataset.rm)); return; }
+            const pic = e.target.closest('.img-chip img');
+            if (pic) { openImageViewer(pic.getAttribute('src')); return; }
             const chip = e.target.closest('[data-img]');
             if (chip) insertImgToken(Number(chip.dataset.img));
         });
     }
+    // 预览里的图也能点开看（预览层是动态生成的，用 document 委托）
+    document.addEventListener('click', e => {
+        const pic = e.target.closest('.preview-figure img');
+        if (pic) openImageViewer(pic.getAttribute('src'));
+    });
 
     /** 纯文本预览：把【图N】换成真正的图片（编辑区里仍保留文字标记） */
     function renderTextWithImages(escaped) {
@@ -1259,7 +1336,10 @@
     }
 
     document.addEventListener('keydown', e => {
-        if (e.key === 'Escape' && document.getElementById('ai-guide-overlay').classList.contains('open')) {
+        if (e.key !== 'Escape') return;
+        const v = $('#img-viewer');
+        if (v && v.classList.contains('open')) { closeImageViewer(); return; }
+        if (document.getElementById('ai-guide-overlay').classList.contains('open')) {
             closeAiGuide(false);
         }
     });
