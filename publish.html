@@ -162,7 +162,33 @@
         }
         .composer textarea.html-mode:focus { border-color: var(--primary-light); }
 
-        /* 插图缩略图条：textarea 无法内嵌图片，靠这条把「已上传的图」画出来 */
+        /* 纯文本模式的富文本编辑区：外观与 textarea 完全一致 */
+        .story-rich {
+            display: none; width: 100%; min-height: 260px; padding: 18px 20px;
+            border: 2px solid var(--border); border-radius: var(--radius-sm);
+            font-size: 15px; line-height: 1.8; color: var(--text); font-family: inherit;
+            background: var(--surface-2); transition: border-color .3s ease;
+            white-space: pre-wrap; word-break: break-word; outline: none;
+        }
+        .story-rich:focus { border-color: var(--primary-light); background: var(--surface); }
+        .story-rich:empty::before { content: attr(data-placeholder); color: var(--text-lighter); pointer-events: none; }
+        /* 正文里的图片卡片：contenteditable=false 让它可以被整体选中/删除 */
+        .img-token {
+            display: flex; align-items: center; gap: 10px; width: fit-content; max-width: 100%;
+            margin: 10px 0; padding: 8px 10px; border: 1.5px dashed var(--border);
+            border-radius: 12px; background: var(--surface-2); user-select: none;
+        }
+        .img-token img { width: 64px; height: 64px; object-fit: cover; border-radius: 9px; display: block; flex: none; }
+        .img-token .tk-label { font-size: 11px; color: var(--text-light); font-family: 'SF Mono', Consolas, monospace; }
+        .img-token .tk-x {
+            width: 19px; height: 19px; padding: 0; border: 0; border-radius: 50%;
+            background: var(--border); color: var(--text-light); cursor: pointer;
+            font-size: 11px; line-height: 19px; text-align: center;
+        }
+        .img-token .tk-x:hover { background: var(--primary); color: #fff; }
+        .img-token.flash { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(var(--primary-rgb), .12); }
+
+        /* 插图缩略图条：只放「正文里没有引用」的图，正常编辑时是隐藏的 */
         .img-tray {
             display: none; margin-top: 12px; padding: 12px 14px;
             border: 1.5px dashed var(--border); border-radius: var(--radius-sm);
@@ -637,11 +663,15 @@
         <input type="text" placeholder="你的昵称（选填，不填将随机生成）" aria-label="你的昵称（选填，不填将随机生成）" autocomplete="nickname" id="story-nickname" maxlength="20">
         <input type="text" placeholder="给你的故事起个标题吧..." aria-label="给你的故事起个标题吧" id="story-title" maxlength="60">
         <textarea id="story-content" aria-label="在这里写下你想记下来的事" placeholder="在这里写下你想记下来的事...&#10;&#10;比如：&#10;那天发生了什么？&#10;当时你在想什么？&#10;有没有哪个瞬间让你记到现在？&#10;后来呢？"></textarea>
-        <!-- 插图缩略图条：textarea 里只能存文字，【图N】是位置标记，真图在这里看 -->
+        <!-- 纯文本模式用这个富文本编辑区：textarea 无法内嵌图片，这里把【图N】画成缩略图。
+             textarea 始终作为纯文本数据源（发布/预览都读它），两边互相同步。 -->
+        <div id="story-rich" class="story-rich" contenteditable="true" role="textbox" aria-multiline="true"
+             aria-label="在这里写下你想记下来的事" data-placeholder="在这里写下你想记下来的事..." spellcheck="false"></div>
+        <!-- 未被引用的图片：删掉正文里的缩略图后，图会落到这里，可点一下重新插入 -->
         <div class="img-tray" id="img-tray">
             <div class="img-tray-head">
-                <span>已插入的图片 <b id="img-tray-count">0</b></span>
-                <span class="img-tray-hint">正文里的【图N】是图片位置 · 点缩略图可定位或重新插入</span>
+                <span>未插入正文的图片 <b id="img-tray-count">0</b></span>
+                <span class="img-tray-hint">点缩略图可插回光标处 · 图片文件会保留</span>
             </div>
             <div class="img-tray-list" id="img-tray-list"></div>
         </div>
@@ -768,6 +798,8 @@
         const tabs = document.querySelectorAll('.editor-tab');
         const textarea = document.getElementById('story-content');
         const uploadBtn = document.getElementById('upload-btn');
+        // 切走之前先把富文本编辑区的内容落回 textarea，避免丢字
+        if (isRichMode() && !isPreviewOpen()) syncTextareaFromRich();
         tabs.forEach(tab => tab.classList.remove('active'));
         // 「上传 HTML 文件」按钮仅 HTML 模式显示
         if (uploadBtn) uploadBtn.classList.toggle('show', mode === 'html');
@@ -785,6 +817,8 @@
                 showAiGuide();
             }
         }
+        if (mode === 'text') syncRichFromTextarea();   // 用 textarea 里的纯文本重建缩略图卡片
+        applyEditorVisibility();
         renderImgTray();
     }
 
@@ -888,8 +922,107 @@
         throw new Error('这张图压缩后仍有 ' + (last.bytes / 1024 / 1024).toFixed(1) + 'MB，换一张试试');
     }
 
+    /* ===== 纯文本模式 = 富文本编辑区（把【图N】原地画成缩略图） =====
+     * textarea 无法显示图片，所以纯文本模式改用 contenteditable 的 #story-rich：
+     *   - 正文里的【图N】在这里画成 .img-token 缩略图卡片（contenteditable=false，可整体选中/删除）
+     *   - textarea 始终保留纯文本（含【图N】），发布 / 预览都读它 → 后端与 payload 零改动
+     *   - 双向同步：rich 输入 → 序列化写回 textarea；程序改 textarea → 重建 rich
+     * ⚠️ 重建 rich 会丢光标，所以只在「切换模式 / 重置 / 导入」时做，用户打字时绝不重建。
+     */
+    function isRichMode() {
+        const ta = $('#story-content');
+        return !!ta && !ta.classList.contains('html-mode');
+    }
+    function isPreviewOpen() { return !!$('#html-preview'); }
+
+    function tokenHtml(n) {
+        const f = storyImages[Number(n) - 1];
+        if (!f) return '【图' + n + '】';
+        return '<span class="img-token" contenteditable="false" data-n="' + n + '" title="图' + n + '">'
+            + '<img src="api.php?route=story_img&amp;f=' + esc(f) + '" alt="图' + n + '">'
+            + '<span class="tk-label">图' + n + '</span>'
+            + '<button type="button" class="tk-x" data-rm="' + n + '" title="从正文移除这张图">✕</button>'
+            + '</span>';
+    }
+
+    /** 纯文本 → rich HTML */
+    function renderRichFromText(text) {
+        const rich = $('#story-rich');
+        if (!rich) return;
+        rich.innerHTML = nl2br(esc(String(text || '')))
+            .replace(/【图(\d+)】/g, (m, n) => tokenHtml(n));
+    }
+
+    /** rich DOM → 纯文本（图片卡片还原成【图N】） */
+    function serializeRich() {
+        const rich = $('#story-rich');
+        if (!rich) return '';
+        let out = '';
+        function walk(node) {
+            if (node.nodeType === 3) { out += node.nodeValue; return; }
+            if (node.nodeType !== 1) return;
+            if (node.classList && node.classList.contains('img-token')) {
+                // 卡片前后的换行由 <br> 提供，这里不要再补，否则回到 textarea 会多出空行
+                out += '【图' + (node.dataset.n || '?') + '】';
+                return;
+            }
+            if (node.tagName === 'BR') { out += '\n'; return; }
+            // Chrome 在 contenteditable 里回车会生成 <div>，块级元素要换成换行
+            const block = /^(DIV|P|SECTION|ARTICLE|LI|H[1-6])$/.test(node.tagName || '');
+            if (block && out && !out.endsWith('\n')) out += '\n';
+            for (const c of node.childNodes) walk(c);
+            if (block && !out.endsWith('\n')) out += '\n';
+        }
+        for (const c of rich.childNodes) walk(c);
+        return out.replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '').replace(/\n+$/, '');
+    }
+
+    function syncTextareaFromRich() {
+        if (!isRichMode()) return;
+        $('#story-content').value = serializeRich();
+        renderImgTray();
+    }
+    function syncRichFromTextarea() {
+        if (!isRichMode()) return;
+        renderRichFromText($('#story-content').value);
+        renderImgTray();
+    }
+
+    /** 统一控制 textarea / rich / 预览层的显示 */
+    function applyEditorVisibility() {
+        const ta = $('#story-content');
+        const rich = $('#story-rich');
+        if (!ta || !rich) return;
+        const richMode = !ta.classList.contains('html-mode');
+        if (isPreviewOpen()) { ta.style.display = 'none'; rich.style.display = 'none'; return; }
+        ta.style.display = richMode ? 'none' : '';
+        // 必须写 'block'：CSS 里 .story-rich 默认 display:none，写空串会掉回隐藏
+        rich.style.display = richMode ? 'block' : 'none';
+    }
+
+    /** 在 rich 的光标处插入一张图片卡片 */
+    function insertRichImage(n) {
+        const rich = $('#story-rich');
+        if (!rich) return;
+        rich.focus();
+        const sel = window.getSelection();
+        // 光标不在编辑区里（刚点过工具栏）→ 追加到末尾
+        if (!sel || !sel.rangeCount || !rich.contains(sel.anchorNode)) {
+            const r = document.createRange();
+            r.selectNodeContents(rich);
+            r.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(r);
+        }
+        document.execCommand('insertHTML', false, '<br>' + tokenHtml(n) + '<br>');
+        syncTextareaFromRich();
+    }
+
     /** 在光标处插入文本（保持焦点与光标位置） */
     function insertAtCursor(el, text) {
+        // 纯文本模式插图片 → 走富文本编辑区，把缩略图画在光标处
+        const m = String(text).match(/^\s*【图(\d+)】\s*$/);
+        if (isRichMode() && !isPreviewOpen() && m) { insertRichImage(Number(m[1])); return; }
         const start = typeof el.selectionStart === 'number' ? el.selectionStart : el.value.length;
         const end = typeof el.selectionEnd === 'number' ? el.selectionEnd : start;
         el.value = el.value.slice(0, start) + text + el.value.slice(end);
@@ -899,10 +1032,9 @@
         el.dispatchEvent(new Event('input', { bubbles: true }));   // 让字数统计刷新
     }
 
-    /* ===== 插图缩略图条 =====
-     * textarea 只能存纯文本，正文里的【图N】是「图片插在哪里」的标记。
-     * 这里把已上传的图画成小缩略图；点一下可定位或重新插入对应标记。
-     * ⚠️ 绝不 splice storyImages —— 序号必须和【图N】严格对齐，删中间的会让后面的图错位。
+    /* ===== 未引用图片的回收条 =====
+     * 正文里的缩略图卡片被删掉后，对应图片会出现在这里，点一下能插回光标处。
+     * ⚠️ 绝不 splice storyImages —— 序号必须和【图N】严格对齐，删中间项会让后面的图错位。
      */
     function imgTokenText(n) { return '【图' + n + '】'; }
 
@@ -911,48 +1043,89 @@
         const list = $('#img-tray-list');
         const el = $('#story-content');
         if (!tray || !list || !el) return;
-        const isHtml = el.classList.contains('html-mode');
-        // HTML 模式直接写 <img> 标签，不需要 token，缩略图条隐藏
-        if (!storyImages.length || isHtml) { tray.classList.remove('show'); return; }
+        // 正常编辑时缩略图已经在正文里，这条保持隐藏，别重复占地方
+        if (!isRichMode() || !storyImages.length || isPreviewOpen()) { tray.classList.remove('show'); return; }
+        const unused = storyImages.map((f, i) => ({ f, n: i + 1 }))
+            .filter(x => !el.value.includes(imgTokenText(x.n)));
+        if (!unused.length) { tray.classList.remove('show'); return; }
         tray.classList.add('show');
-        $('#img-tray-count').textContent = storyImages.length;
-        list.innerHTML = storyImages.map((f, i) => {
-            const n = i + 1;
-            const used = el.value.includes(imgTokenText(n));
-            return '<div class="img-chip' + (used ? '' : ' unused') + '" data-img="' + n + '"'
-                + ' title="点一下定位或插入' + imgTokenText(n) + '">'
-                + '<img src="api.php?route=story_img&amp;f=' + esc(f) + '" alt="图' + n + '">'
-                + '<span class="n">图' + n + (used ? '' : ' · 未用') + '</span>'
-                + '<button type="button" class="x" data-rm="' + n + '" title="从正文移除这个位置标记">✕</button>'
-                + '</div>';
-        }).join('');
+        $('#img-tray-count').textContent = unused.length;
+        list.innerHTML = unused.map(({ f, n }) =>
+            '<div class="img-chip" data-img="' + n + '" title="点一下把图' + n + '插回光标处">'
+            + '<img src="api.php?route=story_img&amp;f=' + esc(f) + '" alt="图' + n + '">'
+            + '<span class="n">图' + n + '</span></div>').join('');
     }
 
     function insertImgToken(n) {
+        if (isRichMode()) {
+            const existing = $('#story-rich .img-token[data-n="' + n + '"]');
+            if (existing) {
+                existing.scrollIntoView({ block: 'center' });
+                existing.classList.add('flash');
+                setTimeout(() => existing.classList.remove('flash'), 1200);
+                return;
+            }
+            insertRichImage(n);
+            toast('已插入图' + n);
+            return;
+        }
         const el = $('#story-content');
         const token = imgTokenText(n);
         const at = el.value.indexOf(token);
         el.focus();
         if (at >= 0) {
-            // 正文里已经有这个标记 → 不重复插入，直接选中定位，方便用户看清它在哪
             try { el.setSelectionRange(at, at + token.length); } catch (e) { /* 忽略 */ }
             toast('已定位到 ' + token);
             return;
         }
         insertAtCursor(el, '\n' + token + '\n');
-        renderImgTray();
         toast('已插入 ' + token);
     }
 
+    /** 移除正文里的某张图（卡片上的 ✕，或 Backspace 整体删掉卡片后由 input 事件同步） */
     function removeImgToken(n) {
+        if (isRichMode()) {
+            const node = $('#story-rich .img-token[data-n="' + n + '"]');
+            if (!node) { toast('正文里没有图' + n, 'error'); return; }
+            node.remove();
+            syncTextareaFromRich();
+            toast('已移除图' + n + '，可在下方重新插入');
+            return;
+        }
         const el = $('#story-content');
         const re = new RegExp('\\n?' + '【图' + n + '】' + '\\n?');
         const next = el.value.replace(re, '\n');
         if (next === el.value) { toast('正文里没有【图' + n + '】', 'error'); return; }
         el.value = next;
         el.dispatchEvent(new Event('input', { bubbles: true }));
-        renderImgTray();
-        toast('已移除【图' + n + '】的位置标记（图片保留，发布时不展示）');
+        toast('已移除【图' + n + '】，图片保留');
+    }
+
+    /* ===== 富文本编辑区事件 ===== */
+    const richEl = $('#story-rich');
+    if (richEl) {
+        richEl.addEventListener('input', syncTextareaFromRich);
+        richEl.addEventListener('paste', e => {
+            const cb = e.clipboardData;
+            if (!cb) return;
+            const files = [];
+            for (const it of cb.items) {
+                if (it.kind === 'file' && /^image\//.test(it.type || '')) {
+                    const f = it.getAsFile();
+                    if (f) files.push(f);
+                }
+            }
+            if (files.length) { e.preventDefault(); handleImageFiles(files); return; }
+            // 只粘纯文本：外部网页的样式/标签一律不带进来
+            e.preventDefault();
+            document.execCommand('insertText', false, cb.getData('text/plain'));
+        });
+        richEl.addEventListener('click', e => {
+            const x = e.target.closest('.tk-x');
+            if (!x) return;
+            const token = x.closest('.img-token');
+            if (token) removeImgToken(Number(token.dataset.n));
+        });
     }
 
     const trayList = $('#img-tray-list');
@@ -1241,9 +1414,11 @@
             if (!content.trim()) { toast('没在文件里找到可用的正文内容', 'error'); return; }
             const ta = document.getElementById('story-content');
             if (ta.value.trim() && !confirm('导入「' + file.name + '」会替换当前编辑器里的内容，确定继续吗？')) return;
+            // 先切到 HTML 模式（内部会把富文本编辑区同步回 textarea），再写入导入内容，
+            // 否则 switchEditor 的同步会把刚导入的源码覆盖掉
+            switchEditor('html', true); // 导入文件场景已会操作，不弹 AI 引导
             ta.value = content;
             importedSource = content;   // 发布时原样上传这份原文
-            switchEditor('html', true); // 导入文件场景已会操作，不弹 AI 引导
             if (isFullDoc) {
                 toast('📄 已导入 ' + file.name + '（原文件将原样保存，阅读时完整还原）');
             } else {
@@ -1299,18 +1474,22 @@
     function togglePreview() {
         const textarea = document.getElementById('story-content');
         const btn = document.getElementById('previewBtn');
+        const existing = document.getElementById('html-preview');
 
-        if (textarea.style.display === 'none') {
-            textarea.style.display = '';
-            document.getElementById('html-preview')?.remove();
+        // 纯文本模式下 textarea 平时就是隐藏的，不能再用它判断「是否在预览中」
+        if (existing) {
+            existing.remove();
             btn.innerHTML = '👁️ 预览';
+            applyEditorVisibility();
+            // 预览期间可能通过工具栏插了新图（落在 textarea 里），关闭时用纯文本重建卡片
+            if (isRichMode()) syncRichFromTextarea();
             return;
         }
 
+        if (isRichMode()) syncTextareaFromRich();   // 确保预览读到富文本编辑区的最新内容
         const isHtml = textarea.classList.contains('html-mode');
         if (!textarea.value.trim()) { toast('先写点内容再预览吧～', 'error'); return; }
 
-        textarea.style.display = 'none';
         const preview = document.createElement('div');
         preview.id = 'html-preview';
         preview.style.cssText = 'min-height:260px;';
@@ -1325,7 +1504,9 @@
             preview.style.cssText += 'padding:18px 20px;border:2px solid var(--border);border-radius:10px;background:var(--surface-2);overflow:auto;font-size:15px;line-height:1.8;';
             preview.innerHTML = renderTextWithImages(esc(textarea.value));
         }
-        textarea.parentNode.insertBefore(preview, textarea.nextSibling);
+        $('#img-tray').parentNode.insertBefore(preview, $('#img-tray').nextSibling);
+        applyEditorVisibility();   // 预览期间把 textarea 和富文本编辑区都收起来
+        renderImgTray();
         btn.innerHTML = '✏️ 编辑';
     }
 
@@ -1335,6 +1516,9 @@
         const nickEl = $('#story-nickname');
         const contentEl = $('#story-content');
         const btn = $('#submit-btn');
+
+        // 发布前把富文本编辑区落回纯文本，保证 payload 里是【图N】而不是 HTML
+        if (isRichMode()) syncTextareaFromRich();
 
         const title = titleEl.value.trim();
         const content = contentEl.value.trim();
@@ -1384,10 +1568,13 @@
         $('#story-title').value = '';
         $('#story-nickname').value = '';
         $('#story-content').value = '';
+        const rich = $('#story-rich');
+        if (rich) rich.innerHTML = '';   // 必须在 switchEditor 之前清，否则会被同步回旧内容
         storyImages.length = 0;   // 清空插图列表，否则「再写一篇」会继承上一篇的序号
-        renderImgTray();
         $$('.option-btn.active').forEach(b => b.classList.remove('active'));
         switchEditor('text');
+        applyEditorVisibility();
+        renderImgTray();
         $('#success-view').style.display = 'none';
         $('#compose-section').style.display = '';
         const btn = $('#submit-btn');
@@ -1398,8 +1585,9 @@
 
     $('#submit-btn').addEventListener('click', submitStory);
 
-    // 启动：没有插图时缩略图条保持隐藏
-    renderImgTray();
+    // 启动：默认纯文本模式，显示富文本编辑区并同步一次内容
+    applyEditorVisibility();
+    syncRichFromTextarea();
 
     /* ===== 导航滚动效果 ===== */
     const navbar = document.getElementById('navbar');
