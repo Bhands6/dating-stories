@@ -3009,23 +3009,37 @@
     $('#confirm-cancel').addEventListener('click', () => closeConfirm(false));
     $('#confirm-overlay').addEventListener('click', e => { if (e.target.id === 'confirm-overlay') closeConfirm(false); });
 
-    async function api(route, params, body) {
+    async function api(route, params, body, timeoutMs) {
         const qs = params ? '&' + new URLSearchParams(params).toString() : '';
         const opt = body !== undefined
             ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
             : undefined;
-        // 请求超时保护：15 秒未响应则报错
+        // 请求超时保护：默认 15 秒。图片上传（base64 后体积大）在手机流量下经常超过 15 秒，
+        // 调用方会传 timeoutMs（90 秒）——之前函数签名漏了这个参数，第 4 个实参被静默丢弃，
+        // 于是评论配图在手机上永远 15s 超时失败。
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 15000);
+        const limit = timeoutMs || 15000;
+        const timer = setTimeout(() => ctrl.abort(), limit);
         let r;
         try {
             r = await fetch('api.php?route=' + encodeURIComponent(route) + qs, { ...opt, signal: ctrl.signal });
         } catch (e) {
             clearTimeout(timer);
-            throw new Error(e.name === 'AbortError' ? '请求超时，请稍后重试' : '网络请求失败，请检查服务是否运行');
+            throw new Error(e.name === 'AbortError'
+                ? (timeoutMs ? '上传超时，请检查网络后重试' : '请求超时，请稍后重试')
+                : '网络请求失败，请检查服务是否运行');
         }
         clearTimeout(timer);
-        const data = await r.json();
+        // 反向代理直接拒绝时返回的是 HTML（如 413 请求体过大、502 上游断开），
+        // r.json() 会抛 "Unexpected token '<'" 这种看不懂的错，按状态码换成明确话术。
+        let data;
+        try {
+            data = await r.json();
+        } catch (e) {
+            if (r.status === 413) throw new Error('图片太大，服务器拒绝接收，请换一张小一点的图');
+            if (r.status === 502 || r.status === 504) throw new Error('服务器处理超时，请重试或换小图');
+            throw new Error('服务器返回异常（HTTP ' + r.status + '），请稍后重试');
+        }
         if (!data.ok) throw new Error(data.error || '请求失败');
         return data;
     }

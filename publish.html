@@ -831,7 +831,16 @@
         } finally {
             if (timer) clearTimeout(timer);
         }
-        const data = await r.json();
+        // 反向代理直接拒绝时返回的是 HTML（如 413 请求体过大、502 上游断开），
+        // r.json() 会抛 "Unexpected token '<'"，用户只看到一句乱码，按状态码换成明确话术。
+        let data;
+        try {
+            data = await r.json();
+        } catch (e) {
+            if (r.status === 413) throw new Error('图片太大，服务器拒绝接收，请换一张小一点的图');
+            if (r.status === 502 || r.status === 504) throw new Error('服务器处理超时，请重试或换小图');
+            throw new Error('服务器返回异常（HTTP ' + r.status + '），请稍后重试');
+        }
         if (!data.ok) throw new Error(data.error || '请求失败');
         return data;
     }
