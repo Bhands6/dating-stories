@@ -1257,12 +1257,10 @@
             color: var(--text-lighter);
         }
 
-        /* 「友情链接」本身就是申请入口：可按、可聚焦，hover 变主色给点击暗示 */
+        /* 「友情链接」本身就是申请入口：文字即可点，hover 变主色 + 下划线给暗示 */
         .footer-friends-label {
             position: relative;
-            display: inline-flex;
-            align-items: center;
-            gap: 3px;
+            display: inline-block;
             padding: 0 16px 0 0;
             border: none;
             background: none;
@@ -1277,30 +1275,14 @@
         .footer-friends-label:hover,
         .footer-friends-label:focus-visible {
             color: var(--primary);
+            text-decoration: underline;
+            text-underline-offset: 3px;
         }
 
         .footer-friends-label:focus-visible {
             outline: 2px solid rgba(var(--primary-rgb), 0.35);
             outline-offset: 3px;
             border-radius: 4px;
-        }
-
-        .footer-friends-label .ff-plus {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 15px;
-            height: 15px;
-            border-radius: 50%;
-            background: rgba(var(--primary-rgb), 0.12);
-            color: var(--primary);
-            font-size: 10px;
-            line-height: 1;
-            transition: background 0.25s ease;
-        }
-
-        .footer-friends-label:hover .ff-plus {
-            background: rgba(var(--primary-rgb), 0.22);
         }
 
         .footer-friends-label::after {
@@ -3099,7 +3081,7 @@
                 <a class="footer-link" href="disclaimer.html">📜 免责声明</a>
             </div>
             <div class="footer-friends" id="footer-friends">
-                <button type="button" class="footer-friends-label" id="friend-apply-btn" title="点这里申请友情链接">友情链接<span class="ff-plus" aria-hidden="true">＋</span></button>
+                <button type="button" class="footer-friends-label" id="friend-apply-btn" title="点这里申请友情链接">友情链接</button>
                 <!-- 内容由 loadFriends() 按管理页配置渲染；这段静态链接是接口不可用时的兜底 -->
                 <div class="footer-friends-list" id="footer-friends-list">
                     <a class="footer-friend" href="https://wangzhy.top/" target="_blank" rel="noopener">解压小站</a>
