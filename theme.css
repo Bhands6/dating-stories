@@ -73,6 +73,16 @@
     --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
 }
 
+/* 页头 logo：品牌图标图片（替代原来的 🏠 emoji），按方块尺寸等比缩放 */
+.logo-icon img {
+    width: 100%;
+    height: 100%;
+    padding: 2px;
+    box-sizing: border-box;
+    object-fit: contain;
+    display: block;
+}
+
 /* 页面 body 的字体统一跟随主题（html[data-theme] 提高特异性，压住各页自己的 body 规则） */
 html[data-theme] body {
     font-family: var(--font-body);
