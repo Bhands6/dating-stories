@@ -2358,6 +2358,10 @@ function handleApi(req, res, url, body) {
         if ((it.id | 0) > (del.readUpTo | 0)) deletionsUnread++;
       }
 
+      // 友链申请：首页页脚提交、还没审核的条数（总览「待处理」入口用）
+      const applyItems = friendAppliesLoad().items;
+      const friendApplies = Array.isArray(applyItems) ? applyItems.length : 0;
+
       const d = new Date();
       const p = n => String(n).padStart(2, '0');
       return json(res, {
@@ -2367,6 +2371,7 @@ function handleApi(req, res, url, body) {
           todayStories, todayComments,
           feedback: fbTotal, feedbackUnread: fbUnread, todayFeedback: todayFb,
           deletionsToday, deletionsUnread,
+          friendApplies,
           today: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`,
           visitors: visitStatsSeries(14),   // 最近 14 天访客趋势（折线图）
         },

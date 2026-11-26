@@ -702,6 +702,7 @@ input[type=checkbox]{
           <div style="margin-top:18px;display:flex;gap:10px;flex-wrap:wrap">
             <button class="btn btn-sm" data-goto="pending"><svg><use href="#i-trash"/></svg>访客删除留痕</button>
             <button class="btn btn-sm btn-ghost" data-goto="feedback"><svg><use href="#i-msg"/></svg>反馈箱</button>
+            <button class="btn btn-sm btn-ghost" id="ov-friend-apply" style="display:none">🔗 友链申请<span id="ov-friend-apply-n"></span></button>
           </div>
         </div>
       </div>
@@ -860,7 +861,7 @@ input[type=checkbox]{
             <button class="btn btn-sm" data-export="feedback"><svg><use href="#i-download"/></svg>导出</button>
           </div>
           <div class="switch-row">
-            <div><strong>友情链接</strong><p>首页页脚展示，支持图标与跳转</p></div>
+            <div><strong>友情链接</strong><p id="friends-card-note">首页页脚展示，支持图标与跳转</p></div>
             <button class="btn btn-sm" id="friends-btn"><svg><use href="#i-link"/></svg>管理</button>
           </div>
           <div class="switch-row">
@@ -1132,6 +1133,20 @@ async function loadOverview() {
         if (badge) badge.textContent = s.feedbackUnread ? s.feedbackUnread : '';
         const sb = $('#badge-stories');
         if (sb) sb.textContent = s.stories || '';
+        // 友链申请：有才显示，点一下直接开友链弹窗（审核入口就在弹窗顶部）
+        const fab = $('#ov-friend-apply');
+        if (fab) {
+            const n = s.friendApplies || 0;
+            fab.style.display = n ? '' : 'none';
+            const cnt = $('#ov-friend-apply-n');
+            if (cnt) cnt.textContent = n ? ' ' + n : '';
+            const cardNote = $('#friends-card-note');
+            if (cardNote) {
+                cardNote.textContent = n
+                    ? '首页页脚展示 · ' + n + ' 条申请待审核'
+                    : '首页页脚展示，支持图标与跳转';
+            }
+        }
         renderVisitorsChart(s.visitors);
     } catch (e) {
         if (String(e.message).includes('密码')) handleBadKey();
@@ -2001,6 +2016,7 @@ $('#friends-file').addEventListener('change', async e => {
     } catch (err) { toast('上传失败：' + err.message, 'error'); }
 });
 $('#friends-btn').addEventListener('click', openFriends);
+$('#ov-friend-apply').addEventListener('click', openFriends);   // 总览「待处理」里的快捷入口
 const closeFriends = () => { closeOverlay($('#friends-overlay')); friendsUploadIdx = -1; };
 $('#friends-close').addEventListener('click', closeFriends);
 $('#friends-cancel').addEventListener('click', closeFriends);
