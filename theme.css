@@ -77,7 +77,8 @@
 .logo-icon img {
     width: 100%;
     height: 100%;
-    padding: 2px;
+    /* 底部多留 2px：图标本身是「屋脊贴顶、房基贴底」的紧凑版，正放在方块里会显得压底 */
+    padding: 2px 2px 4px;
     box-sizing: border-box;
     object-fit: contain;
     display: block;

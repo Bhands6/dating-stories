@@ -25,6 +25,7 @@ from PIL import Image, ImageDraw, ImageFilter
 MARK = (255, 0, 255)      # 临时标记色（一般图里没有洋红，不会误伤）
 THRESH = 12               # floodfill 容差：背景噪声 ≤3，墙体与白差 ~33
 SOFT = 30                 # 与纯白的距离达到这个值就算完全不透明
+PAD = float(sys.argv[4]) if len(sys.argv) > 4 else 1.05   # 画布留白系数：1.0 = 内容顶满
 
 
 def cutout(src, out, size):
@@ -53,7 +54,7 @@ def cutout(src, out, size):
     print('bbox', bbox)
     body = img.crop(bbox)
     bw, bh = body.size
-    side = int(max(bw, bh) * 1.05)
+    side = int(max(bw, bh) * PAD)
     canvas = Image.new('RGBA', (side, side), (0, 0, 0, 0))
     canvas.alpha_composite(body, ((side - bw) // 2, (side - bh) // 2))
 
