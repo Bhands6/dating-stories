@@ -109,6 +109,13 @@ body.locked{overflow:hidden}
 .nav-badge:empty{display:none}
 .nav-badge.soft{background:var(--line);color:var(--ink-2)}
 .nav-item.active .nav-badge{background:rgba(255,255,255,.22);color:#fff}
+/* 行内角标：设置页「友情链接」标题后面用，空值时自动隐藏 */
+.badge-inline{
+  display:inline-block;margin-left:6px;vertical-align:2px;
+  font-family:"DM Mono",monospace;font-size:10.5px;
+  background:var(--rose);color:#fff;border-radius:20px;padding:1px 8px;line-height:1.7;
+}
+.badge-inline:empty{display:none}
 
 .rail-foot{margin-top:auto;display:flex;flex-direction:column;gap:14px}
 .owner{
@@ -629,7 +636,7 @@ input[type=checkbox]{
         <div class="nav-item" data-view="feedback"><svg><use href="#i-msg"/></svg>反馈箱<span class="nav-badge" id="badge-feedback"></span></div>
         <div class="nav-item" data-view="channels"><svg><use href="#i-layers"/></svg>频道管理</div>
         <div class="nav-item" data-view="pending"><svg><use href="#i-shield"/></svg>访客删除<span class="nav-badge" id="badge-pending"></span></div>
-        <div class="nav-item" data-view="settings"><svg><use href="#i-gear"/></svg>站点设置</div>
+        <div class="nav-item" data-view="settings"><svg><use href="#i-gear"/></svg>站点设置<span class="nav-badge" id="badge-settings"></span></div>
       </nav>
     </div>
 
@@ -861,7 +868,7 @@ input[type=checkbox]{
             <button class="btn btn-sm" data-export="feedback"><svg><use href="#i-download"/></svg>导出</button>
           </div>
           <div class="switch-row">
-            <div><strong>友情链接</strong><p id="friends-card-note">首页页脚展示，支持图标与跳转</p></div>
+            <div><strong>友情链接<span class="badge-inline" id="badge-friends-inline"></span></strong><p id="friends-card-note">首页页脚展示，支持图标与跳转</p></div>
             <button class="btn btn-sm" id="friends-btn"><svg><use href="#i-link"/></svg>管理</button>
           </div>
           <div class="switch-row">
@@ -1133,20 +1140,8 @@ async function loadOverview() {
         if (badge) badge.textContent = s.feedbackUnread ? s.feedbackUnread : '';
         const sb = $('#badge-stories');
         if (sb) sb.textContent = s.stories || '';
-        // 友链申请：有才显示，点一下直接开友链弹窗（审核入口就在弹窗顶部）
-        const fab = $('#ov-friend-apply');
-        if (fab) {
-            const n = s.friendApplies || 0;
-            fab.style.display = n ? '' : 'none';
-            const cnt = $('#ov-friend-apply-n');
-            if (cnt) cnt.textContent = n ? ' ' + n : '';
-            const cardNote = $('#friends-card-note');
-            if (cardNote) {
-                cardNote.textContent = n
-                    ? '首页页脚展示 · ' + n + ' 条申请待审核'
-                    : '首页页脚展示，支持图标与跳转';
-            }
-        }
+        // 友链申请：三处角标（总览按钮 / 侧栏站点设置 / 设置页标题）统一由这里刷新
+        updateApplyBadges(s.friendApplies || 0);
         renderVisitorsChart(s.visitors);
     } catch (e) {
         if (String(e.message).includes('密码')) handleBadKey();
@@ -1154,6 +1149,28 @@ async function loadOverview() {
     loadDelCount();
     loadChannels(false);
     loadRecent();
+}
+
+/* 友链待审数量：总览按钮 / 侧栏「站点设置」角标 / 设置页标题角标，三处一起刷 */
+function updateApplyBadges(n) {
+    n = Number(n) || 0;
+    const fab = $('#ov-friend-apply');
+    if (fab) {
+        fab.style.display = n ? '' : 'none';
+        const cnt = $('#ov-friend-apply-n');
+        if (cnt) cnt.textContent = n ? ' ' + n : '';
+    }
+    // .nav-badge / .badge-inline 都有 :empty{display:none}，清空即隐藏
+    ['#badge-settings', '#badge-friends-inline'].forEach(sel => {
+        const el = $(sel);
+        if (el) el.textContent = n ? String(n) : '';
+    });
+    const cardNote = $('#friends-card-note');
+    if (cardNote) {
+        cardNote.textContent = n
+            ? '首页页脚展示 · ' + n + ' 条申请待审核'
+            : '首页页脚展示，支持图标与跳转';
+    }
 }
 
 /* 访客趋势折线图：纯 SVG 双线（浏览量 / 访客数），无第三方库；数据点用原生 <title> 悬停提示 */
@@ -1874,6 +1891,7 @@ async function openFriends() {
         friendsDirty = false;
         renderFriendApplies();
         renderFriends();
+        updateApplyBadges(friendApplies.length);
     } catch (e) {
         rows.innerHTML = '<div class="fr-empty">😢 ' + esc(e.message) + '</div>';
     }
@@ -1922,7 +1940,11 @@ $('#friend-applies').addEventListener('click', async e => {
             friendsDirty = false;
             renderFriends();
         }
-        if (Array.isArray(d.applies)) { friendApplies = d.applies; renderFriendApplies(); }
+        if (Array.isArray(d.applies)) {
+            friendApplies = d.applies;
+            renderFriendApplies();
+            updateApplyBadges(friendApplies.length);   // 处理完立刻消掉角标，不用等重新进总览
+        }
         toast(d.message || '已处理');
     } catch (err) {
         toast(err.message, 'error');
