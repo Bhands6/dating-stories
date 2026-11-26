@@ -139,6 +139,7 @@ const RATE_LIMITS = {
   stories:  { max: 5,  window: 600,  label: '发布' },
   comments: { max: 15, window: 300,  label: '评论' },
   feedback: { max: 3,  window: 1800, label: '提交反馈' },
+  friend_apply: { max: 3, window: 1800, label: '提交友链申请' },
   delete_comment: { max: 20, window: 600, label: '删除评论' },
   real: { max: 30, window: 600, label: '标记真实故事' },
   delete_story: { max: 10, window: 600, label: '删除故事' },
@@ -362,8 +363,10 @@ function deletionsLoad() {
 /* ================= 友情链接（管理页维护，页脚展示） ================= */
 
 const FRIENDS_FILE = path.join(DATA_DIR, 'friends.json');
+const FRIEND_APPLIES_FILE = path.join(DATA_DIR, 'friend_applies.json');   // 访客提交的友链申请（待站长审核）
 const FRIENDIMG_DIR = path.join(DATA_DIR, 'friendimg');
 const FRIENDS_MAX = 30;                 // 条数上限
+const FRIENDS_APPLY_MAX = 100;          // 待审申请上限：堆满后先提示站长处理，避免被脚本灌爆
 const FRIENDIMG_MAX_BYTES = 307200;     // 单张图片上限 300KB
 
 /**
@@ -412,6 +415,40 @@ function friendUrlOk(url) {
   if (/^https?:\/\/[^\s<>"']+$/i.test(url)) return true;
   if (/^\/(?!\/)[^\s<>"']*$/.test(url)) return true;                    // /xxx
   return /^[a-z0-9_-]+\.(?:html|php)(?:\?[^\s<>"']*)?$/i.test(url);    // privacy.html / api.php?...
+}
+
+/**
+ * 链接归一化：判断「同一个站点是否已经申请过 / 已经在友链里」。
+ * 只用于比对，不落盘 —— 大小写、末尾斜杠、前后空格都不该算两个站。
+ */
+function friendUrlKey(url) {
+  return String(url || '').trim().toLowerCase().replace(/\/+$/, '');
+}
+
+/* ---------- 访客提交的友链申请（页脚「友情链接 ＋」→ 管理页审核） ---------- */
+
+/** 读取申请列表（文件不存在/损坏 → 空列表，不写盘） */
+function friendAppliesLoad() {
+  try {
+    const j = JSON.parse(fs.readFileSync(FRIEND_APPLIES_FILE, 'utf8'));
+    if (j && Array.isArray(j.items)) {
+      return { nextId: Number.isInteger(j.nextId) ? j.nextId : j.items.length + 1, items: j.items };
+    }
+  } catch (e) { /* 不存在或损坏 → 空列表 */ }
+  return { nextId: 1, items: [] };
+}
+
+/** 申请对外字段（白名单，避免把内部字段泄给前端） */
+function friendApplyItem(it) {
+  return {
+    id: Number(it && it.id) || 0,
+    name: String((it && it.name) || ''),
+    url: String((it && it.url) || ''),
+    img: String((it && it.img) || ''),
+    desc: String((it && it.desc) || ''),
+    contact: String((it && it.contact) || ''),
+    createdAt: Number((it && it.createdAt) || 0),
+  };
 }
 
 /** 按文件魔数判真实图片类型；不认识就返回 null */
@@ -2219,9 +2256,65 @@ function handleApi(req, res, url, body) {
         return json(res, { ok: true, message: '友情链接已保存', items });
       }
 
-      // 列表
+      // 通过一条访客申请 → 追加进 friends.json，并从待审列表移除
+      if (op === 'apply_accept') {
+        const applyId = body.applyId | 0;
+        const applies = friendAppliesLoad();
+        const ai = applies.items.findIndex(it => (it.id | 0) === applyId);
+        if (ai === -1) return fail(res, '这条申请已经不在了，可能刚被处理过', 404);
+        const ap = friendApplyItem(applies.items[ai]);
+
+        const db = friendsLoad();
+        if (db.items.length >= FRIENDS_MAX) {
+          return fail(res, `友情链接最多 ${FRIENDS_MAX} 条，先删掉几条再加`);
+        }
+        // 走一遍和 op=save 相同的校验：申请是访客填的，不能无条件信任
+        if (!ap.name) return fail(res, '这条申请没填站点名称，无法通过');
+        if (!friendUrlOk(ap.url)) return fail(res, '这条申请的链接不合法，请让申请人重新提交');
+        if (ap.img && !friendUrlOk(ap.img)) return fail(res, '这条申请的图标地址不合法，请清掉图标再加');
+
+        // id 重新取最大值 +1：手改过 friends.json 时不会撞 id
+        const newId = db.items.reduce((m, x) => Math.max(m, x.id | 0), 0) + 1;
+        db.items.push({ id: newId, name: ap.name, url: ap.url, img: ap.img, desc: ap.desc });
+
+        applies.items.splice(ai, 1);
+        try {
+          writeJsonAtomic(FRIENDS_FILE, { nextId: newId + 1, items: db.items });
+          writeJsonAtomic(FRIEND_APPLIES_FILE, applies);
+        } catch (e) {
+          return fail(res, '保存失败，请检查 data/ 目录是否可写', 500);
+        }
+        return json(res, {
+          ok: true,
+          message: `已通过，${ap.name} 已加进页脚友链`,
+          items: db.items.map(friendsItem),
+          applies: applies.items.map(friendApplyItem),
+        });
+      }
+
+      // 忽略/删除一条申请（不写 friends.json）
+      if (op === 'apply_reject') {
+        const applyId = body.applyId | 0;
+        const applies = friendAppliesLoad();
+        const ai = applies.items.findIndex(it => (it.id | 0) === applyId);
+        if (ai === -1) return fail(res, '这条申请已经不在了', 404);
+        applies.items.splice(ai, 1);
+        try {
+          writeJsonAtomic(FRIEND_APPLIES_FILE, applies);
+        } catch (e) {
+          return fail(res, '删除失败，请检查 data/ 目录是否可写', 500);
+        }
+        return json(res, { ok: true, message: '已忽略这条申请', applies: applies.items.map(friendApplyItem) });
+      }
+
+      // 列表（友链 + 待审申请一起返回，管理页只发一次请求）
       const db = friendsLoad();
-      return json(res, { ok: true, items: db.items.map(friendsItem) });
+      const applies = friendAppliesLoad();
+      return json(res, {
+        ok: true,
+        items: db.items.map(friendsItem),
+        applies: applies.items.map(friendApplyItem),
+      });
     }
 
     /* ---- 管理页：数据概览（故事/赞/浏览/评论总数 + 今日新增 + 未读反馈） ---- */
@@ -2278,6 +2371,59 @@ function handleApi(req, res, url, body) {
           visitors: visitStatsSeries(14),   // 最近 14 天访客趋势（折线图）
         },
       });
+    }
+
+    /* ---- 访客申请友情链接（页脚「友情链接 ＋」提交，站长在管理页审核） ---- */
+    case 'friend_apply': {
+      if (method !== 'POST') return fail(res, '请使用 POST', 405);
+
+      const name = String(body.name || '').trim();
+      const link = String(body.url || '').trim();
+      const img = String(body.img || '').trim();
+      const desc = String(body.desc || '').trim();
+      const contact = String(body.contact || '').trim();
+
+      if (!name) return fail(res, '请填写你的站点名称');
+      if (Array.from(name).length > 30) return fail(res, '站点名称最多 30 个字');
+      if (!link) return fail(res, '请填写你的站点地址');
+      // 访客申请只收绝对地址：站内相对路径在这里没有意义
+      if (!/^https?:\/\//i.test(link) || !friendUrlOk(link)) {
+        return fail(res, '站点地址要以 http:// 或 https:// 开头');
+      }
+      if (img && (!/^https?:\/\//i.test(img) || !friendUrlOk(img))) {
+        return fail(res, '图标地址要以 http:// 或 https:// 开头（也可以留空）');
+      }
+      if (Array.from(desc).length > 60) return fail(res, '一句话介绍最多 60 个字');
+      if (!contact) return fail(res, '留个联系方式吧，方便站长回复你');
+      if (Array.from(contact).length > 100) return fail(res, '联系方式最多 100 个字符');
+
+      // 校验通过才计额度：填错字不该消耗提交次数
+      if (!rateGuard(req, res, 'friend_apply')) return;
+
+      const key = friendUrlKey(link);
+      const applies = friendAppliesLoad();
+      if (applies.items.some(it => friendUrlKey(it.url) === key)) {
+        return fail(res, '这个站点已经提交过申请啦，站长处理完就会出现在页脚 💕');
+      }
+      if (friendsLoad().items.some(it => friendUrlKey(it.url) === key)) {
+        return fail(res, '这个站点已经在页脚友链里啦 ✨');
+      }
+      if (applies.items.length >= FRIENDS_APPLY_MAX) {
+        return fail(res, '积压的申请有点多，站长正在加班处理，请过几天再来 💦', 429);
+      }
+
+      if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+      applies.items.push({
+        id: applies.nextId++,
+        name, url: link, img, desc, contact,
+        createdAt: Math.floor(Date.now() / 1000),
+      });
+      try {
+        writeJsonAtomic(FRIEND_APPLIES_FILE, applies);
+      } catch (e) {
+        return fail(res, '提交失败，请稍后再试', 500);
+      }
+      return json(res, { ok: true, message: '申请已收到，站长看到后会联系你 💕' });
     }
 
     /* ---- 友情链接（公开读取，首页页脚渲染） ---- */

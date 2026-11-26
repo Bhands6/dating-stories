@@ -1257,10 +1257,50 @@
             color: var(--text-lighter);
         }
 
+        /* 「友情链接」本身就是申请入口：可按、可聚焦，hover 变主色给点击暗示 */
         .footer-friends-label {
             position: relative;
-            padding-right: 16px;
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            padding: 0 16px 0 0;
+            border: none;
+            background: none;
+            font-family: inherit;
+            font-size: inherit;
+            line-height: inherit;
             color: var(--text-lighter);
+            cursor: pointer;
+            transition: color 0.25s ease;
+        }
+
+        .footer-friends-label:hover,
+        .footer-friends-label:focus-visible {
+            color: var(--primary);
+        }
+
+        .footer-friends-label:focus-visible {
+            outline: 2px solid rgba(var(--primary-rgb), 0.35);
+            outline-offset: 3px;
+            border-radius: 4px;
+        }
+
+        .footer-friends-label .ff-plus {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: rgba(var(--primary-rgb), 0.12);
+            color: var(--primary);
+            font-size: 10px;
+            line-height: 1;
+            transition: background 0.25s ease;
+        }
+
+        .footer-friends-label:hover .ff-plus {
+            background: rgba(var(--primary-rgb), 0.22);
         }
 
         .footer-friends-label::after {
@@ -1312,6 +1352,201 @@
 
         .footer-friend.has-img:hover {
             text-decoration: none;
+        }
+
+        /* ===== 申请友链弹窗（页脚「友情链接 ＋」打开） ===== */
+        .ff-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 2200;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px 16px;
+            background: rgba(45, 45, 58, 0.45);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+        }
+
+        .ff-overlay.open {
+            display: flex;
+        }
+
+        .ff-box {
+            position: relative;
+            width: 100%;
+            max-width: 440px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            padding: 24px 22px 20px;
+            background: var(--card-bg);
+            border-radius: 20px;
+            box-shadow: 0 24px 64px rgba(45, 45, 58, 0.25);
+            animation: modalIn 0.28s cubic-bezier(0.34, 1.4, 0.64, 1);
+        }
+
+        .ff-close {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 30px;
+            height: 30px;
+            border: none;
+            border-radius: 50%;
+            background: var(--surface-4);
+            color: var(--text-light);
+            font-size: 13px;
+            line-height: 1;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .ff-close:hover {
+            background: var(--surface-4-hover);
+            color: var(--text);
+        }
+
+        .ff-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text);
+            margin: 0 0 8px;
+        }
+
+        .ff-sub {
+            margin: 0 0 4px;
+            font-size: 13px;
+            line-height: 1.75;
+            color: var(--text-light);
+        }
+
+        .ff-tips {
+            margin: 12px 0 0;
+            padding: 10px 12px;
+            border-radius: 12px;
+            background: var(--surface-3);
+            font-size: 12.5px;
+            line-height: 1.7;
+            color: var(--text-light);
+        }
+
+        .ff-field {
+            margin-top: 14px;
+        }
+
+        .ff-field label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 12.5px;
+            color: var(--text-light);
+        }
+
+        .ff-field label .req {
+            color: var(--primary);
+            margin-left: 2px;
+        }
+
+        .ff-field input,
+        .ff-field textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--surface-2);
+            color: var(--text);
+            /* 16px 起：iOS Safari 对 <16px 的输入框会在聚焦时强制放大页面 */
+            font-size: 16px;
+            font-family: inherit;
+            line-height: 1.5;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .ff-field input::placeholder,
+        .ff-field textarea::placeholder {
+            color: var(--text-lighter);
+        }
+
+        .ff-field input:focus,
+        .ff-field textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.12);
+        }
+
+        .ff-field textarea {
+            resize: vertical;
+            min-height: 64px;
+        }
+
+        .ff-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .ff-actions button {
+            flex: 1;
+            border: none;
+            padding: 11px 0;
+            border-radius: 12px;
+            font-size: 14px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .ff-cancel {
+            background: var(--surface-4);
+            color: var(--text);
+        }
+
+        .ff-cancel:hover {
+            background: var(--surface-4-hover);
+        }
+
+        .ff-submit {
+            background: var(--gradient);
+            color: var(--on-primary);
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(var(--primary-rgb), 0.3);
+        }
+
+        .ff-submit:hover {
+            box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.4);
+            transform: translateY(-1px);
+        }
+
+        .ff-submit:disabled {
+            opacity: 0.65;
+            cursor: default;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* 提交成功后的结果态：整块换成一句感谢，避免误以为没提交上 */
+        .ff-done {
+            padding: 14px 0 6px;
+            text-align: center;
+        }
+
+        .ff-done .ff-done-icon {
+            font-size: 34px;
+            line-height: 1;
+        }
+
+        .ff-done .ff-done-title {
+            margin: 12px 0 6px;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .ff-done p {
+            margin: 0;
+            font-size: 13px;
+            line-height: 1.75;
+            color: var(--text-light);
         }
 
         .footer-bottom {
@@ -2864,7 +3099,7 @@
                 <a class="footer-link" href="disclaimer.html">📜 免责声明</a>
             </div>
             <div class="footer-friends" id="footer-friends">
-                <span class="footer-friends-label">友情链接</span>
+                <button type="button" class="footer-friends-label" id="friend-apply-btn" title="点这里申请友情链接">友情链接<span class="ff-plus" aria-hidden="true">＋</span></button>
                 <!-- 内容由 loadFriends() 按管理页配置渲染；这段静态链接是接口不可用时的兜底 -->
                 <div class="footer-friends-list" id="footer-friends-list">
                     <a class="footer-friend" href="https://wangzhy.top/" target="_blank" rel="noopener">解压小站</a>
@@ -2875,6 +3110,59 @@
             </div>
         </div>
     </footer>
+
+    <!-- 申请友链弹窗（页脚「友情链接 ＋」打开） -->
+    <div class="ff-overlay" id="ff-overlay">
+        <div class="ff-box" role="dialog" aria-modal="true" aria-labelledby="ff-title">
+            <button type="button" class="ff-close" id="ff-close" title="关闭" aria-label="关闭">✕</button>
+
+            <div id="ff-form-wrap">
+                <h3 class="ff-title" id="ff-title">申请友情链接 💕</h3>
+                <p class="ff-sub">欢迎互换友链。留下你的站点信息，站长看到后会去拜访，合适就加到下面的页脚里。</p>
+                <div class="ff-tips">
+                    小小要求：内容健康、能正常打开、有一点自己的原创。<br>
+                    纯采集站、长期打不开的站点就不加啦，见谅 🌷
+                </div>
+
+                <form id="ff-form" novalidate>
+                    <div class="ff-field">
+                        <label for="ff-name">站点名称<span class="req">*</span></label>
+                        <input id="ff-name" name="name" type="text" maxlength="30" autocomplete="off" placeholder="例如：解压小站">
+                    </div>
+                    <div class="ff-field">
+                        <label for="ff-url">站点地址<span class="req">*</span></label>
+                        <input id="ff-url" name="url" type="text" inputmode="url" maxlength="500" autocomplete="off" placeholder="https://你的域名">
+                    </div>
+                    <div class="ff-field">
+                        <label for="ff-desc">一句话介绍</label>
+                        <input id="ff-desc" name="desc" type="text" maxlength="60" autocomplete="off" placeholder="选填，会显示成鼠标悬停提示">
+                    </div>
+                    <div class="ff-field">
+                        <label for="ff-img">图标地址</label>
+                        <input id="ff-img" name="img" type="text" inputmode="url" maxlength="500" autocomplete="off" placeholder="选填，方形小图 https://…">
+                    </div>
+                    <div class="ff-field">
+                        <label for="ff-contact">联系方式<span class="req">*</span></label>
+                        <input id="ff-contact" name="contact" type="text" maxlength="100" autocomplete="off" placeholder="邮箱 / QQ / 微信，方便站长回复你">
+                    </div>
+
+                    <div class="ff-actions">
+                        <button type="button" class="ff-cancel" id="ff-cancel">取消</button>
+                        <button type="submit" class="ff-submit" id="ff-submit">提交申请</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="ff-done" id="ff-done" hidden>
+                <div class="ff-done-icon">💌</div>
+                <div class="ff-done-title">申请已收到</div>
+                <p>站长看到后会去你的站点看看，通过就会出现在页脚。<br>谢谢你愿意和这里做邻居 💕</p>
+                <div class="ff-actions">
+                    <button type="button" class="ff-submit" id="ff-done-close">好的</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Story Detail Modal -->
     <div class="modal-overlay" id="modal-overlay">
@@ -4352,8 +4640,8 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             const d = await api('friends');
             const items = (d.items || []).filter(it => it && it.name && it.url);
             if (!items.length) {
-                // 站长把友链清空了 → 整块（含静态兜底）一起隐藏
-                wrap.style.display = 'none';
+                // 站长把友链清空了 → 只清空列表，整块留着（「友情链接 ＋」是申请入口，不能一起藏掉）
+                list.innerHTML = '';
                 return;
             }
             list.innerHTML = items.map(it => {
@@ -4368,6 +4656,62 @@ const state = { filter: 'new', page: 1, perPage: 6, loading: false, hasMore: fal
             // 接口不可用（例如本地没起后端）→ 保留 HTML 里的静态兜底，不让页脚空掉
         }
     }
+
+    /* ==================== 申请友链（点页脚「友情链接 ＋」打开） ==================== */
+    const ffOverlay = $('#ff-overlay');
+    const ffFormWrap = $('#ff-form-wrap');
+    const ffDone = $('#ff-done');
+    const ffForm = $('#ff-form');
+
+    function openFriendApply() {
+        ffForm.reset();              // 每次打开都是干净表单，避免上次的内容/成功态残留
+        ffFormWrap.hidden = false;
+        ffDone.hidden = true;
+        ffOverlay.classList.add('open');
+        setTimeout(() => $('#ff-name').focus(), 80);
+    }
+
+    function closeFriendApply() {
+        ffOverlay.classList.remove('open');
+    }
+
+    $('#friend-apply-btn').addEventListener('click', openFriendApply);
+    $('#ff-close').addEventListener('click', closeFriendApply);
+    $('#ff-cancel').addEventListener('click', closeFriendApply);
+    $('#ff-done-close').addEventListener('click', closeFriendApply);
+    ffOverlay.addEventListener('click', e => { if (e.target === ffOverlay) closeFriendApply(); });
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && ffOverlay.classList.contains('open')) closeFriendApply();
+    });
+
+    ffForm.addEventListener('submit', async e => {
+        e.preventDefault();
+        const btn = $('#ff-submit');
+        const payload = {
+            name: $('#ff-name').value.trim(),
+            url: $('#ff-url').value.trim(),
+            desc: $('#ff-desc').value.trim(),
+            img: $('#ff-img').value.trim(),
+            contact: $('#ff-contact').value.trim(),
+        };
+        // 前端只做最明显的几项提示，省一次往返；后端仍会完整校验一遍
+        if (!payload.name) { toast('请填写站点名称', 'error'); $('#ff-name').focus(); return; }
+        if (!payload.url) { toast('请填写站点地址', 'error'); $('#ff-url').focus(); return; }
+        if (!/^https?:\/\//i.test(payload.url)) { toast('站点地址要以 http:// 或 https:// 开头', 'error'); $('#ff-url').focus(); return; }
+        if (!payload.contact) { toast('留个联系方式吧，方便站长回复你', 'error'); $('#ff-contact').focus(); return; }
+
+        btn.disabled = true;
+        btn.textContent = '提交中…';
+        try {
+            await api('friend_apply', null, payload);
+            ffFormWrap.hidden = true;
+            ffDone.hidden = false;
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+        btn.disabled = false;
+        btn.textContent = '提交申请';
+    });
 
     /* ==================== 启动 ==================== */
     // 静态滚动入场动画（特性卡 / 关于卡等）

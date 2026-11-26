@@ -513,6 +513,24 @@ input[type=checkbox]{
 .fr-add:hover{border-color:var(--rose);color:var(--rose)}
 .fr-empty{text-align:center;padding:24px;color:var(--muted);font-size:12.5px}
 
+/* 待审的友链申请（首页页脚「友情链接 ＋」提交过来的） */
+.fa-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12px;color:var(--ink-2)}
+.fa-count{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--rose);color:#fff;font-size:11px;font-weight:600}
+.fa-card{padding:12px 14px;border-radius:14px;border:1px solid var(--line-soft);background:var(--paper-2);margin-bottom:10px}
+.fa-top{display:flex;align-items:center;gap:10px}
+.fa-ico{width:34px;height:34px;border-radius:10px;border:1px solid var(--line-soft);background:var(--paper-3);display:grid;place-items:center;overflow:hidden;font-size:15px;color:var(--muted);flex:none}
+.fa-ico img{width:100%;height:100%;object-fit:cover}
+.fa-name{font-size:13px;font-weight:600;color:var(--ink)}
+.fa-url{font-size:11.5px;color:var(--muted);word-break:break-all;margin-top:2px}
+.fa-meta{font-size:11.5px;color:var(--ink-2);line-height:1.75;margin-top:8px;word-break:break-word}
+.fa-meta b{font-weight:600;color:var(--ink)}
+.fa-acts{display:flex;gap:8px;margin-top:10px}
+.fa-btn{padding:6px 12px;border-radius:9px;border:1px solid var(--line);background:var(--paper-3);color:var(--ink-2);font-family:inherit;font-size:12px;cursor:pointer;transition:.2s}
+.fa-btn:hover:not(:disabled){background:var(--ink);color:var(--paper-2);border-color:var(--ink)}
+.fa-btn.ok{background:var(--rose);border-color:var(--rose);color:#fff}
+.fa-btn.ok:hover:not(:disabled){background:var(--rose);color:#fff;filter:brightness(.94)}
+.fa-btn:disabled{opacity:.5;cursor:default}
+
 /* ---------- login ---------- */
 .login-wrap{min-height:100vh;display:grid;place-items:center;padding:28px}
 .login-card{
@@ -957,6 +975,7 @@ input[type=checkbox]{
       <button class="x-btn" id="friends-close" title="关闭" aria-label="关闭">✕</button>
     </div>
     <div class="modal-body">
+      <div id="friend-applies"></div>
       <p class="hint" style="margin-bottom:14px">显示在首页页脚。填了图片就是「图标 + 名称」，图片留空只显示文字；支持 PNG / JPG / GIF / WEBP，≤300KB。</p>
       <div id="friends-rows"></div>
       <button class="fr-add" id="friends-add" style="margin-top:12px">＋ 添加一条</button>
@@ -1822,21 +1841,78 @@ paintLastBackup();
 
 /* ---------------- 友情链接 ---------------- */
 let friendsItems = [];
+let friendApplies = [];        // 访客从首页页脚提交的待审申请
+let friendsDirty = false;      // 本地是否有未保存的改动（通过申请前要先落盘，否则会被后端覆盖）
 let friendsUploadIdx = -1;
 
 async function openFriends() {
     const rows = $('#friends-rows');
     rows.innerHTML = '<div class="fr-empty">加载中…</div>';
+    $('#friend-applies').innerHTML = '';
     $('#friends-overlay').classList.add('open');
     document.body.classList.add('locked');
     try {
         const d = await api({ key: getKey(), op: 'list' }, 'admin_friends');
         friendsItems = (d.items || []).map(it => ({ name: it.name || '', url: it.url || '', img: it.img || '', desc: it.desc || '' }));
+        friendApplies = Array.isArray(d.applies) ? d.applies : [];
+        friendsDirty = false;
+        renderFriendApplies();
         renderFriends();
     } catch (e) {
         rows.innerHTML = '<div class="fr-empty">😢 ' + esc(e.message) + '</div>';
     }
 }
+
+/* 待审申请：名称/链接/介绍/联系方式 + 一键通过或忽略 */
+function renderFriendApplies() {
+    const box = $('#friend-applies');
+    if (!friendApplies.length) { box.innerHTML = ''; return; }
+    box.innerHTML = '<div class="fa-head">待审申请<span class="fa-count">' + friendApplies.length + '</span></div>'
+        + friendApplies.map(it =>
+            '<div class="fa-card">' +
+            '<div class="fa-top">' +
+            '<div class="fa-ico">' + (it.img ? '<img src="' + esc(it.img) + '" alt="">' : '🔗') + '</div>' +
+            '<div style="min-width:0">' +
+            '<div class="fa-name">' + esc(it.name) + '</div>' +
+            '<div class="fa-url">' + esc(it.url) + '</div>' +
+            '</div></div>' +
+            '<div class="fa-meta">' +
+            (it.desc ? '介绍：' + esc(it.desc) + '<br>' : '') +
+            '联系：<b>' + esc(it.contact) + '</b> · ' + fmtTime(it.createdAt) +
+            '</div>' +
+            '<div class="fa-acts">' +
+            '<button class="fa-btn ok" data-apply="' + it.id + '" data-act="accept">通过并加入页脚</button>' +
+            '<button class="fa-btn" data-apply="' + it.id + '" data-act="reject">忽略</button>' +
+            '</div></div>'
+        ).join('');
+}
+
+$('#friend-applies').addEventListener('click', async e => {
+    const btn = e.target.closest('button[data-apply]');
+    if (!btn) return;
+    const applyId = Number(btn.dataset.apply);
+    const act = btn.dataset.act;
+    btn.disabled = true;
+    try {
+        // 通过会把申请并进磁盘上的 friends.json：本地有未保存改动时先保存，
+        // 否则后端读到的是旧列表，回来一刷新就把你刚改的内容冲掉。
+        if (act === 'accept' && friendsDirty) {
+            await api({ key: getKey(), op: 'save', items: friendsItems }, 'admin_friends');
+            friendsDirty = false;
+        }
+        const d = await api({ key: getKey(), op: act === 'accept' ? 'apply_accept' : 'apply_reject', applyId }, 'admin_friends');
+        if (Array.isArray(d.items)) {
+            friendsItems = d.items.map(it => ({ name: it.name || '', url: it.url || '', img: it.img || '', desc: it.desc || '' }));
+            friendsDirty = false;
+            renderFriends();
+        }
+        if (Array.isArray(d.applies)) { friendApplies = d.applies; renderFriendApplies(); }
+        toast(d.message || '已处理');
+    } catch (err) {
+        toast(err.message, 'error');
+        btn.disabled = false;
+    }
+});
 function renderFriends() {
     const rows = $('#friends-rows');
     if (!friendsItems.length) {
@@ -1871,6 +1947,7 @@ $('#friends-rows').addEventListener('input', e => {
     const i = Number(t.dataset.i);
     if (!friendsItems[i]) return;
     friendsItems[i][t.dataset.f] = t.value;
+    friendsDirty = true;
     if (t.dataset.f === 'img') renderFriendThumb(i);
 });
 $('#friends-rows').addEventListener('click', e => {
@@ -1878,9 +1955,9 @@ $('#friends-rows').addEventListener('click', e => {
     if (!btn) return;
     const i = Number(btn.dataset.i);
     const act = btn.dataset.act;
-    if (act === 'del') { friendsItems.splice(i, 1); renderFriends(); }
-    else if (act === 'up' && i > 0) { const t = friendsItems[i - 1]; friendsItems[i - 1] = friendsItems[i]; friendsItems[i] = t; renderFriends(); }
-    else if (act === 'down' && i < friendsItems.length - 1) { const t = friendsItems[i + 1]; friendsItems[i + 1] = friendsItems[i]; friendsItems[i] = t; renderFriends(); }
+    if (act === 'del') { friendsItems.splice(i, 1); friendsDirty = true; renderFriends(); }
+    else if (act === 'up' && i > 0) { const t = friendsItems[i - 1]; friendsItems[i - 1] = friendsItems[i]; friendsItems[i] = t; friendsDirty = true; renderFriends(); }
+    else if (act === 'down' && i < friendsItems.length - 1) { const t = friendsItems[i + 1]; friendsItems[i + 1] = friendsItems[i]; friendsItems[i] = t; friendsDirty = true; renderFriends(); }
     else if (act === 'upload') {
         friendsUploadIdx = i;
         const f = $('#friends-file');
@@ -1891,6 +1968,7 @@ $('#friends-rows').addEventListener('click', e => {
 $('#friends-add').addEventListener('click', () => {
     if (friendsItems.length >= 30) { toast('最多 30 条友情链接', 'error'); return; }
     friendsItems.push({ name: '', url: '', img: '', desc: '' });
+    friendsDirty = true;
     renderFriends();
     const inp = document.querySelector('input[data-f="name"][data-i="' + (friendsItems.length - 1) + '"]');
     if (inp) inp.focus();
@@ -1914,6 +1992,7 @@ $('#friends-file').addEventListener('change', async e => {
         const d = await api({ key: getKey(), op: 'upload_img', data: dataUrl }, 'admin_friends');
         if (!friendsItems[idx]) return;
         friendsItems[idx].img = d.url || '';
+        friendsDirty = true;
         const inp = document.querySelector('input[data-f="img"][data-i="' + idx + '"]');
         if (inp) inp.value = friendsItems[idx].img;
         renderFriendThumb(idx);
@@ -1930,6 +2009,7 @@ $('#friends-save').addEventListener('click', async () => {
     btn.disabled = true;
     try {
         const d = await api({ key: getKey(), op: 'save', items: friendsItems }, 'admin_friends');
+        friendsDirty = false;
         toast((d.message || '已保存') + '，刷新首页即可看到');
         closeFriends();
     } catch (e) { toast(e.message, 'error'); }
