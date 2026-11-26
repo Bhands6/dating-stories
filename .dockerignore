@@ -24,6 +24,7 @@ data/visit_stats.json
 data/rate_guard.json
 data/deletions.json
 data/friends.json
+data/friend_applies.json
 data/friendimg/
 data/fontcache/
 data/uploads/

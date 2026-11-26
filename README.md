@@ -98,6 +98,7 @@ docker compose up -d --build
         data/stories.json   故事/评论/点赞/删除凭证
         data/feedback.json  网友反馈
         data/friends.json   友情链接（管理页维护，首页页脚展示）
+        data/friend_applies.json 访客提交的友链申请（管理页审核）
         data/views_log.json 浏览量防刷记录
         data/visit_stats.json 访客趋势按天聚合（管理台折线图）
         data/uploads/       上传的原始 HTML 源文件（原样阅读用，未净化）
@@ -138,6 +139,7 @@ docker compose up -d --build
 │   ├── rate_guard.json # 运行时生成：写接口（发布/评论/反馈）限流记录
 │   ├── deletions.json  # 运行时生成：访客删除动态（谁删了故事/评论，含昵称与摘录）
 │   ├── friends.json    # 运行时生成：友情链接配置（管理页「🔗 友情链接」维护）
+│   ├── friend_applies.json # 运行时生成：访客提交的友链申请（管理页「友情链接」里审核）
 │   ├── friendimg/      # 运行时生成：友链图标（管理页上传，经 route=friend_img 输出）
 │   ├── uploads/        # 运行时生成：上传的原始 HTML 源文件（未净化，「原文阅读」直接读它）
 │   ├── storyimg/       # 运行时生成：故事插图（发布页上传，经 route=story_img 输出）
@@ -165,12 +167,13 @@ docker compose up -d --build
 | `tags` / `stats` / `hot` | 频道计数 / 统计 / 热门榜 |
 | `story_img` / `story_img_upload` | 故事插图输出 / 上传（发布页粘贴或选图，按魔数校验、单图 ≤2MB，经站内地址显示，不直接暴露 `data/`） |
 | `friends` / `friend_img` | 友情链接列表（首页页脚渲染）/ 友链图标输出（管理页上传的图，不直接暴露 `data/`） |
+| `friend_apply` | 访客申请友链（首页页脚点「友情链接 ＋」提交：站名/地址/一句话介绍/图标/联系方式）；同一链接不重复收、已在页脚的直接拒、待审最多 100 条，落 `data/friend_applies.json`，由管理页审核 |
 | `feedback` | 提交反馈 |
 | `admin_feedback` / `admin_stories` / `admin_comments` | 管理接口（密码为 `data/admin_key.txt` 中的值，连续错 5 次锁定 15 分钟）；`op=list` 支持 `page` / `pageSize`（默认 20、上限 100），返回 `total` / `page` / `pageSize` / `hasMore`；`admin_stories` 支持 `q` 搜索、`sort` 排序、`op=update` 编辑、`op=delete` 批量删（`ids` 数组）；`admin_feedback` 支持 `op=read` 标记已读 |
 | `admin_deletions` | 访客删除动态（`op=list` 默认 / `op=read` 推进已读水位）：记录谁删掉了自己的故事或评论，含删除前的赞/浏览/评论数；最多保留 200 条，管理页最多返回最近 100 条 |
 | `admin_stats` / `admin_export` / `admin_change_key` | 管理页数据概览 / 导出单份 JSON / 修改管理密码 |
 | `admin_backup` | 管理：**一键完整备份**，把 `data/` 下所有故事、评论、插图、原始 HTML、反馈、友链与删除留痕打包成 ZIP 下载（零依赖 STORE 方式写 ZIP，不含管理密码） |
-| `admin_friends` | 管理：友情链接（`op=list` / `op=save` 整份列表落盘 / `op=upload_img` 上传图标回站内地址）；首页页脚据此渲染，无需改代码 |
+| `admin_friends` | 管理：友情链接（`op=list` 同时返回友链与待审申请 / `op=save` 整份列表落盘 / `op=upload_img` 上传图标回站内地址 / `op=apply_accept` 通过一条申请并写进 `friends.json` / `op=apply_reject` 忽略一条申请）；首页页脚据此渲染，无需改代码 |
 
 **写接口限流**（按 IP 滑动窗口，超限返回 `429` + 友好提示，记录在 `data/rate_guard.json`）：
 
